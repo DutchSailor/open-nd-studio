@@ -3,13 +3,15 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { Minus, Square, X, Maximize2 } from 'lucide-react';
 import { useAppStore } from '../../state/appStore';
 
-interface MenuItem {
+type MenuItem = {
   label: string;
   shortcut?: string;
   onClick?: () => void;
   disabled?: boolean;
-  separator?: boolean;
-}
+  separator?: false;
+} | {
+  separator: true;
+};
 
 interface MenuProps {
   label: string;
