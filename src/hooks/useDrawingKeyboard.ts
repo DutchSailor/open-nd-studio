@@ -7,6 +7,10 @@ import type { LineShape, PolylineShape } from '../types/geometry';
  * - Enter/Escape: End current drawing operation
  * - U: Undo last point
  * - C: Close shape (connect last point to first point)
+ * - F3: Toggle OSNAP
+ * - F8: Toggle Ortho mode
+ * - F10: Toggle Polar tracking
+ * - F11: Toggle Object tracking
  */
 export function useDrawingKeyboard() {
   const {
@@ -19,13 +23,15 @@ export function useDrawingKeyboard() {
     activeLayerId,
     currentStyle,
     isDrawing,
+    // Snap and tracking toggles
+    toggleSnap,
+    toggleOrthoMode,
+    togglePolarTracking,
+    toggleObjectTracking,
   } = useAppStore();
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Only handle when in drawing mode
-      if (!isDrawing || drawingPoints.length === 0) return;
-
       // Don't handle if user is typing in an input
       if (
         e.target instanceof HTMLInputElement ||
@@ -33,6 +39,36 @@ export function useDrawingKeyboard() {
       ) {
         return;
       }
+
+      // Global function key shortcuts (work regardless of drawing state)
+      switch (e.key) {
+        case 'F3':
+          // Toggle OSNAP
+          e.preventDefault();
+          toggleSnap();
+          return;
+
+        case 'F8':
+          // Toggle Ortho mode
+          e.preventDefault();
+          toggleOrthoMode();
+          return;
+
+        case 'F10':
+          // Toggle Polar tracking
+          e.preventDefault();
+          togglePolarTracking();
+          return;
+
+        case 'F11':
+          // Toggle Object tracking
+          e.preventDefault();
+          toggleObjectTracking();
+          return;
+      }
+
+      // Drawing-specific shortcuts - only when in drawing mode
+      if (!isDrawing || drawingPoints.length === 0) return;
 
       switch (e.key) {
         case 'Escape':
@@ -130,5 +166,9 @@ export function useDrawingKeyboard() {
     activeLayerId,
     currentStyle,
     isDrawing,
+    toggleSnap,
+    toggleOrthoMode,
+    togglePolarTracking,
+    toggleObjectTracking,
   ]);
 }

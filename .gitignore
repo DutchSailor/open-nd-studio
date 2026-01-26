@@ -34,3 +34,6 @@ src-tauri/target/
 
 # Misc
 .cache/
+nul
+CLAUDE.md
+ROADMAP.md

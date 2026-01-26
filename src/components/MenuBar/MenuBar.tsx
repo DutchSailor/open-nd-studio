@@ -1,7 +1,21 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { Minus, Square, X, Maximize2 } from 'lucide-react';
 import { useAppStore } from '../../state/appStore';
+import {
+  showOpenDialog,
+  showSaveDialog,
+  showExportDialog,
+  readProjectFile,
+  writeProjectFile,
+  exportToSVG,
+  exportToDXF,
+  confirmUnsavedChanges,
+  showError,
+  showInfo,
+  createNewProject,
+  type ProjectFile,
+} from '../../services/fileService';
+import { writeTextFile } from '@tauri-apps/plugin-fs';
 
 type MenuItem = {
   label: string;
@@ -83,8 +97,128 @@ function Menu({ label, items, isOpen, onOpen, onClose, menuBarHovered }: MenuPro
   );
 }
 
+// Detect platform
+type Platform = 'windows' | 'linux' | 'macos';
+
+function getPlatform(): Platform {
+  const userAgent = navigator.userAgent.toLowerCase();
+  if (userAgent.includes('win')) return 'windows';
+  if (userAgent.includes('mac')) return 'macos';
+  return 'linux';
+}
+
+// Windows-style window controls
+function WindowsControls({
+  onMinimize,
+  onMaximize,
+  onClose,
+  isMaximized
+}: {
+  onMinimize: () => void;
+  onMaximize: () => void;
+  onClose: () => void;
+  isMaximized: boolean;
+}) {
+  return (
+    <div className="flex items-center h-full">
+      <button
+        onClick={onMinimize}
+        className="w-[46px] h-full flex items-center justify-center hover:bg-[#3d3d3d] transition-colors"
+        title="Minimize"
+      >
+        <svg width="10" height="1" viewBox="0 0 10 1" fill="currentColor">
+          <rect width="10" height="1" />
+        </svg>
+      </button>
+      <button
+        onClick={onMaximize}
+        className="w-[46px] h-full flex items-center justify-center hover:bg-[#3d3d3d] transition-colors"
+        title={isMaximized ? 'Restore Down' : 'Maximize'}
+      >
+        {isMaximized ? (
+          <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1">
+            <rect x="2" y="0.5" width="7" height="7" />
+            <polyline points="0.5,2.5 0.5,9.5 7.5,9.5 7.5,7.5" />
+          </svg>
+        ) : (
+          <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1">
+            <rect x="0.5" y="0.5" width="9" height="9" />
+          </svg>
+        )}
+      </button>
+      <button
+        onClick={onClose}
+        className="w-[46px] h-full flex items-center justify-center hover:bg-[#c42b1c] transition-colors group"
+        title="Close"
+      >
+        <svg width="10" height="10" viewBox="0 0 10 10" stroke="currentColor" strokeWidth="1.2" className="group-hover:stroke-white">
+          <line x1="0" y1="0" x2="10" y2="10" />
+          <line x1="10" y1="0" x2="0" y2="10" />
+        </svg>
+      </button>
+    </div>
+  );
+}
+
+// Linux/GNOME-style window controls (circular buttons)
+function LinuxControls({
+  onMinimize,
+  onMaximize,
+  onClose,
+  isMaximized
+}: {
+  onMinimize: () => void;
+  onMaximize: () => void;
+  onClose: () => void;
+  isMaximized: boolean;
+}) {
+  return (
+    <div className="flex items-center h-full gap-2 px-3">
+      {/* Minimize - yellow/amber */}
+      <button
+        onClick={onMinimize}
+        className="w-3 h-3 rounded-full bg-[#f5c211] hover:bg-[#d9a900] transition-colors flex items-center justify-center group"
+        title="Minimize"
+      >
+        <svg width="6" height="1" viewBox="0 0 6 1" className="opacity-0 group-hover:opacity-100 transition-opacity">
+          <rect width="6" height="1" fill="#000" fillOpacity="0.6" />
+        </svg>
+      </button>
+      {/* Maximize - green */}
+      <button
+        onClick={onMaximize}
+        className="w-3 h-3 rounded-full bg-[#2ecc71] hover:bg-[#27ae60] transition-colors flex items-center justify-center group"
+        title={isMaximized ? 'Restore' : 'Maximize'}
+      >
+        {isMaximized ? (
+          <svg width="6" height="6" viewBox="0 0 6 6" className="opacity-0 group-hover:opacity-100 transition-opacity">
+            <rect x="0.5" y="2" width="3" height="3" fill="none" stroke="#000" strokeOpacity="0.6" strokeWidth="1" />
+            <polyline points="2,2 2,0.5 5.5,0.5 5.5,4 4,4" fill="none" stroke="#000" strokeOpacity="0.6" strokeWidth="1" />
+          </svg>
+        ) : (
+          <svg width="6" height="6" viewBox="0 0 6 6" className="opacity-0 group-hover:opacity-100 transition-opacity">
+            <rect x="0.5" y="0.5" width="5" height="5" fill="none" stroke="#000" strokeOpacity="0.6" strokeWidth="1" />
+          </svg>
+        )}
+      </button>
+      {/* Close - red/orange */}
+      <button
+        onClick={onClose}
+        className="w-3 h-3 rounded-full bg-[#e95420] hover:bg-[#c44117] transition-colors flex items-center justify-center group"
+        title="Close"
+      >
+        <svg width="6" height="6" viewBox="0 0 6 6" className="opacity-0 group-hover:opacity-100 transition-opacity">
+          <line x1="1" y1="1" x2="5" y2="5" stroke="#000" strokeOpacity="0.6" strokeWidth="1" />
+          <line x1="5" y1="1" x2="1" y2="5" stroke="#000" strokeOpacity="0.6" strokeWidth="1" />
+        </svg>
+      </button>
+    </div>
+  );
+}
+
 function WindowControls() {
   const [isMaximized, setIsMaximized] = useState(false);
+  const [platform] = useState<Platform>(getPlatform);
   const appWindow = getCurrentWindow();
 
   useEffect(() => {
@@ -105,31 +239,19 @@ function WindowControls() {
   const handleMaximize = () => appWindow.toggleMaximize();
   const handleClose = () => appWindow.close();
 
-  return (
-    <div className="flex items-center">
-      <button
-        onClick={handleMinimize}
-        className="w-12 h-8 flex items-center justify-center hover:bg-cad-border transition-colors"
-        title="Minimize"
-      >
-        <Minus size={16} />
-      </button>
-      <button
-        onClick={handleMaximize}
-        className="w-12 h-8 flex items-center justify-center hover:bg-cad-border transition-colors"
-        title={isMaximized ? 'Restore' : 'Maximize'}
-      >
-        {isMaximized ? <Square size={14} /> : <Maximize2 size={14} />}
-      </button>
-      <button
-        onClick={handleClose}
-        className="w-12 h-8 flex items-center justify-center hover:bg-red-600 transition-colors"
-        title="Close"
-      >
-        <X size={16} />
-      </button>
-    </div>
-  );
+  const controlProps = {
+    onMinimize: handleMinimize,
+    onMaximize: handleMaximize,
+    onClose: handleClose,
+    isMaximized,
+  };
+
+  // Use Linux-style for Linux, Windows-style for Windows and macOS
+  if (platform === 'linux') {
+    return <LinuxControls {...controlProps} />;
+  }
+
+  return <WindowsControls {...controlProps} />;
 }
 
 export function MenuBar() {
@@ -151,20 +273,171 @@ export function MenuBar() {
     setActiveTool,
     setPrintDialogOpen,
     setAboutDialogOpen,
+    // File state
+    shapes,
+    layers,
+    activeLayerId,
+    viewport,
+    gridSize,
+    currentFilePath,
+    projectName,
+    isModified,
+    // File actions
+    newProject,
+    loadProject,
+    setFilePath,
+    setProjectName,
+    setModified,
   } = useAppStore();
 
-  const handleOpen = (menu: string) => setOpenMenu(menu);
-  const handleClose = () => setOpenMenu(null);
+  // File operations
+  const handleNew = useCallback(async () => {
+    if (isModified) {
+      const proceed = await confirmUnsavedChanges();
+      if (!proceed) return;
+    }
+    newProject();
+  }, [isModified, newProject]);
+
+  const handleOpenFile = useCallback(async () => {
+    if (isModified) {
+      const proceed = await confirmUnsavedChanges();
+      if (!proceed) return;
+    }
+
+    const filePath = await showOpenDialog();
+    if (!filePath) return;
+
+    try {
+      const project = await readProjectFile(filePath);
+      loadProject(
+        {
+          shapes: project.shapes,
+          layers: project.layers,
+          activeLayerId: project.activeLayerId,
+          viewport: project.viewport,
+          settings: project.settings,
+        },
+        filePath,
+        project.name
+      );
+    } catch (err) {
+      await showError(`Failed to open file: ${err}`);
+    }
+  }, [isModified, loadProject]);
+
+  const handleSave = useCallback(async () => {
+    let filePath = currentFilePath;
+
+    if (!filePath) {
+      filePath = await showSaveDialog(projectName);
+      if (!filePath) return;
+    }
+
+    try {
+      const project: ProjectFile = {
+        version: 1,
+        name: projectName,
+        createdAt: new Date().toISOString(),
+        modifiedAt: new Date().toISOString(),
+        shapes,
+        layers,
+        activeLayerId,
+        viewport,
+        settings: {
+          gridSize,
+          gridVisible,
+          snapEnabled,
+        },
+      };
+
+      await writeProjectFile(filePath, project);
+      setFilePath(filePath);
+      setModified(false);
+
+      // Extract filename for project name
+      const fileName = filePath.split(/[/\\]/).pop()?.replace('.o2d', '') || 'Untitled';
+      setProjectName(fileName);
+    } catch (err) {
+      await showError(`Failed to save file: ${err}`);
+    }
+  }, [currentFilePath, projectName, shapes, layers, activeLayerId, viewport, gridSize, gridVisible, snapEnabled, setFilePath, setModified, setProjectName]);
+
+  const handleSaveAs = useCallback(async () => {
+    const filePath = await showSaveDialog(projectName);
+    if (!filePath) return;
+
+    try {
+      const project: ProjectFile = {
+        version: 1,
+        name: projectName,
+        createdAt: new Date().toISOString(),
+        modifiedAt: new Date().toISOString(),
+        shapes,
+        layers,
+        activeLayerId,
+        viewport,
+        settings: {
+          gridSize,
+          gridVisible,
+          snapEnabled,
+        },
+      };
+
+      await writeProjectFile(filePath, project);
+      setFilePath(filePath);
+      setModified(false);
+
+      // Extract filename for project name
+      const fileName = filePath.split(/[/\\]/).pop()?.replace('.o2d', '') || 'Untitled';
+      setProjectName(fileName);
+    } catch (err) {
+      await showError(`Failed to save file: ${err}`);
+    }
+  }, [projectName, shapes, layers, activeLayerId, viewport, gridSize, gridVisible, snapEnabled, setFilePath, setModified, setProjectName]);
+
+  const handleExport = useCallback(async () => {
+    if (shapes.length === 0) {
+      await showInfo('Nothing to export. Draw some shapes first.');
+      return;
+    }
+
+    // For now, default to SVG export. Could show a dialog to choose format
+    const filePath = await showExportDialog('svg', projectName);
+    if (!filePath) return;
+
+    try {
+      const extension = filePath.split('.').pop()?.toLowerCase();
+      let content: string;
+
+      if (extension === 'dxf') {
+        content = exportToDXF(shapes);
+      } else if (extension === 'json') {
+        content = JSON.stringify({ shapes, layers }, null, 2);
+      } else {
+        // Default to SVG
+        content = exportToSVG(shapes);
+      }
+
+      await writeTextFile(filePath, content);
+      await showInfo(`Exported successfully to ${filePath}`);
+    } catch (err) {
+      await showError(`Failed to export: ${err}`);
+    }
+  }, [shapes, layers, projectName]);
+
+  const handleMenuOpen = (menu: string) => setOpenMenu(menu);
+  const handleMenuClose = () => setOpenMenu(null);
   const menuBarHovered = openMenu !== null;
 
   const fileMenu: MenuItem[] = [
-    { label: 'New', shortcut: 'Ctrl+N', onClick: () => console.log('New') },
-    { label: 'Open...', shortcut: 'Ctrl+O', onClick: () => console.log('Open') },
+    { label: 'New', shortcut: 'Ctrl+N', onClick: handleNew },
+    { label: 'Open...', shortcut: 'Ctrl+O', onClick: handleOpenFile },
     { separator: true },
-    { label: 'Save', shortcut: 'Ctrl+S', onClick: () => console.log('Save') },
-    { label: 'Save As...', shortcut: 'Ctrl+Shift+S', onClick: () => console.log('Save As') },
+    { label: 'Save', shortcut: 'Ctrl+S', onClick: handleSave },
+    { label: 'Save As...', shortcut: 'Ctrl+Shift+S', onClick: handleSaveAs },
     { separator: true },
-    { label: 'Export...', onClick: () => console.log('Export') },
+    { label: 'Export...', onClick: handleExport },
     { separator: true },
     { label: 'Print...', shortcut: 'Ctrl+P', onClick: () => setPrintDialogOpen(true) },
     { separator: true },
@@ -228,48 +501,48 @@ export function MenuBar() {
           label="File"
           items={fileMenu}
           isOpen={openMenu === 'file'}
-          onOpen={() => handleOpen('file')}
-          onClose={handleClose}
+          onOpen={() => handleMenuOpen('file')}
+          onClose={handleMenuClose}
           menuBarHovered={menuBarHovered}
         />
         <Menu
           label="Edit"
           items={editMenu}
           isOpen={openMenu === 'edit'}
-          onOpen={() => handleOpen('edit')}
-          onClose={handleClose}
+          onOpen={() => handleMenuOpen('edit')}
+          onClose={handleMenuClose}
           menuBarHovered={menuBarHovered}
         />
         <Menu
           label="View"
           items={viewMenu}
           isOpen={openMenu === 'view'}
-          onOpen={() => handleOpen('view')}
-          onClose={handleClose}
+          onOpen={() => handleMenuOpen('view')}
+          onClose={handleMenuClose}
           menuBarHovered={menuBarHovered}
         />
         <Menu
           label="Draw"
           items={drawMenu}
           isOpen={openMenu === 'draw'}
-          onOpen={() => handleOpen('draw')}
-          onClose={handleClose}
+          onOpen={() => handleMenuOpen('draw')}
+          onClose={handleMenuClose}
           menuBarHovered={menuBarHovered}
         />
         <Menu
           label="Modify"
           items={modifyMenu}
           isOpen={openMenu === 'modify'}
-          onOpen={() => handleOpen('modify')}
-          onClose={handleClose}
+          onOpen={() => handleMenuOpen('modify')}
+          onClose={handleMenuClose}
           menuBarHovered={menuBarHovered}
         />
         <Menu
           label="Help"
           items={helpMenu}
           isOpen={openMenu === 'help'}
-          onOpen={() => handleOpen('help')}
-          onClose={handleClose}
+          onOpen={() => handleMenuOpen('help')}
+          onClose={handleMenuClose}
           menuBarHovered={menuBarHovered}
         />
       </div>
@@ -285,7 +558,7 @@ export function MenuBar() {
         onDoubleClick={() => getCurrentWindow().toggleMaximize()}
       >
         <span className="text-cad-text-dim text-sm font-medium pointer-events-none">
-          Open 2D Studio
+          {isModified ? '* ' : ''}{projectName} - Open 2D Studio
         </span>
       </div>
 

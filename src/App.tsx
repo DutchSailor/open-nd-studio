@@ -9,12 +9,15 @@ import { CommandLine } from './components/CommandLine/CommandLine';
 import { ToolPalette } from './components/ToolPalette/ToolPalette';
 import { PrintDialog } from './components/PrintDialog/PrintDialog';
 import { AboutDialog } from './components/AboutDialog/AboutDialog';
+import { SnapSettingsDialog } from './components/SnapSettingsDialog/SnapSettingsDialog';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
+import { useGlobalKeyboard } from './hooks/useGlobalKeyboard';
 import { useAppStore } from './state/appStore';
 
 function App() {
   // Initialize keyboard shortcuts
   useKeyboardShortcuts();
+  useGlobalKeyboard();
 
   // Disable browser context menu in production
   useEffect(() => {
@@ -27,7 +30,7 @@ function App() {
     }
   }, []);
 
-  const { printDialogOpen, setPrintDialogOpen, aboutDialogOpen, setAboutDialogOpen } = useAppStore();
+  const { printDialogOpen, setPrintDialogOpen, aboutDialogOpen, setAboutDialogOpen, snapSettingsOpen, setSnapSettingsOpen } = useAppStore();
 
   return (
     <div className="flex flex-col h-full w-full bg-cad-bg text-cad-text no-select">
@@ -68,6 +71,12 @@ function App() {
       <AboutDialog
         isOpen={aboutDialogOpen}
         onClose={() => setAboutDialogOpen(false)}
+      />
+
+      {/* Snap Settings Dialog */}
+      <SnapSettingsDialog
+        isOpen={snapSettingsOpen}
+        onClose={() => setSnapSettingsOpen(false)}
       />
     </div>
   );

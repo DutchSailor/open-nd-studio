@@ -156,3 +156,16 @@ export type ToolType =
   | 'extend'
   | 'fillet'
   | 'offset';
+
+// Circle drawing modes (like AutoCAD)
+export type CircleMode =
+  | 'center-radius'    // Default: click center, then radius point
+  | 'center-diameter'  // Click center, then diameter point
+  | '2point'           // Two points define diameter endpoints
+  | '3point';          // Three points on circumference
+
+// Rectangle drawing modes (like AutoCAD)
+export type RectangleMode =
+  | 'corner'           // Default: click two opposite corners
+  | 'center'           // Click center, then corner
+  | '3point';          // Three points: corner, width direction, height

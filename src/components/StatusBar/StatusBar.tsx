@@ -9,6 +9,18 @@ export function StatusBar() {
     snapEnabled,
     selectedShapeIds,
     shapes,
+    // Tracking state
+    trackingEnabled,
+    polarTrackingEnabled,
+    orthoMode,
+    objectTrackingEnabled,
+    polarAngleIncrement,
+    // Tracking actions
+    toggleTracking,
+    togglePolarTracking,
+    toggleOrthoMode,
+    toggleObjectTracking,
+    toggleSnap,
   } = useAppStore();
 
   // Convert screen position to world position
@@ -37,12 +49,52 @@ export function StatusBar() {
         <span className="text-cad-text font-mono">{gridSize}</span>
       </div>
 
-      {/* Snap status */}
-      <div className="flex items-center gap-2">
-        <span>Snap:</span>
-        <span className={`font-mono ${snapEnabled ? 'text-green-400' : 'text-cad-text-dim'}`}>
-          {snapEnabled ? 'ON' : 'OFF'}
-        </span>
+      {/* Snap and Tracking toggles - AutoCAD style */}
+      <div className="flex items-center gap-1">
+        <button
+          onClick={toggleSnap}
+          className={`px-2 py-0.5 text-xs font-medium rounded transition-colors ${
+            snapEnabled
+              ? 'bg-cyan-600 text-white'
+              : 'bg-cad-bg text-cad-text-dim hover:bg-cad-hover'
+          }`}
+          title="Object Snap [F3]"
+        >
+          OSNAP
+        </button>
+        <button
+          onClick={togglePolarTracking}
+          className={`px-2 py-0.5 text-xs font-medium rounded transition-colors ${
+            polarTrackingEnabled && trackingEnabled
+              ? 'bg-blue-600 text-white'
+              : 'bg-cad-bg text-cad-text-dim hover:bg-cad-hover'
+          }`}
+          title={`Polar Tracking - ${polarAngleIncrement}° increments [F10]`}
+        >
+          POLAR
+        </button>
+        <button
+          onClick={toggleOrthoMode}
+          className={`px-2 py-0.5 text-xs font-medium rounded transition-colors ${
+            orthoMode && trackingEnabled
+              ? 'bg-green-600 text-white'
+              : 'bg-cad-bg text-cad-text-dim hover:bg-cad-hover'
+          }`}
+          title="Ortho Mode - 90° only [F8]"
+        >
+          ORTHO
+        </button>
+        <button
+          onClick={toggleObjectTracking}
+          className={`px-2 py-0.5 text-xs font-medium rounded transition-colors ${
+            objectTrackingEnabled && trackingEnabled
+              ? 'bg-orange-600 text-white'
+              : 'bg-cad-bg text-cad-text-dim hover:bg-cad-hover'
+          }`}
+          title="Object Snap Tracking - align to geometry [F11]"
+        >
+          OTRACK
+        </button>
       </div>
 
       {/* Active tool */}

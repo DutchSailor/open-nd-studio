@@ -23,6 +23,9 @@ export function Canvas() {
     currentStyle,
     selectionBox,
     commandPreviewShapes,
+    currentSnapPoint,
+    currentTrackingLines,
+    trackingPoint,
   } = useAppStore();
 
   // Initialize renderer
@@ -74,11 +77,14 @@ export function Canvas() {
       currentStyle,
       selectionBox,
       commandPreviewShapes,
+      currentSnapPoint,
+      currentTrackingLines,
+      trackingPoint,
     });
-  }, [shapes, selectedShapeIds, viewport, gridVisible, gridSize, drawingPreview, currentStyle, selectionBox, commandPreviewShapes]);
+  }, [shapes, selectedShapeIds, viewport, gridVisible, gridSize, drawingPreview, currentStyle, selectionBox, commandPreviewShapes, currentSnapPoint, currentTrackingLines, trackingPoint]);
 
   // Handle mouse events
-  const { handleMouseDown, handleMouseMove, handleMouseUp, handleWheel, handleClick, handleContextMenu } =
+  const { handleMouseDown, handleMouseMove, handleMouseUp, handleWheel, handleClick, handleContextMenu, isPanning } =
     useCanvasEvents(canvasRef);
 
   // Handle keyboard shortcuts for drawing
@@ -99,8 +105,12 @@ export function Canvas() {
     [setMousePosition, handleMouseMove]
   );
 
-  // Cursor based on active tool
+  // Cursor based on active tool and panning state
   const getCursor = () => {
+    // Show grabbing cursor when actively panning
+    if (isPanning) {
+      return 'cursor-grabbing';
+    }
     switch (activeTool) {
       case 'pan':
         return 'cursor-grab';

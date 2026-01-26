@@ -7,6 +7,7 @@ import type {
   ToolType,
   Point,
   SnapType,
+  SnapPoint,
   ShapeStyle,
 } from '../types/geometry';
 
@@ -14,6 +15,7 @@ import type {
 export type DrawingPreview =
   | { type: 'line'; start: Point; end: Point }
   | { type: 'rectangle'; start: Point; end: Point }
+  | { type: 'rotatedRectangle'; corners: [Point, Point, Point, Point] }
   | { type: 'circle'; center: Point; radius: number }
   | { type: 'polyline'; points: Point[]; currentPoint: Point }
   | null;
@@ -64,6 +66,8 @@ interface AppState {
 
   // Tools
   activeTool: ToolType;
+  circleMode: 'center-radius' | 'center-diameter' | '2point' | '3point';
+  rectangleMode: 'corner' | 'center' | '3point';
   currentStyle: ShapeStyle;
 
   // Grid & Snap
@@ -71,6 +75,23 @@ interface AppState {
   gridVisible: boolean;
   snapEnabled: boolean;
   activeSnaps: SnapType[];
+  snapTolerance: number;
+  currentSnapPoint: SnapPoint | null;
+  snapSettingsOpen: boolean;
+
+  // Tracking (Polar/Ortho/Object tracking like AutoCAD)
+  trackingEnabled: boolean;
+  polarTrackingEnabled: boolean;
+  orthoMode: boolean;
+  objectTrackingEnabled: boolean;
+  polarAngleIncrement: number; // degrees
+  currentTrackingLines: Array<{
+    origin: Point;
+    direction: Point;
+    angle: number;
+    type: 'polar' | 'parallel' | 'perpendicular' | 'extension';
+  }>;
+  trackingPoint: Point | null;
 
   // UI State
   canvasSize: { width: number; height: number };
@@ -103,6 +124,11 @@ interface AppState {
   printDialogOpen: boolean;
   aboutDialogOpen: boolean;
 
+  // File state
+  currentFilePath: string | null;
+  projectName: string;
+  isModified: boolean;
+
   // Actions - Shapes
   addShape: (shape: Shape) => void;
   updateShape: (id: string, updates: Partial<Shape>) => void;
@@ -130,6 +156,8 @@ interface AppState {
 
   // Actions - Tools
   setActiveTool: (tool: ToolType) => void;
+  setCircleMode: (mode: 'center-radius' | 'center-diameter' | '2point' | '3point') => void;
+  setRectangleMode: (mode: 'corner' | 'center' | '3point') => void;
   setCurrentStyle: (style: Partial<ShapeStyle>) => void;
 
   // Actions - Grid & Snap
@@ -137,6 +165,24 @@ interface AppState {
   toggleGrid: () => void;
   toggleSnap: () => void;
   setActiveSnaps: (snaps: SnapType[]) => void;
+  toggleSnapType: (snapType: SnapType) => void;
+  setSnapTolerance: (tolerance: number) => void;
+  setCurrentSnapPoint: (snapPoint: SnapPoint | null) => void;
+  setSnapSettingsOpen: (open: boolean) => void;
+
+  // Actions - Tracking
+  toggleTracking: () => void;
+  togglePolarTracking: () => void;
+  toggleOrthoMode: () => void;
+  toggleObjectTracking: () => void;
+  setPolarAngleIncrement: (angle: number) => void;
+  setCurrentTrackingLines: (lines: Array<{
+    origin: Point;
+    direction: Point;
+    angle: number;
+    type: 'polar' | 'parallel' | 'perpendicular' | 'extension';
+  }>) => void;
+  setTrackingPoint: (point: Point | null) => void;
 
   // Actions - UI
   setCanvasSize: (size: { width: number; height: number }) => void;
@@ -173,6 +219,19 @@ interface AppState {
   // Actions - Dialogs
   setPrintDialogOpen: (open: boolean) => void;
   setAboutDialogOpen: (open: boolean) => void;
+
+  // Actions - File
+  newProject: () => void;
+  loadProject: (data: {
+    shapes: Shape[];
+    layers: Layer[];
+    activeLayerId: string;
+    viewport?: { zoom: number; offsetX: number; offsetY: number };
+    settings?: { gridSize: number; gridVisible: boolean; snapEnabled: boolean };
+  }, filePath?: string, projectName?: string) => void;
+  setFilePath: (path: string | null) => void;
+  setProjectName: (name: string) => void;
+  setModified: (modified: boolean) => void;
 }
 
 // Deep clone helper for shapes
@@ -189,11 +248,23 @@ export const useAppStore = create<AppState>()(
     activeLayerId: defaultLayer.id,
     viewport: { offsetX: 0, offsetY: 0, zoom: 1 },
     activeTool: 'select',
+    circleMode: 'center-radius',
+    rectangleMode: 'corner',
     currentStyle: defaultStyle,
     gridSize: 10,
     gridVisible: true,
     snapEnabled: true,
     activeSnaps: ['grid', 'endpoint', 'midpoint', 'center', 'intersection'],
+    snapTolerance: 10,
+    currentSnapPoint: null,
+    snapSettingsOpen: false,
+    trackingEnabled: true,
+    polarTrackingEnabled: true,
+    orthoMode: false,
+    objectTrackingEnabled: true,
+    polarAngleIncrement: 45,
+    currentTrackingLines: [],
+    trackingPoint: null,
     canvasSize: { width: 800, height: 600 },
     mousePosition: { x: 0, y: 0 },
     isDrawing: false,
@@ -213,6 +284,9 @@ export const useAppStore = create<AppState>()(
     maxHistorySize: 50,
     printDialogOpen: false,
     aboutDialogOpen: false,
+    currentFilePath: null,
+    projectName: 'Untitled',
+    isModified: false,
 
     // Shape actions (with history tracking)
     addShape: (shape) =>
@@ -230,6 +304,7 @@ export const useAppStore = create<AppState>()(
 
         // Make the change
         state.shapes.push(shape);
+        state.isModified = true;
       }),
 
     updateShape: (id, updates) =>
@@ -249,6 +324,7 @@ export const useAppStore = create<AppState>()(
 
           // Make the change
           state.shapes[index] = { ...state.shapes[index], ...updates } as Shape;
+          state.isModified = true;
         }
       }),
 
@@ -268,6 +344,7 @@ export const useAppStore = create<AppState>()(
         // Make the change
         state.shapes = state.shapes.filter((s) => s.id !== id);
         state.selectedShapeIds = state.selectedShapeIds.filter((sid) => sid !== id);
+        state.isModified = true;
       }),
 
     deleteSelectedShapes: () =>
@@ -290,6 +367,7 @@ export const useAppStore = create<AppState>()(
           (s) => !state.selectedShapeIds.includes(s.id)
         );
         state.selectedShapeIds = [];
+        state.isModified = true;
       }),
 
     // Selection actions
@@ -405,6 +483,24 @@ export const useAppStore = create<AppState>()(
         state.drawingPoints = [];
       }),
 
+    setCircleMode: (mode) =>
+      set((state) => {
+        state.circleMode = mode;
+        // Reset drawing state when changing mode
+        state.isDrawing = false;
+        state.drawingPreview = null;
+        state.drawingPoints = [];
+      }),
+
+    setRectangleMode: (mode) =>
+      set((state) => {
+        state.rectangleMode = mode;
+        // Reset drawing state when changing mode
+        state.isDrawing = false;
+        state.drawingPreview = null;
+        state.drawingPoints = [];
+      }),
+
     setCurrentStyle: (style) =>
       set((state) => {
         state.currentStyle = { ...state.currentStyle, ...style };
@@ -429,6 +525,71 @@ export const useAppStore = create<AppState>()(
     setActiveSnaps: (snaps) =>
       set((state) => {
         state.activeSnaps = snaps;
+      }),
+
+    toggleSnapType: (snapType) =>
+      set((state) => {
+        const index = state.activeSnaps.indexOf(snapType);
+        if (index >= 0) {
+          state.activeSnaps.splice(index, 1);
+        } else {
+          state.activeSnaps.push(snapType);
+        }
+      }),
+
+    setSnapTolerance: (tolerance) =>
+      set((state) => {
+        state.snapTolerance = Math.max(1, tolerance);
+      }),
+
+    setCurrentSnapPoint: (snapPoint) =>
+      set((state) => {
+        state.currentSnapPoint = snapPoint;
+      }),
+
+    setSnapSettingsOpen: (open) =>
+      set((state) => {
+        state.snapSettingsOpen = open;
+      }),
+
+    // Tracking actions
+    toggleTracking: () =>
+      set((state) => {
+        state.trackingEnabled = !state.trackingEnabled;
+      }),
+
+    togglePolarTracking: () =>
+      set((state) => {
+        state.polarTrackingEnabled = !state.polarTrackingEnabled;
+      }),
+
+    toggleOrthoMode: () =>
+      set((state) => {
+        state.orthoMode = !state.orthoMode;
+        // Ortho mode overrides polar tracking
+        if (state.orthoMode) {
+          state.polarTrackingEnabled = false;
+        }
+      }),
+
+    toggleObjectTracking: () =>
+      set((state) => {
+        state.objectTrackingEnabled = !state.objectTrackingEnabled;
+      }),
+
+    setPolarAngleIncrement: (angle) =>
+      set((state) => {
+        state.polarAngleIncrement = angle;
+      }),
+
+    setCurrentTrackingLines: (lines) =>
+      set((state) => {
+        state.currentTrackingLines = lines;
+      }),
+
+    setTrackingPoint: (point) =>
+      set((state) => {
+        state.trackingPoint = point;
       }),
 
     // UI actions
@@ -626,6 +787,71 @@ export const useAppStore = create<AppState>()(
     setAboutDialogOpen: (open) =>
       set((state) => {
         state.aboutDialogOpen = open;
+      }),
+
+    // File actions
+    newProject: () =>
+      set((state) => {
+        state.shapes = [];
+        state.selectedShapeIds = [];
+        state.layers = [
+          {
+            id: 'default-layer',
+            name: 'Layer 0',
+            visible: true,
+            locked: false,
+            color: '#ffffff',
+          },
+        ];
+        state.activeLayerId = 'default-layer';
+        state.viewport = { zoom: 1, offsetX: 0, offsetY: 0 };
+        state.historyStack = [];
+        state.historyIndex = -1;
+        state.currentFilePath = null;
+        state.projectName = 'Untitled';
+        state.isModified = false;
+        state.drawingPoints = [];
+        state.drawingPreview = null;
+        state.commandPreviewShapes = [];
+      }),
+
+    loadProject: (data, filePath, projectName) =>
+      set((state) => {
+        state.shapes = data.shapes;
+        state.layers = data.layers;
+        state.activeLayerId = data.activeLayerId;
+        state.selectedShapeIds = [];
+        if (data.viewport) {
+          state.viewport = data.viewport;
+        }
+        if (data.settings) {
+          state.gridSize = data.settings.gridSize;
+          state.gridVisible = data.settings.gridVisible;
+          state.snapEnabled = data.settings.snapEnabled;
+        }
+        state.historyStack = [];
+        state.historyIndex = -1;
+        state.currentFilePath = filePath || null;
+        state.projectName = projectName || 'Untitled';
+        state.isModified = false;
+        state.drawingPoints = [];
+        state.drawingPreview = null;
+        state.commandPreviewShapes = [];
+      }),
+
+    setFilePath: (path) =>
+      set((state) => {
+        state.currentFilePath = path;
+      }),
+
+    setProjectName: (name) =>
+      set((state) => {
+        state.projectName = name;
+      }),
+
+    setModified: (modified) =>
+      set((state) => {
+        state.isModified = modified;
       }),
   }))
 );

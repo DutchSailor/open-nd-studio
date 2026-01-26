@@ -3,13 +3,13 @@ import {
   ZoomOut,
   Maximize,
   Grid3X3,
-  Magnet,
   Save,
   FolderOpen,
   Undo,
   Redo,
   Trash2,
   Printer,
+  Settings,
 } from 'lucide-react';
 import { useAppStore } from '../../state/appStore';
 
@@ -44,8 +44,6 @@ export function Toolbar() {
   const {
     gridVisible,
     toggleGrid,
-    snapEnabled,
-    toggleSnap,
     zoomIn,
     zoomOut,
     zoomToFit,
@@ -53,8 +51,14 @@ export function Toolbar() {
     selectedShapeIds,
     undo,
     redo,
+    historyStack,
+    historyIndex,
     setPrintDialogOpen,
+    setSnapSettingsOpen,
   } = useAppStore();
+
+  const canUndo = historyStack.length > 0 && historyIndex > 0;
+  const canRedo = historyStack.length > 0 && historyIndex < historyStack.length - 1;
 
   return (
     <div className="h-12 bg-cad-surface border-b border-cad-border flex items-center px-2 gap-1">
@@ -82,11 +86,13 @@ export function Toolbar() {
         icon={<Undo size={18} />}
         label="Undo (Ctrl+Z)"
         onClick={undo}
+        disabled={!canUndo}
       />
       <ToolButton
         icon={<Redo size={18} />}
         label="Redo (Ctrl+Y)"
         onClick={redo}
+        disabled={!canRedo}
       />
 
       <Separator />
@@ -120,7 +126,7 @@ export function Toolbar() {
 
       <Separator />
 
-      {/* Grid & Snap */}
+      {/* Grid & Snap Settings */}
       <ToolButton
         icon={<Grid3X3 size={18} />}
         label="Toggle Grid (G)"
@@ -128,10 +134,9 @@ export function Toolbar() {
         onClick={toggleGrid}
       />
       <ToolButton
-        icon={<Magnet size={18} />}
-        label="Toggle Snap (S)"
-        active={snapEnabled}
-        onClick={toggleSnap}
+        icon={<Settings size={18} />}
+        label="Object Snap Settings"
+        onClick={() => setSnapSettingsOpen(true)}
       />
 
     </div>

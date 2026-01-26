@@ -1,5 +1,8 @@
-import type { Shape, Viewport, LineShape, RectangleShape, CircleShape } from '../../types/geometry';
+import type { Shape, Viewport, LineShape, RectangleShape, CircleShape, SnapPoint, SnapType } from '../../types/geometry';
 import type { DrawingPreview, SelectionBox } from '../../state/appStore';
+import type { TrackingLine } from '../../core/geometry/Tracking';
+import { getTrackingLineColor } from '../../core/geometry/Tracking';
+import type { IPoint } from '../../core/geometry/Point';
 
 interface RenderOptions {
   shapes: Shape[];
@@ -11,6 +14,9 @@ interface RenderOptions {
   currentStyle?: { strokeColor: string; strokeWidth: number };
   selectionBox?: SelectionBox | null;
   commandPreviewShapes?: Shape[];
+  currentSnapPoint?: SnapPoint | null;
+  currentTrackingLines?: TrackingLine[];
+  trackingPoint?: IPoint | null;
 }
 
 export class CADRenderer {
@@ -35,7 +41,7 @@ export class CADRenderer {
   }
 
   render(options: RenderOptions): void {
-    const { shapes, selectedShapeIds, viewport, gridVisible, gridSize, drawingPreview, currentStyle, selectionBox, commandPreviewShapes } = options;
+    const { shapes, selectedShapeIds, viewport, gridVisible, gridSize, drawingPreview, currentStyle, selectionBox, commandPreviewShapes, currentSnapPoint, currentTrackingLines, trackingPoint } = options;
     const ctx = this.ctx;
 
     // Clear canvas
@@ -70,11 +76,31 @@ export class CADRenderer {
       this.drawPreview(drawingPreview, currentStyle);
     }
 
+    // Draw tracking lines
+    if (currentTrackingLines && currentTrackingLines.length > 0) {
+      this.drawTrackingLines(currentTrackingLines, trackingPoint, viewport);
+    }
+
+    // Draw snap point indicator (skip grid snaps - they're not useful to show)
+    if (currentSnapPoint && currentSnapPoint.type !== 'grid') {
+      this.drawSnapIndicator(currentSnapPoint, viewport);
+    }
+
     ctx.restore();
 
     // Draw selection box (in screen coordinates, after viewport transform is restored)
     if (selectionBox) {
       this.drawSelectionBox(selectionBox);
+    }
+
+    // Draw snap point label (in screen coordinates, skip grid snaps)
+    if (currentSnapPoint && currentSnapPoint.type !== 'grid') {
+      this.drawSnapLabel(currentSnapPoint, viewport);
+    }
+
+    // Draw tracking label (in screen coordinates)
+    if (currentTrackingLines && currentTrackingLines.length > 0 && trackingPoint) {
+      this.drawTrackingLabel(currentTrackingLines, trackingPoint, viewport);
     }
   }
 
@@ -249,6 +275,19 @@ export class CADRenderer {
         const height = Math.abs(preview.end.y - preview.start.y);
         ctx.beginPath();
         ctx.rect(x, y, width, height);
+        ctx.stroke();
+        break;
+      }
+
+      case 'rotatedRectangle': {
+        // Draw rotated rectangle using 4 corner points
+        const corners = preview.corners;
+        ctx.beginPath();
+        ctx.moveTo(corners[0].x, corners[0].y);
+        ctx.lineTo(corners[1].x, corners[1].y);
+        ctx.lineTo(corners[2].x, corners[2].y);
+        ctx.lineTo(corners[3].x, corners[3].y);
+        ctx.closePath();
         ctx.stroke();
         break;
       }
@@ -526,6 +565,307 @@ export class CADRenderer {
     }
 
     ctx.setLineDash([]);
+  }
+
+  private drawSnapIndicator(snapPoint: SnapPoint, viewport: Viewport): void {
+    const ctx = this.ctx;
+    const { point, type } = snapPoint;
+    const size = 8 / viewport.zoom; // Size in world coordinates
+
+    ctx.save();
+    ctx.strokeStyle = this.getSnapColor(type);
+    ctx.fillStyle = this.getSnapColor(type);
+    ctx.lineWidth = 1.5 / viewport.zoom;
+
+    switch (type) {
+      case 'endpoint':
+        // Square marker
+        ctx.strokeRect(point.x - size / 2, point.y - size / 2, size, size);
+        break;
+
+      case 'midpoint':
+        // Triangle marker
+        ctx.beginPath();
+        ctx.moveTo(point.x, point.y - size / 2);
+        ctx.lineTo(point.x - size / 2, point.y + size / 2);
+        ctx.lineTo(point.x + size / 2, point.y + size / 2);
+        ctx.closePath();
+        ctx.stroke();
+        break;
+
+      case 'center':
+        // Circle marker
+        ctx.beginPath();
+        ctx.arc(point.x, point.y, size / 2, 0, Math.PI * 2);
+        ctx.stroke();
+        break;
+
+      case 'intersection':
+        // X marker
+        ctx.beginPath();
+        ctx.moveTo(point.x - size / 2, point.y - size / 2);
+        ctx.lineTo(point.x + size / 2, point.y + size / 2);
+        ctx.moveTo(point.x + size / 2, point.y - size / 2);
+        ctx.lineTo(point.x - size / 2, point.y + size / 2);
+        ctx.stroke();
+        break;
+
+      case 'perpendicular':
+        // Perpendicular symbol (L rotated)
+        ctx.beginPath();
+        ctx.moveTo(point.x - size / 2, point.y);
+        ctx.lineTo(point.x, point.y);
+        ctx.lineTo(point.x, point.y - size / 2);
+        ctx.stroke();
+        // Small square in corner
+        const cornerSize = size / 4;
+        ctx.strokeRect(point.x - cornerSize, point.y - cornerSize, cornerSize, cornerSize);
+        break;
+
+      case 'tangent':
+        // Circle with line
+        ctx.beginPath();
+        ctx.arc(point.x, point.y, size / 3, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(point.x - size / 2, point.y + size / 3);
+        ctx.lineTo(point.x + size / 2, point.y + size / 3);
+        ctx.stroke();
+        break;
+
+      case 'nearest':
+        // Diamond marker
+        ctx.beginPath();
+        ctx.moveTo(point.x, point.y - size / 2);
+        ctx.lineTo(point.x + size / 2, point.y);
+        ctx.lineTo(point.x, point.y + size / 2);
+        ctx.lineTo(point.x - size / 2, point.y);
+        ctx.closePath();
+        ctx.stroke();
+        break;
+
+      case 'grid':
+        // Plus marker
+        ctx.beginPath();
+        ctx.moveTo(point.x - size / 2, point.y);
+        ctx.lineTo(point.x + size / 2, point.y);
+        ctx.moveTo(point.x, point.y - size / 2);
+        ctx.lineTo(point.x, point.y + size / 2);
+        ctx.stroke();
+        break;
+
+      default:
+        // Small filled circle as fallback
+        ctx.beginPath();
+        ctx.arc(point.x, point.y, size / 4, 0, Math.PI * 2);
+        ctx.fill();
+        break;
+    }
+
+    ctx.restore();
+  }
+
+  private drawSnapLabel(snapPoint: SnapPoint, viewport: Viewport): void {
+    const ctx = this.ctx;
+    const { point, type } = snapPoint;
+
+    // Convert world point to screen coordinates
+    const screenX = point.x * viewport.zoom + viewport.offsetX;
+    const screenY = point.y * viewport.zoom + viewport.offsetY;
+
+    ctx.save();
+    ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+
+    // Draw label background
+    const label = this.getSnapLabel(type);
+    ctx.font = '11px Arial, sans-serif';
+    const metrics = ctx.measureText(label);
+    const padding = 4;
+    const labelX = screenX + 12;
+    const labelY = screenY - 12;
+
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+    ctx.fillRect(
+      labelX - padding,
+      labelY - 11,
+      metrics.width + padding * 2,
+      14
+    );
+
+    // Draw label text
+    ctx.fillStyle = this.getSnapColor(type);
+    ctx.fillText(label, labelX, labelY);
+
+    ctx.restore();
+  }
+
+  private getSnapColor(type: SnapType): string {
+    switch (type) {
+      case 'endpoint':
+        return '#00ff00'; // Green
+      case 'midpoint':
+        return '#00ffff'; // Cyan
+      case 'center':
+        return '#ff00ff'; // Magenta
+      case 'intersection':
+        return '#ffff00'; // Yellow
+      case 'perpendicular':
+        return '#ff8800'; // Orange
+      case 'tangent':
+        return '#88ff00'; // Lime
+      case 'nearest':
+        return '#ff88ff'; // Pink
+      case 'grid':
+        return '#8888ff'; // Light blue
+      default:
+        return '#ffffff'; // White
+    }
+  }
+
+  private getSnapLabel(type: SnapType): string {
+    switch (type) {
+      case 'endpoint':
+        return 'Endpoint';
+      case 'midpoint':
+        return 'Midpoint';
+      case 'center':
+        return 'Center';
+      case 'intersection':
+        return 'Intersection';
+      case 'perpendicular':
+        return 'Perpendicular';
+      case 'tangent':
+        return 'Tangent';
+      case 'nearest':
+        return 'Nearest';
+      case 'grid':
+        return 'Grid';
+      default:
+        return type;
+    }
+  }
+
+  private drawTrackingLines(
+    trackingLines: TrackingLine[],
+    trackingPoint: IPoint | null | undefined,
+    viewport: Viewport
+  ): void {
+    const ctx = this.ctx;
+
+    // Calculate visible area in world coordinates
+    const left = -viewport.offsetX / viewport.zoom;
+    const top = -viewport.offsetY / viewport.zoom;
+    const right = left + this.width / viewport.zoom;
+    const bottom = top + this.height / viewport.zoom;
+    const maxDistance = Math.max(this.width, this.height) / viewport.zoom * 2;
+
+    ctx.save();
+
+    for (const line of trackingLines) {
+      const color = getTrackingLineColor(line.type);
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1 / viewport.zoom;
+      ctx.setLineDash([6 / viewport.zoom, 4 / viewport.zoom]);
+
+      // Draw the tracking line extending from origin
+      ctx.beginPath();
+      ctx.moveTo(line.origin.x, line.origin.y);
+
+      // Extend line in the direction
+      const endX = line.origin.x + line.direction.x * maxDistance;
+      const endY = line.origin.y + line.direction.y * maxDistance;
+      ctx.lineTo(endX, endY);
+      ctx.stroke();
+
+      // Draw small circle at origin point
+      ctx.setLineDash([]);
+      ctx.beginPath();
+      ctx.arc(line.origin.x, line.origin.y, 3 / viewport.zoom, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    // Draw tracking point marker if we have one
+    if (trackingPoint) {
+      ctx.setLineDash([]);
+      ctx.strokeStyle = '#00ffff';
+      ctx.fillStyle = '#00ffff';
+      ctx.lineWidth = 2 / viewport.zoom;
+
+      // Draw crosshair at tracking point
+      const size = 8 / viewport.zoom;
+      ctx.beginPath();
+      ctx.moveTo(trackingPoint.x - size, trackingPoint.y);
+      ctx.lineTo(trackingPoint.x + size, trackingPoint.y);
+      ctx.moveTo(trackingPoint.x, trackingPoint.y - size);
+      ctx.lineTo(trackingPoint.x, trackingPoint.y + size);
+      ctx.stroke();
+
+      // Draw small circle
+      ctx.beginPath();
+      ctx.arc(trackingPoint.x, trackingPoint.y, 4 / viewport.zoom, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    ctx.setLineDash([]);
+    ctx.restore();
+  }
+
+  private drawTrackingLabel(
+    trackingLines: TrackingLine[],
+    trackingPoint: IPoint,
+    viewport: Viewport
+  ): void {
+    if (trackingLines.length === 0) return;
+
+    const ctx = this.ctx;
+    const line = trackingLines[0];
+
+    // Convert world point to screen coordinates
+    const screenX = trackingPoint.x * viewport.zoom + viewport.offsetX;
+    const screenY = trackingPoint.y * viewport.zoom + viewport.offsetY;
+
+    ctx.save();
+    ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+
+    // Build label text
+    let label = '';
+    const angleDeg = ((line.angle * 180) / Math.PI + 360) % 360;
+
+    switch (line.type) {
+      case 'polar':
+        label = `Polar: ${angleDeg.toFixed(0)}°`;
+        break;
+      case 'parallel':
+        label = 'Parallel';
+        break;
+      case 'perpendicular':
+        label = 'Perpendicular';
+        break;
+      case 'extension':
+        label = 'Extension';
+        break;
+    }
+
+    // Draw label background
+    ctx.font = '11px Arial, sans-serif';
+    const metrics = ctx.measureText(label);
+    const padding = 4;
+    const labelX = screenX + 15;
+    const labelY = screenY + 15;
+
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+    ctx.fillRect(
+      labelX - padding,
+      labelY - 11,
+      metrics.width + padding * 2,
+      14
+    );
+
+    // Draw label text
+    ctx.fillStyle = getTrackingLineColor(line.type);
+    ctx.fillText(label, labelX, labelY);
+
+    ctx.restore();
   }
 
   dispose(): void {
