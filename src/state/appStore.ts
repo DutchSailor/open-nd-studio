@@ -9,6 +9,14 @@ import type {
   SnapType,
   SnapPoint,
   ShapeStyle,
+  Draft,
+  DraftBoundary,
+  Sheet,
+  SheetViewport,
+  TitleBlock,
+  EditorMode,
+  PaperSize,
+  PaperOrientation,
 } from '../types/geometry';
 
 // Preview shape while drawing (before mouse up)
@@ -28,6 +36,36 @@ export interface SelectionBox {
   mode: SelectionBoxMode;  // 'window' (left-to-right) or 'crossing' (right-to-left)
 }
 
+// Boundary handle types for interactive editing (like Revit crop region handles)
+export type BoundaryHandleType =
+  | 'top-left' | 'top' | 'top-right'
+  | 'left' | 'center' | 'right'
+  | 'bottom-left' | 'bottom' | 'bottom-right';
+
+// Boundary editing state
+export interface BoundaryEditState {
+  isEditing: boolean;              // Whether boundary editing mode is active
+  isSelected: boolean;             // Whether the boundary is selected (shows handles)
+  activeHandle: BoundaryHandleType | null;  // Which handle is being dragged
+  dragStart: Point | null;         // Mouse position when drag started (world coords)
+  originalBoundary: DraftBoundary | null;   // Boundary state before drag started
+}
+
+// Viewport handle types for interactive editing (like Revit viewport handles)
+export type ViewportHandleType =
+  | 'top-left' | 'top' | 'top-right'
+  | 'left' | 'center' | 'right'
+  | 'bottom-left' | 'bottom' | 'bottom-right';
+
+// Viewport editing state (for sheet viewports)
+export interface ViewportEditState {
+  selectedViewportId: string | null;   // Currently selected viewport on active sheet
+  activeHandle: ViewportHandleType | null;  // Which handle is being dragged
+  isDragging: boolean;                 // Whether viewport is being moved/resized
+  dragStart: Point | null;             // Mouse position when drag started (sheet mm coords)
+  originalViewport: SheetViewport | null;   // Viewport state before drag started
+}
+
 // Generate unique IDs
 let idCounter = 0;
 export const generateId = (): string => {
@@ -41,10 +79,29 @@ const defaultStyle: ShapeStyle = {
   lineStyle: 'solid',
 };
 
+// Default draft boundary (in draft units - typically mm or a unitless coordinate system)
+const DEFAULT_DRAFT_BOUNDARY: DraftBoundary = {
+  x: -500,
+  y: -500,
+  width: 1000,
+  height: 1000,
+};
+
+// Default draft
+const defaultDraftId = 'draft-1';
+const defaultDraft: Draft = {
+  id: defaultDraftId,
+  name: 'Draft 1',
+  boundary: { ...DEFAULT_DRAFT_BOUNDARY },
+  createdAt: new Date().toISOString(),
+  modifiedAt: new Date().toISOString(),
+};
+
 // Default layer
 const defaultLayer: Layer = {
   id: 'layer-0',
   name: 'Layer 0',
+  draftId: defaultDraftId,
   visible: true,
   locked: false,
   color: '#ffffff',
@@ -52,7 +109,55 @@ const defaultLayer: Layer = {
   lineWidth: 1,
 };
 
+// Default title block fields - Revit-like comprehensive layout
+const createDefaultTitleBlock = (): TitleBlock => ({
+  visible: true,
+  x: 10,
+  y: 10,
+  width: 180,
+  height: 60,
+  fields: [
+    // Row 1: Project info
+    { id: 'project', label: 'Project', value: '', x: 5, y: 5, width: 85, height: 12, fontSize: 11, fontFamily: 'Arial', align: 'left' },
+    { id: 'client', label: 'Client', value: '', x: 95, y: 5, width: 80, height: 12, fontSize: 10, fontFamily: 'Arial', align: 'left' },
+    // Row 2: Drawing title
+    { id: 'title', label: 'Drawing Title', value: '', x: 5, y: 20, width: 120, height: 12, fontSize: 12, fontFamily: 'Arial', align: 'left' },
+    { id: 'number', label: 'Drawing No.', value: '', x: 130, y: 20, width: 45, height: 12, fontSize: 10, fontFamily: 'Arial', align: 'left' },
+    // Row 3: Details
+    { id: 'scale', label: 'Scale', value: '1:100', x: 5, y: 35, width: 30, height: 10, fontSize: 10, fontFamily: 'Arial', align: 'left' },
+    { id: 'date', label: 'Date', value: '', x: 40, y: 35, width: 35, height: 10, fontSize: 10, fontFamily: 'Arial', align: 'left' },
+    { id: 'drawn', label: 'Drawn', value: '', x: 80, y: 35, width: 30, height: 10, fontSize: 10, fontFamily: 'Arial', align: 'left' },
+    { id: 'checked', label: 'Checked', value: '', x: 115, y: 35, width: 30, height: 10, fontSize: 10, fontFamily: 'Arial', align: 'left' },
+    { id: 'approved', label: 'Approved', value: '', x: 150, y: 35, width: 25, height: 10, fontSize: 10, fontFamily: 'Arial', align: 'left' },
+    // Row 4: Sheet info and revision
+    { id: 'sheet', label: 'Sheet', value: '1 of 1', x: 5, y: 48, width: 40, height: 10, fontSize: 10, fontFamily: 'Arial', align: 'left' },
+    { id: 'revision', label: 'Revision', value: '', x: 50, y: 48, width: 30, height: 10, fontSize: 10, fontFamily: 'Arial', align: 'left' },
+    { id: 'status', label: 'Status', value: 'DRAFT', x: 130, y: 48, width: 45, height: 10, fontSize: 10, fontFamily: 'Arial', align: 'left' },
+  ],
+});
+
+// Paper size dimensions in mm (width x height for portrait)
+export const PAPER_SIZES: Record<PaperSize, { width: number; height: number }> = {
+  'A4': { width: 210, height: 297 },
+  'A3': { width: 297, height: 420 },
+  'A2': { width: 420, height: 594 },
+  'A1': { width: 594, height: 841 },
+  'A0': { width: 841, height: 1189 },
+  'Letter': { width: 216, height: 279 },
+  'Legal': { width: 216, height: 356 },
+  'Tabloid': { width: 279, height: 432 },
+  'Custom': { width: 210, height: 297 },
+};
+
 interface AppState {
+  // Drafts & Sheets (Model Space + Paper Space)
+  drafts: Draft[];
+  sheets: Sheet[];
+  editorMode: EditorMode;
+  activeDraftId: string;
+  activeSheetId: string | null;
+  draftViewports: Record<string, Viewport>;  // Viewport state per draft
+
   // Shapes
   shapes: Shape[];
   selectedShapeIds: string[];
@@ -61,7 +166,7 @@ interface AppState {
   layers: Layer[];
   activeLayerId: string;
 
-  // Viewport
+  // Viewport (current viewport - depends on editorMode and activeDrawingId/activeSheetId)
   viewport: Viewport;
 
   // Tools
@@ -105,6 +210,12 @@ interface AppState {
   // Selection box state
   selectionBox: SelectionBox | null;
 
+  // Boundary editing state (Revit-like crop region editing)
+  boundaryEditState: BoundaryEditState;
+
+  // Viewport editing state (for sheet viewports - Revit-like viewport manipulation)
+  viewportEditState: ViewportEditState;
+
   // Command line
   commandHistory: string[];
   currentCommand: string;
@@ -140,6 +251,48 @@ interface AppState {
   selectShapes: (ids: string[]) => void;
   deselectAll: () => void;
   selectAll: () => void;
+
+  // Actions - Drafts
+  addDraft: (name?: string) => void;
+  deleteDraft: (id: string) => void;
+  renameDraft: (id: string, name: string) => void;
+  updateDraftBoundary: (id: string, boundary: Partial<DraftBoundary>) => void;
+  fitBoundaryToContent: (id: string, padding?: number) => void;
+  switchToDraft: (id: string) => void;
+
+  // Actions - Boundary Editing (Revit-like crop region manipulation)
+  selectBoundary: () => void;
+  deselectBoundary: () => void;
+  startBoundaryDrag: (handle: BoundaryHandleType, worldPos: Point) => void;
+  updateBoundaryDrag: (worldPos: Point) => void;
+  endBoundaryDrag: () => void;
+  cancelBoundaryDrag: () => void;
+
+  // Actions - Sheets
+  addSheet: (name?: string, paperSize?: PaperSize, orientation?: PaperOrientation) => void;
+  deleteSheet: (id: string) => void;
+  renameSheet: (id: string, name: string) => void;
+  updateSheet: (id: string, updates: Partial<Sheet>) => void;
+  switchToSheet: (id: string) => void;
+  switchToDraftMode: () => void;
+
+  // Actions - Sheet Viewports
+  addSheetViewport: (sheetId: string, draftId: string, bounds: { x: number; y: number; width: number; height: number }) => void;
+  updateSheetViewport: (sheetId: string, viewportId: string, updates: Partial<SheetViewport>) => void;
+  deleteSheetViewport: (sheetId: string, viewportId: string) => void;
+
+  // Actions - Viewport Editing (Revit-like viewport manipulation on sheets)
+  selectViewport: (viewportId: string | null) => void;
+  startViewportDrag: (handle: ViewportHandleType, sheetPos: Point) => void;
+  updateViewportDrag: (sheetPos: Point) => void;
+  endViewportDrag: () => void;
+  cancelViewportDrag: () => void;
+  centerViewportOnDraft: (viewportId: string) => void;  // Center viewport view on draft content
+  fitViewportToDraft: (viewportId: string) => void;     // Fit viewport to show entire draft boundary
+
+  // Actions - Title Block
+  updateTitleBlockField: (sheetId: string, fieldId: string, value: string) => void;
+  setTitleBlockVisible: (sheetId: string, visible: boolean) => void;
 
   // Actions - Layers
   addLayer: (name?: string) => void;
@@ -228,6 +381,12 @@ interface AppState {
     activeLayerId: string;
     viewport?: { zoom: number; offsetX: number; offsetY: number };
     settings?: { gridSize: number; gridVisible: boolean; snapEnabled: boolean };
+    // V2 fields
+    drafts?: Draft[];
+    sheets?: Sheet[];
+    activeDraftId?: string;
+    activeSheetId?: string | null;
+    draftViewports?: Record<string, Viewport>;
   }, filePath?: string, projectName?: string) => void;
   setFilePath: (path: string | null) => void;
   setProjectName: (name: string) => void;
@@ -239,9 +398,84 @@ const cloneShapes = (shapes: Shape[]): Shape[] => {
   return JSON.parse(JSON.stringify(shapes));
 };
 
+// Get bounding box of a shape
+const getShapeBounds = (shape: Shape): { minX: number; minY: number; maxX: number; maxY: number } | null => {
+  switch (shape.type) {
+    case 'line':
+      return {
+        minX: Math.min(shape.start.x, shape.end.x),
+        minY: Math.min(shape.start.y, shape.end.y),
+        maxX: Math.max(shape.start.x, shape.end.x),
+        maxY: Math.max(shape.start.y, shape.end.y),
+      };
+    case 'rectangle':
+      return {
+        minX: shape.topLeft.x,
+        minY: shape.topLeft.y,
+        maxX: shape.topLeft.x + shape.width,
+        maxY: shape.topLeft.y + shape.height,
+      };
+    case 'circle':
+      return {
+        minX: shape.center.x - shape.radius,
+        minY: shape.center.y - shape.radius,
+        maxX: shape.center.x + shape.radius,
+        maxY: shape.center.y + shape.radius,
+      };
+    case 'ellipse':
+      return {
+        minX: shape.center.x - shape.radiusX,
+        minY: shape.center.y - shape.radiusY,
+        maxX: shape.center.x + shape.radiusX,
+        maxY: shape.center.y + shape.radiusY,
+      };
+    case 'arc':
+      return {
+        minX: shape.center.x - shape.radius,
+        minY: shape.center.y - shape.radius,
+        maxX: shape.center.x + shape.radius,
+        maxY: shape.center.y + shape.radius,
+      };
+    case 'polyline':
+      if (shape.points.length === 0) return null;
+      const xs = shape.points.map(p => p.x);
+      const ys = shape.points.map(p => p.y);
+      return {
+        minX: Math.min(...xs),
+        minY: Math.min(...ys),
+        maxX: Math.max(...xs),
+        maxY: Math.max(...ys),
+      };
+    case 'text':
+      return {
+        minX: shape.position.x,
+        minY: shape.position.y - shape.fontSize,
+        maxX: shape.position.x + shape.text.length * shape.fontSize * 0.6,
+        maxY: shape.position.y,
+      };
+    case 'point':
+      return {
+        minX: shape.position.x,
+        minY: shape.position.y,
+        maxX: shape.position.x,
+        maxY: shape.position.y,
+      };
+    default:
+      return null;
+  }
+};
+
 export const useAppStore = create<AppState>()(
   immer((set, get) => ({
-    // Initial state
+    // Initial state - Drafts & Sheets
+    drafts: [defaultDraft],
+    sheets: [],
+    editorMode: 'draft' as EditorMode,
+    activeDraftId: defaultDraftId,
+    activeSheetId: null,
+    draftViewports: { [defaultDraftId]: { offsetX: 0, offsetY: 0, zoom: 1 } },
+
+    // Initial state - Shapes & Layers
     shapes: [],
     selectedShapeIds: [],
     layers: [defaultLayer],
@@ -271,6 +505,20 @@ export const useAppStore = create<AppState>()(
     drawingPreview: null,
     drawingPoints: [],
     selectionBox: null,
+    boundaryEditState: {
+      isEditing: false,
+      isSelected: false,
+      activeHandle: null,
+      dragStart: null,
+      originalBoundary: null,
+    },
+    viewportEditState: {
+      selectedViewportId: null,
+      activeHandle: null,
+      isDragging: false,
+      dragStart: null,
+      originalViewport: null,
+    },
     commandHistory: [],
     currentCommand: '',
     pendingCommand: null,
@@ -394,12 +642,612 @@ export const useAppStore = create<AppState>()(
 
     selectAll: () =>
       set((state) => {
+        // Only select shapes in the current draft
         state.selectedShapeIds = state.shapes
           .filter((s) => {
+            if (s.draftId !== state.activeDraftId) return false;
             const layer = state.layers.find((l) => l.id === s.layerId);
             return layer && layer.visible && !layer.locked && s.visible && !s.locked;
           })
           .map((s) => s.id);
+      }),
+
+    // Draft actions
+    addDraft: (name) =>
+      set((state) => {
+        const id = generateId();
+        const newDraft: Draft = {
+          id,
+          name: name || `Draft ${state.drafts.length + 1}`,
+          boundary: { ...DEFAULT_DRAFT_BOUNDARY },
+          createdAt: new Date().toISOString(),
+          modifiedAt: new Date().toISOString(),
+        };
+        state.drafts.push(newDraft);
+
+        // Create a default layer for the new draft
+        const newLayer: Layer = {
+          id: generateId(),
+          name: 'Layer 0',
+          draftId: id,
+          visible: true,
+          locked: false,
+          color: '#ffffff',
+          lineStyle: 'solid',
+          lineWidth: 1,
+        };
+        state.layers.push(newLayer);
+
+        // Initialize viewport for this draft
+        state.draftViewports[id] = { offsetX: 0, offsetY: 0, zoom: 1 };
+
+        // Switch to the new draft
+        state.activeDraftId = id;
+        state.activeLayerId = newLayer.id;
+        state.viewport = state.draftViewports[id];
+        state.editorMode = 'draft';
+        state.activeSheetId = null;
+        state.selectedShapeIds = [];
+        state.isModified = true;
+      }),
+
+    deleteDraft: (id) =>
+      set((state) => {
+        // Can't delete the last draft
+        if (state.drafts.length <= 1) return;
+
+        // Remove the draft
+        state.drafts = state.drafts.filter((d) => d.id !== id);
+
+        // Remove all shapes belonging to this draft
+        state.shapes = state.shapes.filter((s) => s.draftId !== id);
+
+        // Remove all layers belonging to this draft
+        state.layers = state.layers.filter((l) => l.draftId !== id);
+
+        // Remove viewport for this draft
+        delete state.draftViewports[id];
+
+        // Remove viewports in sheets that reference this draft
+        state.sheets.forEach((sheet) => {
+          sheet.viewports = sheet.viewports.filter((vp) => vp.draftId !== id);
+        });
+
+        // If the deleted draft was active, switch to another draft
+        if (state.activeDraftId === id) {
+          const firstDraft = state.drafts[0];
+          state.activeDraftId = firstDraft.id;
+          state.viewport = state.draftViewports[firstDraft.id] || { offsetX: 0, offsetY: 0, zoom: 1 };
+
+          // Set active layer to a layer in the new draft
+          const layerInDraft = state.layers.find((l) => l.draftId === firstDraft.id);
+          if (layerInDraft) {
+            state.activeLayerId = layerInDraft.id;
+          }
+        }
+
+        state.selectedShapeIds = [];
+        state.isModified = true;
+      }),
+
+    renameDraft: (id, name) =>
+      set((state) => {
+        const draft = state.drafts.find((d) => d.id === id);
+        if (draft) {
+          draft.name = name;
+          draft.modifiedAt = new Date().toISOString();
+          state.isModified = true;
+        }
+      }),
+
+    updateDraftBoundary: (id, boundary) =>
+      set((state) => {
+        const draft = state.drafts.find((d) => d.id === id);
+        if (draft) {
+          draft.boundary = { ...draft.boundary, ...boundary };
+          draft.modifiedAt = new Date().toISOString();
+          state.isModified = true;
+        }
+      }),
+
+    fitBoundaryToContent: (id, padding = 50) =>
+      set((state) => {
+        const draft = state.drafts.find((d) => d.id === id);
+        if (!draft) return;
+
+        // Get all shapes in this draft
+        const draftShapes = state.shapes.filter((s) => s.draftId === id);
+        if (draftShapes.length === 0) {
+          // No shapes, reset to default
+          draft.boundary = { ...DEFAULT_DRAFT_BOUNDARY };
+          draft.modifiedAt = new Date().toISOString();
+          state.isModified = true;
+          return;
+        }
+
+        // Calculate bounding box of all shapes
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+
+        for (const shape of draftShapes) {
+          const bounds = getShapeBounds(shape);
+          if (bounds) {
+            minX = Math.min(minX, bounds.minX);
+            minY = Math.min(minY, bounds.minY);
+            maxX = Math.max(maxX, bounds.maxX);
+            maxY = Math.max(maxY, bounds.maxY);
+          }
+        }
+
+        if (minX === Infinity) return;
+
+        // Apply padding
+        draft.boundary = {
+          x: minX - padding,
+          y: minY - padding,
+          width: (maxX - minX) + padding * 2,
+          height: (maxY - minY) + padding * 2,
+        };
+        draft.modifiedAt = new Date().toISOString();
+        state.isModified = true;
+      }),
+
+    // Boundary editing actions (Revit-like crop region manipulation)
+    selectBoundary: () =>
+      set((state) => {
+        state.boundaryEditState.isSelected = true;
+        state.selectedShapeIds = []; // Deselect shapes when selecting boundary
+      }),
+
+    deselectBoundary: () =>
+      set((state) => {
+        state.boundaryEditState.isSelected = false;
+        state.boundaryEditState.activeHandle = null;
+        state.boundaryEditState.dragStart = null;
+        state.boundaryEditState.originalBoundary = null;
+      }),
+
+    startBoundaryDrag: (handle, worldPos) =>
+      set((state) => {
+        const draft = state.drafts.find((d) => d.id === state.activeDraftId);
+        if (!draft) return;
+
+        state.boundaryEditState.activeHandle = handle;
+        state.boundaryEditState.dragStart = worldPos;
+        state.boundaryEditState.originalBoundary = { ...draft.boundary };
+      }),
+
+    updateBoundaryDrag: (worldPos) =>
+      set((state) => {
+        const { activeHandle, dragStart, originalBoundary } = state.boundaryEditState;
+        if (!activeHandle || !dragStart || !originalBoundary) return;
+
+        const draft = state.drafts.find((d) => d.id === state.activeDraftId);
+        if (!draft) return;
+
+        const dx = worldPos.x - dragStart.x;
+        const dy = worldPos.y - dragStart.y;
+
+        // Calculate new boundary based on which handle is being dragged
+        let newBoundary = { ...originalBoundary };
+
+        switch (activeHandle) {
+          case 'center':
+            // Move entire boundary
+            newBoundary.x = originalBoundary.x + dx;
+            newBoundary.y = originalBoundary.y + dy;
+            break;
+
+          case 'top-left':
+            newBoundary.x = originalBoundary.x + dx;
+            newBoundary.y = originalBoundary.y + dy;
+            newBoundary.width = Math.max(10, originalBoundary.width - dx);
+            newBoundary.height = Math.max(10, originalBoundary.height - dy);
+            break;
+
+          case 'top':
+            newBoundary.y = originalBoundary.y + dy;
+            newBoundary.height = Math.max(10, originalBoundary.height - dy);
+            break;
+
+          case 'top-right':
+            newBoundary.y = originalBoundary.y + dy;
+            newBoundary.width = Math.max(10, originalBoundary.width + dx);
+            newBoundary.height = Math.max(10, originalBoundary.height - dy);
+            break;
+
+          case 'left':
+            newBoundary.x = originalBoundary.x + dx;
+            newBoundary.width = Math.max(10, originalBoundary.width - dx);
+            break;
+
+          case 'right':
+            newBoundary.width = Math.max(10, originalBoundary.width + dx);
+            break;
+
+          case 'bottom-left':
+            newBoundary.x = originalBoundary.x + dx;
+            newBoundary.width = Math.max(10, originalBoundary.width - dx);
+            newBoundary.height = Math.max(10, originalBoundary.height + dy);
+            break;
+
+          case 'bottom':
+            newBoundary.height = Math.max(10, originalBoundary.height + dy);
+            break;
+
+          case 'bottom-right':
+            newBoundary.width = Math.max(10, originalBoundary.width + dx);
+            newBoundary.height = Math.max(10, originalBoundary.height + dy);
+            break;
+        }
+
+        draft.boundary = newBoundary;
+      }),
+
+    endBoundaryDrag: () =>
+      set((state) => {
+        if (state.boundaryEditState.activeHandle) {
+          const draft = state.drafts.find((d) => d.id === state.activeDraftId);
+          if (draft) {
+            draft.modifiedAt = new Date().toISOString();
+            state.isModified = true;
+          }
+        }
+        state.boundaryEditState.activeHandle = null;
+        state.boundaryEditState.dragStart = null;
+        state.boundaryEditState.originalBoundary = null;
+      }),
+
+    cancelBoundaryDrag: () =>
+      set((state) => {
+        const { originalBoundary } = state.boundaryEditState;
+        if (originalBoundary) {
+          const draft = state.drafts.find((d) => d.id === state.activeDraftId);
+          if (draft) {
+            draft.boundary = originalBoundary;
+          }
+        }
+        state.boundaryEditState.activeHandle = null;
+        state.boundaryEditState.dragStart = null;
+        state.boundaryEditState.originalBoundary = null;
+      }),
+
+    switchToDraft: (id) =>
+      set((state) => {
+        const draft = state.drafts.find((d) => d.id === id);
+        if (!draft) return;
+
+        // Save current viewport to draftViewports if in draft mode
+        if (state.editorMode === 'draft' && state.activeDraftId) {
+          state.draftViewports[state.activeDraftId] = { ...state.viewport };
+        }
+
+        state.activeDraftId = id;
+        state.editorMode = 'draft';
+        state.activeSheetId = null;
+        state.viewport = state.draftViewports[id] || { offsetX: 0, offsetY: 0, zoom: 1 };
+
+        // Set active layer to a layer in this draft
+        const layerInDraft = state.layers.find((l) => l.draftId === id);
+        if (layerInDraft) {
+          state.activeLayerId = layerInDraft.id;
+        }
+
+        state.selectedShapeIds = [];
+      }),
+
+    // Sheet actions
+    addSheet: (name, paperSize = 'A4', orientation = 'landscape') =>
+      set((state) => {
+        const id = generateId();
+        const newSheet: Sheet = {
+          id,
+          name: name || `Sheet ${state.sheets.length + 1}`,
+          paperSize,
+          orientation,
+          viewports: [],
+          titleBlock: createDefaultTitleBlock(),
+          createdAt: new Date().toISOString(),
+          modifiedAt: new Date().toISOString(),
+        };
+        state.sheets.push(newSheet);
+        state.isModified = true;
+      }),
+
+    deleteSheet: (id) =>
+      set((state) => {
+        state.sheets = state.sheets.filter((s) => s.id !== id);
+
+        // If the deleted sheet was active, switch back to draft mode
+        if (state.activeSheetId === id) {
+          state.activeSheetId = null;
+          state.editorMode = 'draft';
+          state.viewport = state.draftViewports[state.activeDraftId] || { offsetX: 0, offsetY: 0, zoom: 1 };
+        }
+
+        state.isModified = true;
+      }),
+
+    renameSheet: (id, name) =>
+      set((state) => {
+        const sheet = state.sheets.find((s) => s.id === id);
+        if (sheet) {
+          sheet.name = name;
+          sheet.modifiedAt = new Date().toISOString();
+          state.isModified = true;
+        }
+      }),
+
+    updateSheet: (id, updates) =>
+      set((state) => {
+        const sheet = state.sheets.find((s) => s.id === id);
+        if (sheet) {
+          Object.assign(sheet, updates);
+          sheet.modifiedAt = new Date().toISOString();
+          state.isModified = true;
+        }
+      }),
+
+    switchToSheet: (id) =>
+      set((state) => {
+        const sheet = state.sheets.find((s) => s.id === id);
+        if (!sheet) return;
+
+        // Save current viewport if in draft mode
+        if (state.editorMode === 'draft' && state.activeDraftId) {
+          state.draftViewports[state.activeDraftId] = { ...state.viewport };
+        }
+
+        state.activeSheetId = id;
+        state.editorMode = 'sheet';
+        // Reset viewport for sheet mode (will be handled by sheet renderer)
+        state.viewport = { offsetX: 0, offsetY: 0, zoom: 1 };
+        state.selectedShapeIds = [];
+      }),
+
+    switchToDraftMode: () =>
+      set((state) => {
+        state.editorMode = 'draft';
+        state.activeSheetId = null;
+        state.viewport = state.draftViewports[state.activeDraftId] || { offsetX: 0, offsetY: 0, zoom: 1 };
+      }),
+
+    // Sheet Viewport actions
+    addSheetViewport: (sheetId, draftId, bounds) =>
+      set((state) => {
+        const sheet = state.sheets.find((s) => s.id === sheetId);
+        if (!sheet) return;
+
+        const newViewport: SheetViewport = {
+          id: generateId(),
+          draftId,
+          x: bounds.x,
+          y: bounds.y,
+          width: bounds.width,
+          height: bounds.height,
+          centerX: 0,
+          centerY: 0,
+          scale: 0.01,  // Default 1:100
+          locked: false,
+          visible: true,
+        };
+        sheet.viewports.push(newViewport);
+        sheet.modifiedAt = new Date().toISOString();
+        state.isModified = true;
+      }),
+
+    updateSheetViewport: (sheetId, viewportId, updates) =>
+      set((state) => {
+        const sheet = state.sheets.find((s) => s.id === sheetId);
+        if (!sheet) return;
+
+        const viewport = sheet.viewports.find((vp) => vp.id === viewportId);
+        if (viewport) {
+          Object.assign(viewport, updates);
+          sheet.modifiedAt = new Date().toISOString();
+          state.isModified = true;
+        }
+      }),
+
+    deleteSheetViewport: (sheetId, viewportId) =>
+      set((state) => {
+        const sheet = state.sheets.find((s) => s.id === sheetId);
+        if (!sheet) return;
+
+        sheet.viewports = sheet.viewports.filter((vp) => vp.id !== viewportId);
+        sheet.modifiedAt = new Date().toISOString();
+        state.isModified = true;
+
+        // Clear selection if deleted viewport was selected
+        if (state.viewportEditState.selectedViewportId === viewportId) {
+          state.viewportEditState.selectedViewportId = null;
+        }
+      }),
+
+    // Viewport Editing actions (Revit-like viewport manipulation)
+    selectViewport: (viewportId) =>
+      set((state) => {
+        state.viewportEditState.selectedViewportId = viewportId;
+        // Clear any active drag when changing selection
+        state.viewportEditState.activeHandle = null;
+        state.viewportEditState.isDragging = false;
+        state.viewportEditState.dragStart = null;
+        state.viewportEditState.originalViewport = null;
+      }),
+
+    startViewportDrag: (handle, sheetPos) =>
+      set((state) => {
+        const { selectedViewportId } = state.viewportEditState;
+        if (!selectedViewportId || !state.activeSheetId) return;
+
+        const sheet = state.sheets.find((s) => s.id === state.activeSheetId);
+        if (!sheet) return;
+
+        const viewport = sheet.viewports.find((vp) => vp.id === selectedViewportId);
+        if (!viewport || viewport.locked) return;
+
+        state.viewportEditState.activeHandle = handle;
+        state.viewportEditState.isDragging = true;
+        state.viewportEditState.dragStart = sheetPos;
+        state.viewportEditState.originalViewport = { ...viewport };
+      }),
+
+    updateViewportDrag: (sheetPos) =>
+      set((state) => {
+        const { selectedViewportId, activeHandle, dragStart, originalViewport, isDragging } = state.viewportEditState;
+        if (!isDragging || !selectedViewportId || !activeHandle || !dragStart || !originalViewport || !state.activeSheetId) return;
+
+        const sheet = state.sheets.find((s) => s.id === state.activeSheetId);
+        if (!sheet) return;
+
+        const viewport = sheet.viewports.find((vp) => vp.id === selectedViewportId);
+        if (!viewport) return;
+
+        const dx = sheetPos.x - dragStart.x;
+        const dy = sheetPos.y - dragStart.y;
+
+        // Apply changes based on which handle is being dragged
+        if (activeHandle === 'center') {
+          // Move entire viewport
+          viewport.x = originalViewport.x + dx;
+          viewport.y = originalViewport.y + dy;
+        } else {
+          // Resize based on handle
+          let newX = originalViewport.x;
+          let newY = originalViewport.y;
+          let newWidth = originalViewport.width;
+          let newHeight = originalViewport.height;
+
+          // Handle horizontal resizing
+          if (activeHandle.includes('left')) {
+            newX = originalViewport.x + dx;
+            newWidth = originalViewport.width - dx;
+          } else if (activeHandle.includes('right')) {
+            newWidth = originalViewport.width + dx;
+          }
+
+          // Handle vertical resizing
+          if (activeHandle.includes('top')) {
+            newY = originalViewport.y + dy;
+            newHeight = originalViewport.height - dy;
+          } else if (activeHandle.includes('bottom')) {
+            newHeight = originalViewport.height + dy;
+          }
+
+          // Ensure minimum size (20mm)
+          const minSize = 20;
+          if (newWidth >= minSize && newHeight >= minSize) {
+            viewport.x = newX;
+            viewport.y = newY;
+            viewport.width = newWidth;
+            viewport.height = newHeight;
+          }
+        }
+
+        sheet.modifiedAt = new Date().toISOString();
+      }),
+
+    endViewportDrag: () =>
+      set((state) => {
+        if (state.viewportEditState.isDragging) {
+          state.isModified = true;
+        }
+        state.viewportEditState.activeHandle = null;
+        state.viewportEditState.isDragging = false;
+        state.viewportEditState.dragStart = null;
+        state.viewportEditState.originalViewport = null;
+      }),
+
+    cancelViewportDrag: () =>
+      set((state) => {
+        const { selectedViewportId, originalViewport } = state.viewportEditState;
+        if (selectedViewportId && originalViewport && state.activeSheetId) {
+          // Restore original viewport state
+          const sheet = state.sheets.find((s) => s.id === state.activeSheetId);
+          if (sheet) {
+            const viewport = sheet.viewports.find((vp) => vp.id === selectedViewportId);
+            if (viewport) {
+              viewport.x = originalViewport.x;
+              viewport.y = originalViewport.y;
+              viewport.width = originalViewport.width;
+              viewport.height = originalViewport.height;
+            }
+          }
+        }
+        state.viewportEditState.activeHandle = null;
+        state.viewportEditState.isDragging = false;
+        state.viewportEditState.dragStart = null;
+        state.viewportEditState.originalViewport = null;
+      }),
+
+    centerViewportOnDraft: (viewportId) =>
+      set((state) => {
+        if (!state.activeSheetId) return;
+
+        const sheet = state.sheets.find((s) => s.id === state.activeSheetId);
+        if (!sheet) return;
+
+        const viewport = sheet.viewports.find((vp) => vp.id === viewportId);
+        if (!viewport) return;
+
+        const draft = state.drafts.find((d) => d.id === viewport.draftId);
+        if (!draft) return;
+
+        // Center viewport on draft boundary center
+        viewport.centerX = draft.boundary.x + draft.boundary.width / 2;
+        viewport.centerY = draft.boundary.y + draft.boundary.height / 2;
+        sheet.modifiedAt = new Date().toISOString();
+        state.isModified = true;
+      }),
+
+    fitViewportToDraft: (viewportId) =>
+      set((state) => {
+        if (!state.activeSheetId) return;
+
+        const sheet = state.sheets.find((s) => s.id === state.activeSheetId);
+        if (!sheet) return;
+
+        const viewport = sheet.viewports.find((vp) => vp.id === viewportId);
+        if (!viewport) return;
+
+        const draft = state.drafts.find((d) => d.id === viewport.draftId);
+        if (!draft) return;
+
+        // Calculate scale to fit draft boundary in viewport
+        const scaleX = viewport.width / draft.boundary.width;
+        const scaleY = viewport.height / draft.boundary.height;
+        const scale = Math.min(scaleX, scaleY) * 0.9; // 90% to add padding
+
+        // Center on draft boundary
+        viewport.centerX = draft.boundary.x + draft.boundary.width / 2;
+        viewport.centerY = draft.boundary.y + draft.boundary.height / 2;
+        viewport.scale = scale;
+
+        sheet.modifiedAt = new Date().toISOString();
+        state.isModified = true;
+      }),
+
+    // Title Block actions
+    updateTitleBlockField: (sheetId, fieldId, value) =>
+      set((state) => {
+        const sheet = state.sheets.find((s) => s.id === sheetId);
+        if (!sheet) return;
+
+        const field = sheet.titleBlock.fields.find((f) => f.id === fieldId);
+        if (field) {
+          field.value = value;
+          sheet.modifiedAt = new Date().toISOString();
+          state.isModified = true;
+        }
+      }),
+
+    setTitleBlockVisible: (sheetId, visible) =>
+      set((state) => {
+        const sheet = state.sheets.find((s) => s.id === sheetId);
+        if (sheet) {
+          sheet.titleBlock.visible = visible;
+          sheet.modifiedAt = new Date().toISOString();
+          state.isModified = true;
+        }
       }),
 
     // Layer actions
@@ -407,7 +1255,8 @@ export const useAppStore = create<AppState>()(
       set((state) => {
         const newLayer: Layer = {
           id: generateId(),
-          name: name || `Layer ${state.layers.length}`,
+          name: name || `Layer ${state.layers.filter(l => l.draftId === state.activeDraftId).length}`,
+          draftId: state.activeDraftId,
           visible: true,
           locked: false,
           color: '#ffffff',
@@ -428,18 +1277,24 @@ export const useAppStore = create<AppState>()(
 
     deleteLayer: (id) =>
       set((state) => {
-        if (state.layers.length > 1) {
-          state.layers = state.layers.filter((l) => l.id !== id);
-          if (state.activeLayerId === id) {
-            state.activeLayerId = state.layers[0].id;
-          }
-          // Move shapes from deleted layer to active layer
-          state.shapes.forEach((s) => {
-            if (s.layerId === id) {
-              s.layerId = state.activeLayerId;
-            }
-          });
+        // Get layers in the current draft
+        const layersInDraft = state.layers.filter((l) => l.draftId === state.activeDraftId);
+
+        // Can't delete the last layer in a draft
+        if (layersInDraft.length <= 1) return;
+
+        state.layers = state.layers.filter((l) => l.id !== id);
+        if (state.activeLayerId === id) {
+          // Set active layer to another layer in the same draft
+          const remainingLayersInDraft = state.layers.filter((l) => l.draftId === state.activeDraftId);
+          state.activeLayerId = remainingLayersInDraft[0]?.id || state.layers[0].id;
         }
+        // Move shapes from deleted layer to active layer
+        state.shapes.forEach((s) => {
+          if (s.layerId === id) {
+            s.layerId = state.activeLayerId;
+          }
+        });
       }),
 
     setActiveLayer: (id) =>
@@ -792,12 +1647,30 @@ export const useAppStore = create<AppState>()(
     // File actions
     newProject: () =>
       set((state) => {
+        // Create new default draft
+        const newDraftId = generateId();
+        const newLayerId = generateId();
+
+        state.drafts = [{
+          id: newDraftId,
+          name: 'Draft 1',
+          boundary: { ...DEFAULT_DRAFT_BOUNDARY },
+          createdAt: new Date().toISOString(),
+          modifiedAt: new Date().toISOString(),
+        }];
+        state.sheets = [];
+        state.editorMode = 'draft';
+        state.activeDraftId = newDraftId;
+        state.activeSheetId = null;
+        state.draftViewports = { [newDraftId]: { offsetX: 0, offsetY: 0, zoom: 1 } };
+
         state.shapes = [];
         state.selectedShapeIds = [];
         state.layers = [
           {
-            id: 'default-layer',
+            id: newLayerId,
             name: 'Layer 0',
+            draftId: newDraftId,
             visible: true,
             locked: false,
             color: '#ffffff',
@@ -805,7 +1678,7 @@ export const useAppStore = create<AppState>()(
             lineWidth: 1,
           },
         ];
-        state.activeLayerId = 'default-layer';
+        state.activeLayerId = newLayerId;
         state.viewport = { zoom: 1, offsetX: 0, offsetY: 0 };
         state.historyStack = [];
         state.historyIndex = -1;
@@ -819,6 +1692,62 @@ export const useAppStore = create<AppState>()(
 
     loadProject: (data, filePath, projectName) =>
       set((state) => {
+        // Handle both V1 (legacy) and V2 data formats
+        const dataWithDrafts = data as {
+          shapes: Shape[];
+          layers: Layer[];
+          activeLayerId: string;
+          viewport?: { zoom: number; offsetX: number; offsetY: number };
+          settings?: { gridSize: number; gridVisible: boolean; snapEnabled: boolean };
+          // V2 fields
+          drafts?: Draft[];
+          sheets?: Sheet[];
+          activeDraftId?: string;
+          activeSheetId?: string | null;
+          draftViewports?: Record<string, Viewport>;
+        };
+
+        if (dataWithDrafts.drafts && dataWithDrafts.drafts.length > 0) {
+          // V2 format - has drafts and sheets
+          // Ensure all drafts have boundaries (migration for older V2 files)
+          state.drafts = dataWithDrafts.drafts.map(draft => ({
+            ...draft,
+            boundary: draft.boundary || { ...DEFAULT_DRAFT_BOUNDARY },
+          }));
+          state.sheets = dataWithDrafts.sheets || [];
+          state.activeDraftId = dataWithDrafts.activeDraftId || dataWithDrafts.drafts[0].id;
+          state.activeSheetId = dataWithDrafts.activeSheetId || null;
+          state.draftViewports = dataWithDrafts.draftViewports || {};
+          state.editorMode = dataWithDrafts.activeSheetId ? 'sheet' : 'draft';
+        } else {
+          // V1 format - create a default draft and assign all shapes/layers to it
+          const newDraftId = generateId();
+          state.drafts = [{
+            id: newDraftId,
+            name: 'Draft 1',
+            boundary: { ...DEFAULT_DRAFT_BOUNDARY },
+            createdAt: new Date().toISOString(),
+            modifiedAt: new Date().toISOString(),
+          }];
+          state.sheets = [];
+          state.activeDraftId = newDraftId;
+          state.activeSheetId = null;
+          state.draftViewports = { [newDraftId]: data.viewport || { offsetX: 0, offsetY: 0, zoom: 1 } };
+          state.editorMode = 'draft';
+
+          // Assign draftId to all shapes and layers if they don't have one
+          data.shapes.forEach((shape: Shape) => {
+            if (!shape.draftId) {
+              (shape as Shape).draftId = newDraftId;
+            }
+          });
+          data.layers.forEach((layer: Layer) => {
+            if (!layer.draftId) {
+              (layer as Layer).draftId = newDraftId;
+            }
+          });
+        }
+
         state.shapes = data.shapes;
         state.layers = data.layers;
         state.activeLayerId = data.activeLayerId;

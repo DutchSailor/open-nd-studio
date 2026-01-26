@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { Eye, EyeOff, Lock, Unlock, Plus, Trash2 } from 'lucide-react';
 import { useAppStore } from '../../state/appStore';
 
@@ -5,11 +6,17 @@ export function LayersPanel() {
   const {
     layers,
     activeLayerId,
+    activeDraftId,
     setActiveLayer,
     addLayer,
     updateLayer,
     deleteLayer,
   } = useAppStore();
+
+  // Filter layers by active drawing
+  const filteredLayers = useMemo(() => {
+    return layers.filter(layer => layer.draftId === activeDraftId);
+  }, [layers, activeDraftId]);
 
   return (
     <div className="flex-1 overflow-auto">
@@ -26,7 +33,7 @@ export function LayersPanel() {
         </div>
 
         <div className="space-y-1">
-          {layers.map((layer) => (
+          {filteredLayers.map((layer) => (
             <div
               key={layer.id}
               className={`flex items-center gap-2 p-2 rounded cursor-pointer transition-colors ${
@@ -80,7 +87,7 @@ export function LayersPanel() {
               </button>
 
               {/* Delete button */}
-              {layers.length > 1 && (
+              {filteredLayers.length > 1 && (
                 <button
                   onClick={(e) => {
                     e.stopPropagation();

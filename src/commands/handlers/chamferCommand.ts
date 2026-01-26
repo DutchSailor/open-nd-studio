@@ -450,6 +450,7 @@ function createChamfer(
     end: chamferPoint2,
     style: { ...line1.style },
     layerId: line1.layerId,
+    draftId: line1.draftId,
     visible: true,
     locked: false,
   };

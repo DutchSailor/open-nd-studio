@@ -40,6 +40,7 @@ export function CommandLine() {
     selectedShapeIds,
     deselectAll,
     activeLayerId,
+    activeDraftId,
     currentStyle,
     setActiveTool,
     pendingCommand,
@@ -180,6 +181,7 @@ export function CommandLine() {
         id: generateId(),
         type: 'line',
         layerId: activeLayerId,
+        draftId: activeDraftId,
         style: { ...currentStyle },
         visible: true,
         locked: false,
@@ -188,7 +190,7 @@ export function CommandLine() {
       };
       addShape(lineShape);
     },
-    [activeLayerId, currentStyle, addShape]
+    [activeLayerId, activeDraftId, currentStyle, addShape]
   );
 
   const createRectangle = useCallback(
@@ -199,6 +201,7 @@ export function CommandLine() {
         id: generateId(),
         type: 'rectangle',
         layerId: activeLayerId,
+        draftId: activeDraftId,
         style: { ...currentStyle },
         visible: true,
         locked: false,
@@ -212,7 +215,7 @@ export function CommandLine() {
       };
       addShape(rectShape);
     },
-    [activeLayerId, currentStyle, addShape]
+    [activeLayerId, activeDraftId, currentStyle, addShape]
   );
 
   const createCircle = useCallback(
@@ -221,6 +224,7 @@ export function CommandLine() {
         id: generateId(),
         type: 'circle',
         layerId: activeLayerId,
+        draftId: activeDraftId,
         style: { ...currentStyle },
         visible: true,
         locked: false,
@@ -229,7 +233,7 @@ export function CommandLine() {
       };
       addShape(circleShape);
     },
-    [activeLayerId, currentStyle, addShape]
+    [activeLayerId, activeDraftId, currentStyle, addShape]
   );
 
   // Handle option click (for drawing tools)

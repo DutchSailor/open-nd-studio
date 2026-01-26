@@ -1,4 +1,4 @@
-import { useRef, useEffect, useCallback } from 'react';
+import { useRef, useEffect, useCallback, useMemo } from 'react';
 import { useAppStore } from '../../state/appStore';
 import { CADRenderer } from '../../engine/renderer/CADRenderer';
 import { useCanvasEvents } from '../../hooks/useCanvasEvents';
@@ -26,7 +26,32 @@ export function Canvas() {
     currentSnapPoint,
     currentTrackingLines,
     trackingPoint,
+    activeDraftId,
+    editorMode,
+    layers,
+    // Sheet mode state
+    drafts,
+    sheets,
+    activeSheetId,
+    draftViewports,
+    // Boundary editing state
+    boundaryEditState,
+    // Viewport editing state
+    viewportEditState,
   } = useAppStore();
+
+  // Filter shapes and layers by active drawing
+  const filteredShapes = useMemo(() => {
+    if (editorMode === 'draft') {
+      return shapes.filter(shape => shape.draftId === activeDraftId);
+    }
+    // In sheet mode, shapes are rendered through viewports (handled by CADRenderer)
+    return shapes;
+  }, [shapes, activeDraftId, editorMode]);
+
+  const filteredLayers = useMemo(() => {
+    return layers.filter(layer => layer.draftId === activeDraftId);
+  }, [layers, activeDraftId]);
 
   // Initialize renderer
   useEffect(() => {
@@ -62,26 +87,57 @@ export function Canvas() {
     return () => resizeObserver.disconnect();
   }, [setCanvasSize]);
 
+  // Get active sheet for rendering
+  const activeSheet = useMemo(() => {
+    if (editorMode === 'sheet' && activeSheetId) {
+      return sheets.find(s => s.id === activeSheetId) || null;
+    }
+    return null;
+  }, [editorMode, activeSheetId, sheets]);
+
+  // Get active draft for boundary rendering
+  const activeDraft = useMemo(() => {
+    return drafts.find(d => d.id === activeDraftId) || null;
+  }, [drafts, activeDraftId]);
+
   // Render loop
   useEffect(() => {
     const renderer = rendererRef.current;
     if (!renderer) return;
 
-    renderer.render({
-      shapes,
-      selectedShapeIds,
-      viewport,
-      gridVisible,
-      gridSize,
-      drawingPreview,
-      currentStyle,
-      selectionBox,
-      commandPreviewShapes,
-      currentSnapPoint,
-      currentTrackingLines,
-      trackingPoint,
-    });
-  }, [shapes, selectedShapeIds, viewport, gridVisible, gridSize, drawingPreview, currentStyle, selectionBox, commandPreviewShapes, currentSnapPoint, currentTrackingLines, trackingPoint]);
+    if (editorMode === 'sheet' && activeSheet) {
+      // Render sheet (Paper Space)
+      renderer.renderSheet({
+        sheet: activeSheet,
+        drafts,
+        shapes,  // All shapes, filtering happens in renderer
+        viewport,
+        selectedViewportId: viewportEditState.selectedViewportId,
+        viewportDragging: viewportEditState.isDragging,
+        draftViewports,
+      });
+    } else {
+      // Render drawing (Model Space)
+      renderer.render({
+        shapes: filteredShapes,
+        selectedShapeIds,
+        viewport,
+        gridVisible,
+        gridSize,
+        drawingPreview,
+        currentStyle,
+        selectionBox,
+        commandPreviewShapes,
+        currentSnapPoint,
+        currentTrackingLines,
+        trackingPoint,
+        layers: filteredLayers,
+        draftBoundary: activeDraft?.boundary || null,
+        boundarySelected: boundaryEditState.isSelected,
+        boundaryDragging: boundaryEditState.activeHandle !== null,
+      });
+    }
+  }, [editorMode, activeSheet, drafts, shapes, filteredShapes, selectedShapeIds, viewport, gridVisible, gridSize, drawingPreview, currentStyle, selectionBox, commandPreviewShapes, currentSnapPoint, currentTrackingLines, trackingPoint, filteredLayers, draftViewports, activeDraft, boundaryEditState, viewportEditState]);
 
   // Handle mouse events
   const { handleMouseDown, handleMouseMove, handleMouseUp, handleWheel, handleClick, handleContextMenu, isPanning } =

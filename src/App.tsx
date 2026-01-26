@@ -2,8 +2,11 @@ import { useEffect } from 'react';
 import { MenuBar } from './components/MenuBar/MenuBar';
 import { Ribbon } from './components/Ribbon/Ribbon';
 import { Canvas } from './components/Canvas/Canvas';
+import { NavigationPanel } from './components/NavigationPanel';
 import { PropertiesPanel } from './components/Panels/PropertiesPanel';
 import { LayersPanel } from './components/Panels/LayersPanel';
+import { SheetPropertiesPanel } from './components/Panels/SheetPropertiesPanel';
+import { DraftPropertiesPanel } from './components/Panels/DraftPropertiesPanel';
 import { StatusBar } from './components/StatusBar/StatusBar';
 import { CommandLine } from './components/CommandLine/CommandLine';
 import { PrintDialog } from './components/PrintDialog/PrintDialog';
@@ -29,7 +32,7 @@ function App() {
     }
   }, []);
 
-  const { printDialogOpen, setPrintDialogOpen, aboutDialogOpen, setAboutDialogOpen, snapSettingsOpen, setSnapSettingsOpen } = useAppStore();
+  const { printDialogOpen, setPrintDialogOpen, aboutDialogOpen, setAboutDialogOpen, snapSettingsOpen, setSnapSettingsOpen, editorMode } = useAppStore();
 
   return (
     <div className="flex flex-col h-full w-full bg-cad-bg text-cad-text no-select">
@@ -41,16 +44,32 @@ function App() {
 
       {/* Main Content Area */}
       <div className="flex flex-1 overflow-hidden">
+        {/* Left Panel - Navigation (Drawings & Sheets) */}
+        <NavigationPanel />
+
         {/* Center - Canvas */}
         <div className="flex-1 flex flex-col overflow-hidden">
           <Canvas />
           <CommandLine />
         </div>
 
-        {/* Right Panel - Properties & Layers */}
-        <div className="w-64 bg-cad-surface border-l border-cad-border flex flex-col">
-          <PropertiesPanel />
-          <LayersPanel />
+        {/* Right Panel - Properties & Layers (or Sheet Properties in sheet mode) */}
+        <div className="w-64 bg-cad-surface border-l border-cad-border flex flex-col overflow-hidden">
+          {editorMode === 'sheet' ? (
+            <SheetPropertiesPanel />
+          ) : (
+            <>
+              <div className="flex-shrink-0 max-h-[40%] overflow-y-auto border-b border-cad-border">
+                <DraftPropertiesPanel />
+              </div>
+              <div className="flex-shrink-0 max-h-[30%] overflow-y-auto border-b border-cad-border">
+                <PropertiesPanel />
+              </div>
+              <div className="flex-1 overflow-y-auto">
+                <LayersPanel />
+              </div>
+            </>
+          )}
         </div>
       </div>
 

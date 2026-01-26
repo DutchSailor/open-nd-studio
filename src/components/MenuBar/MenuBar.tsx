@@ -267,11 +267,16 @@ export function MenuBar() {
     shapes,
     layers,
     activeLayerId,
-    viewport,
     gridSize,
     currentFilePath,
     projectName,
     isModified,
+    // Drawings & Sheets state
+    drafts,
+    sheets,
+    activeDraftId,
+    activeSheetId,
+    draftViewports,
     // File actions
     newProject,
     loadProject,
@@ -308,8 +313,13 @@ export function MenuBar() {
           shapes: project.shapes,
           layers: project.layers,
           activeLayerId: project.activeLayerId,
-          viewport: project.viewport,
           settings: project.settings,
+          // V2 fields
+          drafts: project.drafts,
+          sheets: project.sheets,
+          activeDraftId: project.activeDraftId,
+          activeSheetId: project.activeSheetId,
+          draftViewports: project.draftViewports,
         },
         filePath,
         project.name
@@ -329,14 +339,18 @@ export function MenuBar() {
 
     try {
       const project: ProjectFile = {
-        version: 1,
+        version: 2,
         name: projectName,
         createdAt: new Date().toISOString(),
         modifiedAt: new Date().toISOString(),
+        drafts,
+        sheets,
+        activeDraftId,
+        activeSheetId,
+        draftViewports,
         shapes,
         layers,
         activeLayerId,
-        viewport,
         settings: {
           gridSize,
           gridVisible,
@@ -354,7 +368,7 @@ export function MenuBar() {
     } catch (err) {
       await showError(`Failed to save file: ${err}`);
     }
-  }, [currentFilePath, projectName, shapes, layers, activeLayerId, viewport, gridSize, gridVisible, snapEnabled, setFilePath, setModified, setProjectName]);
+  }, [currentFilePath, projectName, shapes, layers, activeLayerId, gridSize, gridVisible, snapEnabled, drafts, sheets, activeDraftId, activeSheetId, draftViewports, setFilePath, setModified, setProjectName]);
 
   const handleSaveAs = useCallback(async () => {
     const filePath = await showSaveDialog(projectName);
@@ -362,14 +376,18 @@ export function MenuBar() {
 
     try {
       const project: ProjectFile = {
-        version: 1,
+        version: 2,
         name: projectName,
         createdAt: new Date().toISOString(),
         modifiedAt: new Date().toISOString(),
+        drafts,
+        sheets,
+        activeDraftId,
+        activeSheetId,
+        draftViewports,
         shapes,
         layers,
         activeLayerId,
-        viewport,
         settings: {
           gridSize,
           gridVisible,
@@ -387,7 +405,7 @@ export function MenuBar() {
     } catch (err) {
       await showError(`Failed to save file: ${err}`);
     }
-  }, [projectName, shapes, layers, activeLayerId, viewport, gridSize, gridVisible, snapEnabled, setFilePath, setModified, setProjectName]);
+  }, [projectName, shapes, layers, activeLayerId, gridSize, gridVisible, snapEnabled, drafts, sheets, activeDraftId, activeSheetId, draftViewports, setFilePath, setModified, setProjectName]);
 
   const handleExport = useCallback(async () => {
     if (shapes.length === 0) {

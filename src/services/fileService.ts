@@ -4,10 +4,18 @@
 
 import { open, save, message, ask } from '@tauri-apps/plugin-dialog';
 import { readTextFile, writeTextFile } from '@tauri-apps/plugin-fs';
-import type { Shape, Layer } from '../types/geometry';
+import type { Shape, Layer, Draft, Sheet, Viewport, DraftBoundary } from '../types/geometry';
 
 // File format version for future compatibility
-const FILE_FORMAT_VERSION = 1;
+const FILE_FORMAT_VERSION = 2;
+
+// Default draft boundary (in draft units)
+const DEFAULT_DRAFT_BOUNDARY: DraftBoundary = {
+  x: -500,
+  y: -500,
+  width: 1000,
+  height: 1000,
+};
 
 // File extension for project files
 export const PROJECT_EXTENSION = 'o2d';
@@ -24,10 +32,10 @@ export const EXPORT_FILTERS = {
 };
 
 /**
- * Project file structure
+ * Project file structure V1 (legacy)
  */
-export interface ProjectFile {
-  version: number;
+export interface ProjectFileV1 {
+  version: 1;
   name: string;
   createdAt: string;
   modifiedAt: string;
@@ -47,20 +55,117 @@ export interface ProjectFile {
 }
 
 /**
+ * Project file structure V2 (with Drafts & Sheets)
+ */
+export interface ProjectFileV2 {
+  version: 2;
+  name: string;
+  createdAt: string;
+  modifiedAt: string;
+  // Drafts & Sheets
+  drafts: Draft[];
+  sheets: Sheet[];
+  activeDraftId: string;
+  activeSheetId: string | null;
+  draftViewports: Record<string, Viewport>;
+  // Shapes & Layers (now with draftId)
+  shapes: Shape[];
+  layers: Layer[];
+  activeLayerId: string;
+  // Settings
+  settings: {
+    gridSize: number;
+    gridVisible: boolean;
+    snapEnabled: boolean;
+  };
+}
+
+// Current project file type
+export type ProjectFile = ProjectFileV2;
+
+/**
+ * Generate a unique ID
+ */
+function generateId(): string {
+  return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+}
+
+/**
+ * Migrate V1 project to V2 format
+ */
+function migrateV1ToV2(v1: ProjectFileV1): ProjectFileV2 {
+  const draftId = generateId();
+  const now = new Date().toISOString();
+
+  // Add draftId to all shapes
+  const migratedShapes = v1.shapes.map(shape => ({
+    ...shape,
+    draftId,
+  }));
+
+  // Add draftId to all layers
+  const migratedLayers = v1.layers.map(layer => ({
+    ...layer,
+    draftId,
+  }));
+
+  return {
+    version: 2,
+    name: v1.name,
+    createdAt: v1.createdAt,
+    modifiedAt: now,
+    drafts: [{
+      id: draftId,
+      name: 'Draft 1',
+      boundary: { ...DEFAULT_DRAFT_BOUNDARY },
+      createdAt: v1.createdAt,
+      modifiedAt: now,
+    }],
+    sheets: [],
+    activeDraftId: draftId,
+    activeSheetId: null,
+    draftViewports: {
+      [draftId]: v1.viewport,
+    },
+    shapes: migratedShapes,
+    layers: migratedLayers,
+    activeLayerId: v1.activeLayerId,
+    settings: v1.settings,
+  };
+}
+
+/**
  * Create a new empty project data structure
  */
 export function createNewProject(): ProjectFile {
   const now = new Date().toISOString();
+  const draftId = generateId();
+  const layerId = generateId();
+
   return {
-    version: FILE_FORMAT_VERSION,
+    version: FILE_FORMAT_VERSION as 2,
     name: 'Untitled',
     createdAt: now,
     modifiedAt: now,
+    drafts: [{
+      id: draftId,
+      name: 'Draft 1',
+      boundary: { ...DEFAULT_DRAFT_BOUNDARY },
+      createdAt: now,
+      modifiedAt: now,
+    }],
+    sheets: [],
+    activeDraftId: draftId,
+    activeSheetId: null,
+    draftViewports: {
+      [draftId]: { zoom: 1, offsetX: 0, offsetY: 0 },
+    },
     shapes: [],
     layers: [
       {
-        id: 'default-layer',
+        id: layerId,
         name: 'Layer 0',
+        draftId,
         visible: true,
         locked: false,
         color: '#ffffff',
@@ -68,12 +173,7 @@ export function createNewProject(): ProjectFile {
         lineWidth: 1,
       },
     ],
-    activeLayerId: 'default-layer',
-    viewport: {
-      zoom: 1,
-      offsetX: 0,
-      offsetY: 0,
-    },
+    activeLayerId: layerId,
     settings: {
       gridSize: 10,
       gridVisible: true,
@@ -130,14 +230,19 @@ export async function showExportDialog(
  */
 export async function readProjectFile(path: string): Promise<ProjectFile> {
   const content = await readTextFile(path);
-  const data = JSON.parse(content) as ProjectFile;
+  const data = JSON.parse(content) as ProjectFileV1 | ProjectFileV2;
 
   // Validate file format version
   if (!data.version || data.version > FILE_FORMAT_VERSION) {
     throw new Error(`Unsupported file format version: ${data.version}`);
   }
 
-  return data;
+  // Migrate V1 files to V2
+  if (data.version === 1) {
+    return migrateV1ToV2(data as ProjectFileV1);
+  }
+
+  return data as ProjectFileV2;
 }
 
 /**

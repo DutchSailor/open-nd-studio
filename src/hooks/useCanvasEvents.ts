@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from 'react';
-import { useAppStore, generateId, type SelectionBox } from '../state/appStore';
-import type { Point, LineShape, RectangleShape, CircleShape, PolylineShape, Shape } from '../types/geometry';
+import { useAppStore, generateId, type SelectionBox, type BoundaryHandleType, type ViewportHandleType } from '../state/appStore';
+import type { Point, LineShape, RectangleShape, CircleShape, PolylineShape, Shape, DraftBoundary, SheetViewport } from '../types/geometry';
 import { findNearestSnapPoint } from '../utils/snapUtils';
 import { applyTracking, type TrackingSettings } from '../core/geometry/Tracking';
 
@@ -39,6 +39,7 @@ export function useCanvasEvents(canvasRef: React.RefObject<HTMLCanvasElement>) {
     addShape,
     currentStyle,
     activeLayerId,
+    activeDraftId,
     shapes,
     selectShape,
     selectShapes,
@@ -69,6 +70,23 @@ export function useCanvasEvents(canvasRef: React.RefObject<HTMLCanvasElement>) {
     circleMode,
     // Rectangle mode
     rectangleMode,
+    // Boundary editing
+    drafts,
+    boundaryEditState,
+    selectBoundary,
+    deselectBoundary,
+    startBoundaryDrag,
+    updateBoundaryDrag,
+    endBoundaryDrag,
+    // Sheet mode and viewport editing
+    editorMode,
+    sheets,
+    activeSheetId,
+    viewportEditState,
+    selectViewport,
+    startViewportDrag,
+    updateViewportDrag,
+    endViewportDrag,
   } = useAppStore();
 
   // Convert screen coordinates to world coordinates
@@ -81,6 +99,158 @@ export function useCanvasEvents(canvasRef: React.RefObject<HTMLCanvasElement>) {
     },
     [viewport]
   );
+
+  // Get active draft boundary
+  const getActiveBoundary = useCallback((): DraftBoundary | null => {
+    const draft = drafts.find(d => d.id === activeDraftId);
+    return draft?.boundary || null;
+  }, [drafts, activeDraftId]);
+
+  // Get boundary handle positions
+  const getBoundaryHandles = useCallback((boundary: DraftBoundary): { type: BoundaryHandleType; x: number; y: number }[] => {
+    return [
+      { type: 'top-left', x: boundary.x, y: boundary.y },
+      { type: 'top-right', x: boundary.x + boundary.width, y: boundary.y },
+      { type: 'bottom-left', x: boundary.x, y: boundary.y + boundary.height },
+      { type: 'bottom-right', x: boundary.x + boundary.width, y: boundary.y + boundary.height },
+      { type: 'top', x: boundary.x + boundary.width / 2, y: boundary.y },
+      { type: 'bottom', x: boundary.x + boundary.width / 2, y: boundary.y + boundary.height },
+      { type: 'left', x: boundary.x, y: boundary.y + boundary.height / 2 },
+      { type: 'right', x: boundary.x + boundary.width, y: boundary.y + boundary.height / 2 },
+      { type: 'center', x: boundary.x + boundary.width / 2, y: boundary.y + boundary.height / 2 },
+    ];
+  }, []);
+
+  // Check if a world point is near a boundary handle
+  const findBoundaryHandle = useCallback((worldPos: Point, boundary: DraftBoundary): BoundaryHandleType | null => {
+    const handles = getBoundaryHandles(boundary);
+    const handleRadius = 15 / viewport.zoom;  // Handle hit area in world coords
+
+    for (const handle of handles) {
+      const dx = worldPos.x - handle.x;
+      const dy = worldPos.y - handle.y;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+
+      if (distance <= handleRadius) {
+        return handle.type;
+      }
+    }
+    return null;
+  }, [getBoundaryHandles, viewport.zoom]);
+
+  // Check if a world point is on the boundary edge (for selection)
+  const isPointOnBoundaryEdge = useCallback((worldPos: Point, boundary: DraftBoundary): boolean => {
+    const tolerance = 10 / viewport.zoom;
+
+    const x = boundary.x;
+    const y = boundary.y;
+    const w = boundary.width;
+    const h = boundary.height;
+
+    // Check each edge
+    // Top edge
+    if (worldPos.y >= y - tolerance && worldPos.y <= y + tolerance &&
+        worldPos.x >= x - tolerance && worldPos.x <= x + w + tolerance) {
+      return true;
+    }
+    // Bottom edge
+    if (worldPos.y >= y + h - tolerance && worldPos.y <= y + h + tolerance &&
+        worldPos.x >= x - tolerance && worldPos.x <= x + w + tolerance) {
+      return true;
+    }
+    // Left edge
+    if (worldPos.x >= x - tolerance && worldPos.x <= x + tolerance &&
+        worldPos.y >= y - tolerance && worldPos.y <= y + h + tolerance) {
+      return true;
+    }
+    // Right edge
+    if (worldPos.x >= x + w - tolerance && worldPos.x <= x + w + tolerance &&
+        worldPos.y >= y - tolerance && worldPos.y <= y + h + tolerance) {
+      return true;
+    }
+
+    return false;
+  }, [viewport.zoom]);
+
+  // ========== Sheet Mode Viewport Helpers ==========
+
+  // Convert screen coordinates to sheet coordinates (mm)
+  const screenToSheet = useCallback(
+    (screenX: number, screenY: number): Point => {
+      const mmToPixels = 3.78;
+      const worldPos = screenToWorld(screenX, screenY);
+      return {
+        x: worldPos.x / mmToPixels,
+        y: worldPos.y / mmToPixels,
+      };
+    },
+    [screenToWorld]
+  );
+
+  // Get the active sheet
+  const getActiveSheet = useCallback(() => {
+    if (editorMode !== 'sheet' || !activeSheetId) return null;
+    return sheets.find(s => s.id === activeSheetId) || null;
+  }, [editorMode, activeSheetId, sheets]);
+
+  // Get viewport handle positions
+  const getViewportHandles = useCallback((vp: SheetViewport): { type: ViewportHandleType; x: number; y: number }[] => {
+    return [
+      { type: 'top-left', x: vp.x, y: vp.y },
+      { type: 'top-right', x: vp.x + vp.width, y: vp.y },
+      { type: 'bottom-left', x: vp.x, y: vp.y + vp.height },
+      { type: 'bottom-right', x: vp.x + vp.width, y: vp.y + vp.height },
+      { type: 'top', x: vp.x + vp.width / 2, y: vp.y },
+      { type: 'bottom', x: vp.x + vp.width / 2, y: vp.y + vp.height },
+      { type: 'left', x: vp.x, y: vp.y + vp.height / 2 },
+      { type: 'right', x: vp.x + vp.width, y: vp.y + vp.height / 2 },
+      { type: 'center', x: vp.x + vp.width / 2, y: vp.y + vp.height / 2 },
+    ];
+  }, []);
+
+  // Find viewport handle at sheet position
+  const findViewportHandle = useCallback((sheetPos: Point, vp: SheetViewport): ViewportHandleType | null => {
+    const handles = getViewportHandles(vp);
+    const tolerance = 5 / viewport.zoom;  // mm
+
+    for (const handle of handles) {
+      const dx = sheetPos.x - handle.x;
+      const dy = sheetPos.y - handle.y;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+
+      if (distance <= tolerance) {
+        return handle.type;
+      }
+    }
+    return null;
+  }, [getViewportHandles, viewport.zoom]);
+
+  // Check if point is inside a viewport
+  const isPointInViewport = useCallback((sheetPos: Point, vp: SheetViewport): boolean => {
+    return (
+      sheetPos.x >= vp.x &&
+      sheetPos.x <= vp.x + vp.width &&
+      sheetPos.y >= vp.y &&
+      sheetPos.y <= vp.y + vp.height
+    );
+  }, []);
+
+  // Find which viewport (if any) is at the given sheet position
+  const findViewportAtPoint = useCallback((sheetPos: Point): SheetViewport | null => {
+    const sheet = getActiveSheet();
+    if (!sheet) return null;
+
+    // Check in reverse order (topmost viewport first)
+    for (let i = sheet.viewports.length - 1; i >= 0; i--) {
+      const vp = sheet.viewports[i];
+      if (vp.visible && isPointInViewport(sheetPos, vp)) {
+        return vp;
+      }
+    }
+    return null;
+  }, [getActiveSheet, isPointInViewport]);
+
+  // ========== End Sheet Mode Helpers ==========
 
   // Find and snap to the nearest snap point (geometry or grid), with tracking support
   const snapPoint = useCallback(
@@ -236,6 +406,7 @@ export function useCanvasEvents(canvasRef: React.RefObject<HTMLCanvasElement>) {
         id: generateId(),
         type: 'line',
         layerId: activeLayerId,
+        draftId: activeDraftId,
         style: { ...currentStyle },
         visible: true,
         locked: false,
@@ -244,7 +415,7 @@ export function useCanvasEvents(canvasRef: React.RefObject<HTMLCanvasElement>) {
       };
       addShape(lineShape);
     },
-    [activeLayerId, currentStyle, addShape]
+    [activeLayerId, activeDraftId, currentStyle, addShape]
   );
 
   // Create a rectangle shape
@@ -256,6 +427,7 @@ export function useCanvasEvents(canvasRef: React.RefObject<HTMLCanvasElement>) {
         id: generateId(),
         type: 'rectangle',
         layerId: activeLayerId,
+        draftId: activeDraftId,
         style: { ...currentStyle },
         visible: true,
         locked: false,
@@ -269,7 +441,7 @@ export function useCanvasEvents(canvasRef: React.RefObject<HTMLCanvasElement>) {
       };
       addShape(rectShape);
     },
-    [activeLayerId, currentStyle, addShape]
+    [activeLayerId, activeDraftId, currentStyle, addShape]
   );
 
   // Create a circle shape
@@ -282,6 +454,7 @@ export function useCanvasEvents(canvasRef: React.RefObject<HTMLCanvasElement>) {
         id: generateId(),
         type: 'circle',
         layerId: activeLayerId,
+        draftId: activeDraftId,
         style: { ...currentStyle },
         visible: true,
         locked: false,
@@ -290,7 +463,7 @@ export function useCanvasEvents(canvasRef: React.RefObject<HTMLCanvasElement>) {
       };
       addShape(circleShape);
     },
-    [activeLayerId, currentStyle, addShape]
+    [activeLayerId, activeDraftId, currentStyle, addShape]
   );
 
   // Create a polyline shape
@@ -301,6 +474,7 @@ export function useCanvasEvents(canvasRef: React.RefObject<HTMLCanvasElement>) {
         id: generateId(),
         type: 'polyline',
         layerId: activeLayerId,
+        draftId: activeDraftId,
         style: { ...currentStyle },
         visible: true,
         locked: false,
@@ -309,10 +483,10 @@ export function useCanvasEvents(canvasRef: React.RefObject<HTMLCanvasElement>) {
       };
       addShape(polylineShape);
     },
-    [activeLayerId, currentStyle, addShape]
+    [activeLayerId, activeDraftId, currentStyle, addShape]
   );
 
-  // Handle mouse down (for panning and box selection)
+  // Handle mouse down (for panning, box selection, boundary drag, and viewport drag)
   const handleMouseDown = useCallback(
     (e: React.MouseEvent<HTMLCanvasElement>) => {
       const screenPos = getMousePos(e);
@@ -328,8 +502,41 @@ export function useCanvasEvents(canvasRef: React.RefObject<HTMLCanvasElement>) {
         return;
       }
 
+      // ========== Sheet Mode: Viewport drag handling ==========
+      if (editorMode === 'sheet' && e.button === 0) {
+        const sheetPos = screenToSheet(screenPos.x, screenPos.y);
+        const sheet = getActiveSheet();
+
+        if (sheet && viewportEditState.selectedViewportId) {
+          const selectedVp = sheet.viewports.find(vp => vp.id === viewportEditState.selectedViewportId);
+          if (selectedVp && !selectedVp.locked) {
+            const handle = findViewportHandle(sheetPos, selectedVp);
+            if (handle) {
+              // Start dragging the viewport handle
+              startViewportDrag(handle, sheetPos);
+              return;
+            }
+          }
+        }
+      }
+
+      // Left click - check for boundary handle drag if boundary is selected (draft mode only)
+      if (editorMode === 'draft' && e.button === 0 && boundaryEditState.isSelected) {
+        const worldPos = screenToWorld(screenPos.x, screenPos.y);
+        const boundary = getActiveBoundary();
+
+        if (boundary) {
+          const handle = findBoundaryHandle(worldPos, boundary);
+          if (handle) {
+            // Start dragging the boundary handle
+            startBoundaryDrag(handle, worldPos);
+            return;
+          }
+        }
+      }
+
       // Left click in select mode or during command selection phase - check if clicking on empty space to start box selection
-      if (e.button === 0 && (activeTool === 'select' || (hasActiveModifyCommand && commandIsSelecting))) {
+      if (editorMode === 'draft' && e.button === 0 && (activeTool === 'select' || (hasActiveModifyCommand && commandIsSelecting))) {
         const worldPos = screenToWorld(screenPos.x, screenPos.y);
         const shapeId = findShapeAtPoint(worldPos);
 
@@ -344,10 +551,10 @@ export function useCanvasEvents(canvasRef: React.RefObject<HTMLCanvasElement>) {
         }
       }
     },
-    [getMousePos, activeTool, screenToWorld, findShapeAtPoint, hasActiveModifyCommand, commandIsSelecting]
+    [getMousePos, activeTool, screenToWorld, screenToSheet, findShapeAtPoint, hasActiveModifyCommand, commandIsSelecting, boundaryEditState.isSelected, getActiveBoundary, findBoundaryHandle, startBoundaryDrag, editorMode, getActiveSheet, viewportEditState.selectedViewportId, findViewportHandle, startViewportDrag]
   );
 
-  // Handle click (for drawing - AutoCAD style)
+  // Handle click (for drawing - AutoCAD style, or viewport selection in sheet mode)
   const handleClick = useCallback(
     (e: React.MouseEvent<HTMLCanvasElement>) => {
       // Ignore if it was a pan operation
@@ -363,6 +570,36 @@ export function useCanvasEvents(canvasRef: React.RefObject<HTMLCanvasElement>) {
       if (e.button !== 0) return;
 
       const screenPos = getMousePos(e);
+
+      // ========== Sheet Mode: Viewport selection ==========
+      if (editorMode === 'sheet') {
+        const sheetPos = screenToSheet(screenPos.x, screenPos.y);
+
+        // Check if clicking on a selected viewport's handle (handled by mouseDown)
+        if (viewportEditState.selectedViewportId) {
+          const sheet = getActiveSheet();
+          if (sheet) {
+            const selectedVp = sheet.viewports.find(vp => vp.id === viewportEditState.selectedViewportId);
+            if (selectedVp) {
+              const handle = findViewportHandle(sheetPos, selectedVp);
+              if (handle) {
+                return; // Handle is being handled by mouseDown
+              }
+            }
+          }
+        }
+
+        // Check if clicking on any viewport
+        const viewport = findViewportAtPoint(sheetPos);
+        if (viewport) {
+          selectViewport(viewport.id);
+        } else {
+          selectViewport(null); // Deselect if clicking on empty space
+        }
+        return;
+      }
+
+      // ========== Draft Mode: Normal drawing and selection ==========
       const worldPos = screenToWorld(screenPos.x, screenPos.y);
       // Pass base point for tracking when in drawing mode
       const basePoint = drawingPoints.length > 0 ? drawingPoints[drawingPoints.length - 1] : undefined;
@@ -385,10 +622,31 @@ export function useCanvasEvents(canvasRef: React.RefObject<HTMLCanvasElement>) {
 
       switch (activeTool) {
         case 'select': {
+          // Check if clicking on boundary edge (for selection)
+          const boundary = getActiveBoundary();
+          if (boundary) {
+            // If boundary is selected and clicking on a handle, don't do anything (handled by mouseDown)
+            if (boundaryEditState.isSelected) {
+              const handle = findBoundaryHandle(worldPos, boundary);
+              if (handle) {
+                break;
+              }
+            }
+
+            // Check if clicking on the boundary edge
+            if (isPointOnBoundaryEdge(worldPos, boundary)) {
+              selectBoundary();
+              break;
+            }
+          }
+
+          // Check shapes
           const shapeId = findShapeAtPoint(worldPos);
           if (shapeId) {
+            deselectBoundary();
             selectShape(shapeId, e.shiftKey);
           } else {
+            deselectBoundary();
             deselectAll();
           }
           break;
@@ -459,6 +717,7 @@ export function useCanvasEvents(canvasRef: React.RefObject<HTMLCanvasElement>) {
                     id: generateId(),
                     type: 'rectangle',
                     layerId: activeLayerId,
+                    draftId: activeDraftId,
                     style: { ...currentStyle },
                     visible: true,
                     locked: false,
@@ -522,6 +781,7 @@ export function useCanvasEvents(canvasRef: React.RefObject<HTMLCanvasElement>) {
                     id: generateId(),
                     type: 'rectangle',
                     layerId: activeLayerId,
+                    draftId: activeDraftId,
                     style: { ...currentStyle },
                     visible: true,
                     locked: false,
@@ -565,6 +825,7 @@ export function useCanvasEvents(canvasRef: React.RefObject<HTMLCanvasElement>) {
                     id: generateId(),
                     type: 'circle',
                     layerId: activeLayerId,
+                    draftId: activeDraftId,
                     style: { ...currentStyle },
                     visible: true,
                     locked: false,
@@ -600,6 +861,7 @@ export function useCanvasEvents(canvasRef: React.RefObject<HTMLCanvasElement>) {
                     id: generateId(),
                     type: 'circle',
                     layerId: activeLayerId,
+                    draftId: activeDraftId,
                     style: { ...currentStyle },
                     visible: true,
                     locked: false,
@@ -632,6 +894,7 @@ export function useCanvasEvents(canvasRef: React.RefObject<HTMLCanvasElement>) {
                     id: generateId(),
                     type: 'circle',
                     layerId: activeLayerId,
+                    draftId: activeDraftId,
                     style: { ...currentStyle },
                     visible: true,
                     locked: false,
@@ -694,8 +957,22 @@ export function useCanvasEvents(canvasRef: React.RefObject<HTMLCanvasElement>) {
       setPendingCommandPoint,
       setPendingCommandSelection,
       activeLayerId,
+      activeDraftId,
       currentStyle,
       addShape,
+      getActiveBoundary,
+      boundaryEditState.isSelected,
+      findBoundaryHandle,
+      isPointOnBoundaryEdge,
+      selectBoundary,
+      deselectBoundary,
+      editorMode,
+      screenToSheet,
+      viewportEditState.selectedViewportId,
+      getActiveSheet,
+      findViewportHandle,
+      findViewportAtPoint,
+      selectViewport,
     ]
   );
 
@@ -720,6 +997,19 @@ export function useCanvasEvents(canvasRef: React.RefObject<HTMLCanvasElement>) {
           offsetX: viewport.offsetX + delta.x,
           offsetY: viewport.offsetY + delta.y,
         });
+        return;
+      }
+
+      // Handle viewport dragging in sheet mode
+      if (editorMode === 'sheet' && viewportEditState.isDragging) {
+        const sheetPos = screenToSheet(screenPos.x, screenPos.y);
+        updateViewportDrag(sheetPos);
+        return;
+      }
+
+      // Handle boundary dragging (draft mode only)
+      if (editorMode === 'draft' && boundaryEditState.activeHandle) {
+        updateBoundaryDrag(worldPos);
         return;
       }
 
@@ -925,6 +1215,12 @@ export function useCanvasEvents(canvasRef: React.RefObject<HTMLCanvasElement>) {
       setDrawingPreview,
       drawingPoints,
       setSelectionBox,
+      boundaryEditState.activeHandle,
+      updateBoundaryDrag,
+      editorMode,
+      viewportEditState.isDragging,
+      screenToSheet,
+      updateViewportDrag,
     ]
   );
 
@@ -975,12 +1271,24 @@ export function useCanvasEvents(canvasRef: React.RefObject<HTMLCanvasElement>) {
     [screenToWorld, shapes]
   );
 
-  // Handle mouse up (for ending pan and box selection)
+  // Handle mouse up (for ending pan, box selection, and boundary drag)
   const handleMouseUp = useCallback(
     (e: React.MouseEvent<HTMLCanvasElement>) => {
       // End panning
       panState.current.isPanning = false;
       setIsPanning(false);
+
+      // End viewport dragging in sheet mode
+      if (editorMode === 'sheet' && viewportEditState.isDragging) {
+        endViewportDrag();
+        return;
+      }
+
+      // End boundary dragging (draft mode only)
+      if (editorMode === 'draft' && boundaryEditState.activeHandle) {
+        endBoundaryDrag();
+        return;
+      }
 
       // End box selection
       if (selectionState.current.isSelecting) {
@@ -1028,7 +1336,7 @@ export function useCanvasEvents(canvasRef: React.RefObject<HTMLCanvasElement>) {
         setSelectionBox(null);
       }
     },
-    [getMousePos, getShapesInSelectionBox, selectShapes, deselectAll, setSelectionBox, hasActiveModifyCommand, commandIsSelecting, setPendingCommandSelection]
+    [getMousePos, getShapesInSelectionBox, selectShapes, deselectAll, setSelectionBox, hasActiveModifyCommand, commandIsSelecting, setPendingCommandSelection, boundaryEditState.activeHandle, endBoundaryDrag, editorMode, viewportEditState.isDragging, endViewportDrag]
   );
 
   // Handle right-click (context menu) - finish drawing
