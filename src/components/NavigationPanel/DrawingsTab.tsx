@@ -1,16 +1,19 @@
 import { useState } from 'react';
-import { Plus, Trash2, Pencil, Check, X } from 'lucide-react';
+import { Plus, Trash2, Pencil, Check, X, ArrowRightToLine } from 'lucide-react';
 import { useAppStore } from '../../state/appStore';
 
-export function DraftsTab() {
+export function DrawingsTab() {
   const {
-    drafts,
-    activeDraftId,
+    drawings,
+    activeDrawingId,
     editorMode,
-    addDraft,
-    deleteDraft,
-    renameDraft,
-    switchToDraft,
+    addDrawing,
+    deleteDrawing,
+    renameDrawing,
+    switchToDrawing,
+    startDrawingPlacement,
+    isPlacing,
+    placingDrawingId,
   } = useAppStore();
 
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -23,7 +26,7 @@ export function DraftsTab() {
 
   const handleConfirmEdit = () => {
     if (editingId && editName.trim()) {
-      renameDraft(editingId, editName.trim());
+      renameDrawing(editingId, editName.trim());
     }
     setEditingId(null);
     setEditName('');
@@ -42,35 +45,44 @@ export function DraftsTab() {
     }
   };
 
+  // Handle placing drawing on sheet
+  const handlePlaceOnSheet = (drawingId: string) => {
+    startDrawingPlacement(drawingId);
+  };
+
+  // Check if we can place drawings (only in sheet mode)
+  const canPlace = editorMode === 'sheet';
+
   return (
     <div className="flex flex-col h-full">
-      {/* Header with Add button */}
-      <div className="flex items-center justify-between px-3 py-2 border-b border-cad-border">
-        <span className="text-xs text-cad-text-dim">Model Space</span>
+      {/* Toolbar */}
+      <div className="flex items-center justify-end px-2 py-1 border-b border-cad-border">
         <button
-          onClick={() => addDraft()}
+          onClick={() => addDrawing()}
           className="p-1 rounded hover:bg-cad-border transition-colors"
-          title="Add Draft"
+          title="Add Drawing"
         >
           <Plus size={14} />
         </button>
       </div>
 
-      {/* Drafts List */}
+      {/* Drawings List */}
       <div className="flex-1 overflow-auto p-2">
         <div className="space-y-1">
-          {drafts.map((draft) => (
+          {drawings.map((drawing) => (
             <div
-              key={draft.id}
+              key={drawing.id}
               className={`group flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer transition-colors ${
-                draft.id === activeDraftId && editorMode === 'draft'
+                drawing.id === activeDrawingId && editorMode === 'drawing'
                   ? 'bg-cad-accent/20 border border-cad-accent'
+                  : isPlacing && placingDrawingId === drawing.id
+                  ? 'bg-green-500/20 border border-green-500'
                   : 'hover:bg-cad-border/50 border border-transparent'
               }`}
-              onClick={() => switchToDraft(draft.id)}
-              onDoubleClick={() => handleStartEdit(draft.id, draft.name)}
+              onClick={() => switchToDrawing(drawing.id)}
+              onDoubleClick={() => handleStartEdit(drawing.id, drawing.name)}
             >
-              {editingId === draft.id ? (
+              {editingId === drawing.id ? (
                 <>
                   <input
                     type="text"
@@ -104,19 +116,37 @@ export function DraftsTab() {
                 </>
               ) : (
                 <>
-                  {/* Draft icon */}
+                  {/* Drawing icon */}
                   <div className="w-3 h-3 rounded-sm bg-cad-accent/50" />
 
-                  {/* Draft name */}
+                  {/* Drawing name */}
                   <span className="flex-1 text-xs text-cad-text truncate">
-                    {draft.name}
+                    {drawing.name}
                   </span>
+
+                  {/* Place on Sheet button (visible in sheet mode) */}
+                  {canPlace && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handlePlaceOnSheet(drawing.id);
+                      }}
+                      className={`p-0.5 rounded hover:bg-cad-border transition-all ${
+                        isPlacing && placingDrawingId === drawing.id
+                          ? 'opacity-100 text-green-400'
+                          : 'opacity-0 group-hover:opacity-100 text-cad-text-dim hover:text-green-400'
+                      }`}
+                      title="Place on Sheet"
+                    >
+                      <ArrowRightToLine size={12} />
+                    </button>
+                  )}
 
                   {/* Edit button (visible on hover) */}
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
-                      handleStartEdit(draft.id, draft.name);
+                      handleStartEdit(drawing.id, drawing.name);
                     }}
                     className="p-0.5 rounded opacity-0 group-hover:opacity-100 hover:bg-cad-border text-cad-text-dim hover:text-cad-text transition-all"
                     title="Rename"
@@ -124,15 +154,15 @@ export function DraftsTab() {
                     <Pencil size={12} />
                   </button>
 
-                  {/* Delete button (visible on hover, only if more than one draft) */}
-                  {drafts.length > 1 && (
+                  {/* Delete button (visible on hover, only if more than one drawing) */}
+                  {drawings.length > 1 && (
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
-                        deleteDraft(draft.id);
+                        deleteDrawing(drawing.id);
                       }}
                       className="p-0.5 rounded opacity-0 group-hover:opacity-100 hover:bg-cad-border text-cad-text-dim hover:text-red-400 transition-all"
-                      title="Delete Draft"
+                      title="Delete Drawing"
                     >
                       <Trash2 size={12} />
                     </button>
@@ -146,3 +176,6 @@ export function DraftsTab() {
     </div>
   );
 }
+
+// Legacy alias
+export { DrawingsTab as DraftsTab };

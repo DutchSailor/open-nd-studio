@@ -26,11 +26,14 @@ export interface BaseShape {
   id: string;
   type: ShapeType;
   layerId: string;
-  draftId: string;  // Which draft this shape belongs to
+  drawingId: string;  // Which drawing this shape belongs to
   style: ShapeStyle;
   visible: boolean;
   locked: boolean;
 }
+
+/** @deprecated Use drawingId instead */
+export type BaseShapeWithDraftId = BaseShape & { draftId?: string };
 
 export type ShapeType = 'line' | 'rectangle' | 'circle' | 'arc' | 'polyline' | 'ellipse' | 'text' | 'point';
 
@@ -77,13 +80,25 @@ export interface PolylineShape extends BaseShape {
   closed: boolean;
 }
 
+// Text alignment options
+export type TextAlignment = 'left' | 'center' | 'right';
+export type TextVerticalAlignment = 'top' | 'middle' | 'bottom';
+
 export interface TextShape extends BaseShape {
   type: 'text';
-  position: Point;
-  text: string;
-  fontSize: number;
+  position: Point;           // Insertion point
+  text: string;              // Plain text content
+  fontSize: number;          // In drawing units
   fontFamily: string;
-  rotation: number;
+  rotation: number;          // Radians
+  alignment: TextAlignment;
+  verticalAlignment: TextVerticalAlignment;
+  bold: boolean;
+  italic: boolean;
+  underline: boolean;
+  color: string;             // Text color
+  lineHeight: number;        // Multiplier (default 1.2)
+  fixedWidth?: number;       // If set, text wraps at this width
 }
 
 export interface PointShape extends BaseShape {
@@ -106,7 +121,7 @@ export type Shape =
 export interface Layer {
   id: string;
   name: string;
-  draftId: string;  // Which draft this layer belongs to
+  drawingId: string;  // Which drawing this layer belongs to
   visible: boolean;
   locked: boolean;
   color: string;
@@ -142,13 +157,20 @@ export interface SnapPoint {
 export type ToolType =
   | 'select'
   | 'pan'
+  // Drawing tools
   | 'line'
   | 'rectangle'
   | 'circle'
   | 'arc'
   | 'polyline'
   | 'ellipse'
+  | 'spline'
   | 'text'
+  // Region tools
+  | 'filled-region'
+  | 'insulation'
+  | 'detail-component'
+  // Modify tools (legacy - now commands)
   | 'move'
   | 'copy'
   | 'rotate'
@@ -157,7 +179,13 @@ export type ToolType =
   | 'trim'
   | 'extend'
   | 'fillet'
-  | 'offset';
+  | 'offset'
+  // Sheet annotation tools
+  | 'sheet-text'
+  | 'sheet-leader'
+  | 'sheet-dimension'
+  | 'sheet-callout'
+  | 'sheet-revision-cloud';
 
 // Circle drawing modes (like AutoCAD)
 export type CircleMode =
@@ -173,31 +201,40 @@ export type RectangleMode =
   | '3point';          // Three points: corner, width direction, height
 
 // ============================================================================
-// Drafts & Sheets System (Model Space + Paper Space)
+// Drawings & Sheets System (Model Space + Paper Space)
 // ============================================================================
 
-// Draft boundary - defines the visible region when placed on sheets
-export interface DraftBoundary {
-  x: number;      // Left edge in draft coordinates
-  y: number;      // Top edge in draft coordinates
-  width: number;  // Width in draft units
-  height: number; // Height in draft units
+// Drawing boundary - defines the visible region when placed on sheets
+export interface DrawingBoundary {
+  x: number;      // Left edge in drawing coordinates
+  y: number;      // Top edge in drawing coordinates
+  width: number;  // Width in drawing units
+  height: number; // Height in drawing units
 }
 
-// Draft - working canvas (like Revit Drafting View)
-export interface Draft {
+// Drawing - working canvas (like Revit Drafting View)
+export interface Drawing {
   id: string;
   name: string;
-  boundary: DraftBoundary;  // Defines the region/extent visible on sheets
+  boundary: DrawingBoundary;  // Defines the region/extent visible on sheets
   createdAt: string;
   modifiedAt: string;
 }
+
+/** @deprecated Use DrawingBoundary instead */
+export type DraftBoundary = DrawingBoundary;
+/** @deprecated Use Drawing instead */
+export type Draft = Drawing;
 
 // Paper sizes for sheets
 export type PaperSize = 'A4' | 'A3' | 'A2' | 'A1' | 'A0' | 'Letter' | 'Legal' | 'Tabloid' | 'Custom';
 
 // Paper orientation
 export type PaperOrientation = 'portrait' | 'landscape';
+
+// Forward declaration for sheet annotations (defined in sheet.ts)
+// Using import type to avoid circular dependency
+import type { SheetAnnotation } from './sheet';
 
 // Sheet - printable layout (like AutoCAD Paper Space)
 export interface Sheet {
@@ -209,23 +246,76 @@ export interface Sheet {
   customHeight?: number;  // mm, only used when paperSize is 'Custom'
   viewports: SheetViewport[];
   titleBlock: TitleBlock;
+  /** Sheet-level annotations (text, dimensions, leaders, etc.) */
+  annotations: SheetAnnotation[];
   createdAt: string;
   modifiedAt: string;
 }
 
-// Viewport on sheet showing a draft
+// ============================================================================
+// Viewport Crop Region
+// ============================================================================
+
+/**
+ * Crop region type - defines the visible area within a viewport
+ */
+export type CropRegionType = 'rectangular' | 'polygonal';
+
+/**
+ * Crop region definition for viewport clipping
+ */
+export interface CropRegion {
+  /** Type of crop region */
+  type: CropRegionType;
+  /** Points defining the region (2 for rectangular corners, N for polygonal) */
+  points: Point[];
+  /** Whether the crop is currently enabled */
+  enabled: boolean;
+}
+
+// ============================================================================
+// Viewport Layer Overrides
+// ============================================================================
+
+/**
+ * Per-viewport layer visibility and style overrides
+ */
+export interface ViewportLayerOverride {
+  /** ID of the layer being overridden */
+  layerId: string;
+  /** Visibility override (undefined = use layer default) */
+  visible?: boolean;
+  /** Color override (undefined = use layer default) */
+  colorOverride?: string;
+  /** Line weight override (undefined = use layer default) */
+  lineWeightOverride?: number;
+}
+
+// ============================================================================
+// Sheet Viewport
+// ============================================================================
+
+// Viewport on sheet showing a drawing
 export interface SheetViewport {
   id: string;
-  draftId: string;            // Which draft to show
+  drawingId: string;          // Which drawing to show
   x: number;                  // Position on sheet (mm)
   y: number;
   width: number;              // Size on sheet (mm)
   height: number;
-  centerX: number;            // View center in draft coordinates
+  centerX: number;            // View center in drawing coordinates
   centerY: number;
   scale: number;              // e.g., 0.01 for 1:100, 0.02 for 1:50
   locked: boolean;            // Prevent accidental pan/zoom
   visible: boolean;           // Toggle viewport visibility
+  /** Optional crop region for clipping */
+  cropRegion?: CropRegion;
+  /** Per-viewport layer overrides */
+  layerOverrides?: ViewportLayerOverride[];
+  /** Reference number for callouts (e.g., "1", "A") */
+  referenceNumber?: string;
+  /** Custom viewport title (overrides drawing name) */
+  customTitle?: string;
 }
 
 // Title block with editable fields
@@ -253,4 +343,4 @@ export interface TitleBlockField {
 }
 
 // Editor mode - are we in model space or paper space?
-export type EditorMode = 'draft' | 'sheet';
+export type EditorMode = 'drawing' | 'sheet';

@@ -1,0 +1,1 @@
+export { TitleBlockEditor } from './TitleBlockEditor';

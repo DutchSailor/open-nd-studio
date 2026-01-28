@@ -1,25 +1,19 @@
 import { useState, useRef, useEffect } from 'react';
 import {
   MousePointer2,
-  Move,
-  Minus,
+  Hand,
   Square,
   Circle,
-  Spline,
   Type,
-  ArrowUpRight,
   RotateCw,
   FlipHorizontal,
   Scissors,
   ArrowRight,
-  CornerUpRight,
   Copy,
   ZoomIn,
   ZoomOut,
   Maximize,
   Grid3X3,
-  Undo,
-  Redo,
   Trash2,
   Printer,
   Settings,
@@ -31,6 +25,24 @@ import {
   XSquare,
 } from 'lucide-react';
 import { useAppStore } from '../../state/appStore';
+import {
+  LineIcon,
+  ArcIcon,
+  PolylineIcon,
+  SplineIcon,
+  EllipseIcon,
+  SplitIcon,
+  ArrayIcon,
+  AlignIcon,
+  FilletIcon,
+  ChamferIcon,
+  ExtendIcon,
+  ScaleIcon,
+  OffsetIcon,
+  FilledRegionIcon,
+  DetailComponentIcon,
+  InsulationIcon,
+} from '../shared/CadIcons';
 import './Ribbon.css';
 
 type RibbonTab = 'home' | 'modify' | 'view' | 'tools' | 'help';
@@ -97,17 +109,17 @@ function RibbonDropdownButton({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [isOpen]);
 
-  const selectedLabel = options.find(o => o.id === selectedOption)?.label || label;
+  const selectedOptionLabel = options.find(o => o.id === selectedOption)?.label || '';
 
   return (
     <div className="ribbon-dropdown-container" ref={dropdownRef}>
       <button
         className={`ribbon-btn has-dropdown ${active ? 'active' : ''}`}
         onClick={onClick}
-        title={selectedLabel}
+        title={`${label} (${selectedOptionLabel})`}
       >
         <span className="ribbon-btn-icon">{icon}</span>
-        <span className="ribbon-btn-label">{selectedLabel}</span>
+        <span className="ribbon-btn-label">{label}</span>
       </button>
       <button
         className={`ribbon-dropdown-trigger ${active ? 'active' : ''}`}
@@ -179,12 +191,14 @@ export function Ribbon() {
 
   const {
     activeTool,
-    setActiveTool,
-    setPendingCommand,
+    switchToDrawingTool,
+    switchToolAndCancelCommand,
     circleMode,
     setCircleMode,
     rectangleMode,
     setRectangleMode,
+    arcMode,
+    setArcMode,
     gridVisible,
     toggleGrid,
     zoomIn,
@@ -192,19 +206,13 @@ export function Ribbon() {
     zoomToFit,
     deleteSelectedShapes,
     selectedShapeIds,
-    undo,
-    redo,
-    historyStack,
-    historyIndex,
     setPrintDialogOpen,
     setSnapSettingsOpen,
     setAboutDialogOpen,
     selectAll,
     deselectAll,
+    activeCommandName,
   } = useAppStore();
-
-  const canUndo = historyStack.length > 0 && historyIndex > 0;
-  const canRedo = historyStack.length > 0 && historyIndex < historyStack.length - 1;
 
   const circleOptions: DropdownOption[] = [
     { id: 'center-radius', label: 'Center, Radius' },
@@ -217,6 +225,11 @@ export function Ribbon() {
     { id: 'corner', label: 'Corner' },
     { id: 'center', label: 'Center' },
     { id: '3point', label: '3-Point' },
+  ];
+
+  const arcOptions: DropdownOption[] = [
+    { id: '3point', label: '3-Point (Start, Arc, End)' },
+    { id: 'center-start-end', label: 'Center, Start, End' },
   ];
 
   const tabs: { id: RibbonTab; label: string }[] = [
@@ -279,14 +292,14 @@ export function Ribbon() {
               <RibbonButton
                 icon={<MousePointer2 size={24} />}
                 label="Select"
-                onClick={() => setActiveTool('select')}
-                active={activeTool === 'select'}
+                onClick={() => switchToolAndCancelCommand('select')}
+                active={activeTool === 'select' && !activeCommandName}
               />
               <RibbonButton
-                icon={<Move size={24} />}
+                icon={<Hand size={24} />}
                 label="Pan"
-                onClick={() => setActiveTool('pan')}
-                active={activeTool === 'pan'}
+                onClick={() => switchToolAndCancelCommand('pan')}
+                active={activeTool === 'pan' && !activeCommandName}
               />
               <RibbonButtonStack>
                 <RibbonSmallButton
@@ -305,16 +318,16 @@ export function Ribbon() {
             {/* Draw Group */}
             <RibbonGroup label="Draw">
               <RibbonButton
-                icon={<Minus size={24} />}
+                icon={<LineIcon size={24} />}
                 label="Line"
-                onClick={() => setActiveTool('line')}
-                active={activeTool === 'line'}
+                onClick={() => switchToDrawingTool('line')}
+                active={activeTool === 'line' && !activeCommandName}
               />
               <RibbonDropdownButton
                 icon={<Square size={24} />}
                 label="Rectangle"
-                onClick={() => setActiveTool('rectangle')}
-                active={activeTool === 'rectangle'}
+                onClick={() => switchToDrawingTool('rectangle')}
+                active={activeTool === 'rectangle' && !activeCommandName}
                 options={rectangleOptions}
                 selectedOption={rectangleMode}
                 onOptionSelect={(mode) => setRectangleMode(mode as 'corner' | 'center' | '3point')}
@@ -322,32 +335,47 @@ export function Ribbon() {
               <RibbonDropdownButton
                 icon={<Circle size={24} />}
                 label="Circle"
-                onClick={() => setActiveTool('circle')}
-                active={activeTool === 'circle'}
+                onClick={() => switchToDrawingTool('circle')}
+                active={activeTool === 'circle' && !activeCommandName}
                 options={circleOptions}
                 selectedOption={circleMode}
                 onOptionSelect={(mode) => setCircleMode(mode as 'center-radius' | 'center-diameter' | '2point' | '3point')}
               />
+              <RibbonDropdownButton
+                icon={<ArcIcon size={24} />}
+                label="Arc"
+                onClick={() => switchToDrawingTool('arc')}
+                active={activeTool === 'arc' && !activeCommandName}
+                options={arcOptions}
+                selectedOption={arcMode}
+                onOptionSelect={(mode) => setArcMode(mode as '3point' | 'center-start-end')}
+              />
               <RibbonButtonStack>
                 <RibbonSmallButton
-                  icon={<ArrowUpRight size={14} />}
-                  label="Arc"
-                  onClick={() => setActiveTool('arc')}
-                  active={activeTool === 'arc'}
-                />
-                <RibbonSmallButton
-                  icon={<Spline size={14} />}
+                  icon={<PolylineIcon size={14} />}
                   label="Polyline"
-                  onClick={() => setActiveTool('polyline')}
-                  active={activeTool === 'polyline'}
+                  onClick={() => switchToDrawingTool('polyline')}
+                  active={activeTool === 'polyline' && !activeCommandName}
                 />
                 <RibbonSmallButton
-                  icon={<Type size={14} />}
-                  label="Text"
-                  onClick={() => setActiveTool('text')}
-                  active={activeTool === 'text'}
+                  icon={<EllipseIcon size={14} />}
+                  label="Ellipse"
+                  onClick={() => switchToDrawingTool('ellipse')}
+                  active={activeTool === 'ellipse' && !activeCommandName}
+                />
+                <RibbonSmallButton
+                  icon={<SplineIcon size={14} />}
+                  label="Spline"
+                  onClick={() => {}}
+                  disabled={true}
                 />
               </RibbonButtonStack>
+              <RibbonButton
+                icon={<Type size={24} />}
+                label="Text"
+                onClick={() => switchToDrawingTool('text')}
+                active={activeTool === 'text' && !activeCommandName}
+              />
             </RibbonGroup>
 
             {/* Modify Group */}
@@ -356,73 +384,92 @@ export function Ribbon() {
                 <RibbonSmallButton
                   icon={<ArrowRight size={14} />}
                   label="Move"
-                  onClick={() => setPendingCommand('MOVE')}
+                  onClick={() => {}}
+                  disabled={true}
                 />
                 <RibbonSmallButton
                   icon={<Copy size={14} />}
                   label="Copy"
-                  onClick={() => setPendingCommand('COPY')}
+                  onClick={() => {}}
+                  disabled={true}
                 />
                 <RibbonSmallButton
                   icon={<RotateCw size={14} />}
                   label="Rotate"
-                  onClick={() => setPendingCommand('ROTATE')}
+                  onClick={() => {}}
+                  disabled={true}
                 />
               </RibbonButtonStack>
               <RibbonButtonStack>
                 <RibbonSmallButton
                   icon={<FlipHorizontal size={14} />}
                   label="Mirror"
-                  onClick={() => setPendingCommand('MIRROR')}
+                  onClick={() => {}}
+                  disabled={true}
+                />
+                <RibbonSmallButton
+                  icon={<ArrayIcon size={14} />}
+                  label="Array"
+                  onClick={() => {}}
+                  disabled={true}
+                />
+                <RibbonSmallButton
+                  icon={<ScaleIcon size={14} />}
+                  label="Scale"
+                  onClick={() => {}}
+                  disabled={true}
+                />
+              </RibbonButtonStack>
+            </RibbonGroup>
+
+            {/* Edit Group */}
+            <RibbonGroup label="Edit">
+              <RibbonButtonStack>
+                <RibbonSmallButton
+                  icon={<OffsetIcon size={14} />}
+                  label="Offset"
+                  onClick={() => {}}
+                  disabled={true}
                 />
                 <RibbonSmallButton
                   icon={<Scissors size={14} />}
                   label="Trim"
-                  onClick={() => setPendingCommand('TRIM')}
+                  onClick={() => {}}
+                  disabled={true}
                 />
                 <RibbonSmallButton
-                  icon={<CornerUpRight size={14} />}
-                  label="Fillet"
-                  onClick={() => setPendingCommand('FILLET')}
+                  icon={<ExtendIcon size={14} />}
+                  label="Extend"
+                  onClick={() => {}}
+                  disabled={true}
                 />
               </RibbonButtonStack>
-            </RibbonGroup>
-
-            {/* Undo/Redo Group */}
-            <RibbonGroup label="History">
-              <RibbonButton
-                icon={<Undo size={24} />}
-                label="Undo"
-                onClick={undo}
-                disabled={!canUndo}
-              />
-              <RibbonButton
-                icon={<Redo size={24} />}
-                label="Redo"
-                onClick={redo}
-                disabled={!canRedo}
-              />
-            </RibbonGroup>
-
-            {/* Zoom Group */}
-            <RibbonGroup label="Zoom">
               <RibbonButtonStack>
                 <RibbonSmallButton
-                  icon={<ZoomIn size={14} />}
-                  label="Zoom In"
-                  onClick={zoomIn}
+                  icon={<SplitIcon size={14} />}
+                  label="Split"
+                  onClick={() => {}}
+                  disabled={true}
                 />
                 <RibbonSmallButton
-                  icon={<ZoomOut size={14} />}
-                  label="Zoom Out"
-                  onClick={zoomOut}
+                  icon={<FilletIcon size={14} />}
+                  label="Fillet"
+                  onClick={() => {}}
+                  disabled={true}
                 />
                 <RibbonSmallButton
-                  icon={<Maximize size={14} />}
-                  label="Fit All"
-                  onClick={zoomToFit}
+                  icon={<ChamferIcon size={14} />}
+                  label="Chamfer"
+                  onClick={() => {}}
+                  disabled={true}
                 />
               </RibbonButtonStack>
+              <RibbonSmallButton
+                icon={<AlignIcon size={14} />}
+                label="Align"
+                onClick={() => {}}
+                disabled={true}
+              />
             </RibbonGroup>
           </div>
         </div>
@@ -430,39 +477,24 @@ export function Ribbon() {
         {/* Modify Tab */}
         <div className={`ribbon-content ${activeTab === 'modify' ? 'active' : ''}`}>
           <div className="ribbon-groups">
-            <RibbonGroup label="Transform">
+            <RibbonGroup label="Region">
               <RibbonButton
-                icon={<ArrowRight size={24} />}
-                label="Move"
-                onClick={() => setPendingCommand('MOVE')}
+                icon={<FilledRegionIcon size={24} />}
+                label="Filled Region"
+                onClick={() => {}}
+                disabled={true}
               />
               <RibbonButton
-                icon={<Copy size={24} />}
-                label="Copy"
-                onClick={() => setPendingCommand('COPY')}
+                icon={<InsulationIcon size={24} />}
+                label="Insulation"
+                onClick={() => {}}
+                disabled={true}
               />
               <RibbonButton
-                icon={<RotateCw size={24} />}
-                label="Rotate"
-                onClick={() => setPendingCommand('ROTATE')}
-              />
-              <RibbonButton
-                icon={<FlipHorizontal size={24} />}
-                label="Mirror"
-                onClick={() => setPendingCommand('MIRROR')}
-              />
-            </RibbonGroup>
-
-            <RibbonGroup label="Edit">
-              <RibbonButton
-                icon={<Scissors size={24} />}
-                label="Trim"
-                onClick={() => setPendingCommand('TRIM')}
-              />
-              <RibbonButton
-                icon={<CornerUpRight size={24} />}
-                label="Fillet"
-                onClick={() => setPendingCommand('FILLET')}
+                icon={<DetailComponentIcon size={24} />}
+                label="Detail Component"
+                onClick={() => {}}
+                disabled={true}
               />
             </RibbonGroup>
 
@@ -482,10 +514,10 @@ export function Ribbon() {
           <div className="ribbon-groups">
             <RibbonGroup label="Navigate">
               <RibbonButton
-                icon={<Move size={24} />}
+                icon={<Hand size={24} />}
                 label="Pan"
-                onClick={() => setActiveTool('pan')}
-                active={activeTool === 'pan'}
+                onClick={() => switchToolAndCancelCommand('pan')}
+                active={activeTool === 'pan' && !activeCommandName}
               />
             </RibbonGroup>
 

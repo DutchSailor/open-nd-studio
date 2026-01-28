@@ -34,11 +34,11 @@ export function useGlobalKeyboard() {
     projectName,
     isModified,
     // Drawings & Sheets state
-    drafts,
+    drawings,
     sheets,
-    activeDraftId,
+    activeDrawingId,
     activeSheetId,
-    draftViewports,
+    drawingViewports,
     // File actions
     newProject,
     loadProject,
@@ -86,11 +86,11 @@ export function useGlobalKeyboard() {
           layers: project.layers,
           activeLayerId: project.activeLayerId,
           settings: project.settings,
-          drafts: project.drafts,
+          drawings: project.drawings,
           sheets: project.sheets,
-          activeDraftId: project.activeDraftId,
+          activeDrawingId: project.activeDrawingId,
           activeSheetId: project.activeSheetId,
-          draftViewports: project.draftViewports,
+          drawingViewports: project.drawingViewports,
         },
         filePath,
         project.name
@@ -114,11 +114,11 @@ export function useGlobalKeyboard() {
         name: projectName,
         createdAt: new Date().toISOString(),
         modifiedAt: new Date().toISOString(),
-        drafts,
+        drawings,
         sheets,
-        activeDraftId: activeDraftId || '',
+        activeDrawingId: activeDrawingId || '',
         activeSheetId,
-        draftViewports,
+        drawingViewports,
         shapes,
         layers,
         activeLayerId,
@@ -138,7 +138,7 @@ export function useGlobalKeyboard() {
     } catch (err) {
       await showError(`Failed to save file: ${err}`);
     }
-  }, [currentFilePath, projectName, shapes, layers, activeLayerId, drafts, sheets, activeDraftId, activeSheetId, draftViewports, gridSize, gridVisible, snapEnabled, setFilePath, setModified, setProjectName]);
+  }, [currentFilePath, projectName, shapes, layers, activeLayerId, drawings, sheets, activeDrawingId, activeSheetId, drawingViewports, gridSize, gridVisible, snapEnabled, setFilePath, setModified, setProjectName]);
 
   const handleSaveAs = useCallback(async () => {
     const filePath = await showSaveDialog(projectName);
@@ -150,11 +150,11 @@ export function useGlobalKeyboard() {
         name: projectName,
         createdAt: new Date().toISOString(),
         modifiedAt: new Date().toISOString(),
-        drafts,
+        drawings,
         sheets,
-        activeDraftId: activeDraftId || '',
+        activeDrawingId: activeDrawingId || '',
         activeSheetId,
-        draftViewports,
+        drawingViewports,
         shapes,
         layers,
         activeLayerId,
@@ -174,7 +174,7 @@ export function useGlobalKeyboard() {
     } catch (err) {
       await showError(`Failed to save file: ${err}`);
     }
-  }, [projectName, shapes, layers, activeLayerId, drafts, sheets, activeDraftId, activeSheetId, draftViewports, gridSize, gridVisible, snapEnabled, setFilePath, setModified, setProjectName]);
+  }, [projectName, shapes, layers, activeLayerId, drawings, sheets, activeDrawingId, activeSheetId, drawingViewports, gridSize, gridVisible, snapEnabled, setFilePath, setModified, setProjectName]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -233,7 +233,7 @@ export function useGlobalKeyboard() {
           }
         }
         // Draft mode: boundary editing
-        else if (editorMode === 'draft') {
+        else if (editorMode === 'drawing') {
           if (boundaryEditState.activeHandle !== null) {
             e.preventDefault();
             cancelBoundaryDrag();

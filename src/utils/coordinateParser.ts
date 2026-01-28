@@ -4,6 +4,8 @@ export interface ParsedCoordinate {
   point: Point;
   isRelative: boolean;
   isPolar: boolean;
+  /** True if input was just a distance number (requires direction from tracking/mouse) */
+  isDirectDistance: boolean;
 }
 
 /**
@@ -49,6 +51,7 @@ export function parseCoordinateInput(
         point: { x: lastPoint.x + dx, y: lastPoint.y - dy }, // Y is inverted in screen coords
         isRelative: true,
         isPolar: true,
+        isDirectDistance: false,
       };
     } else if (!isRelative && !lastPoint) {
       // Absolute polar from origin
@@ -56,6 +59,7 @@ export function parseCoordinateInput(
         point: { x: dx, y: -dy },
         isRelative: false,
         isPolar: true,
+        isDirectDistance: false,
       };
     } else if (isRelative && !lastPoint) {
       // Relative but no last point - treat as from origin
@@ -63,6 +67,7 @@ export function parseCoordinateInput(
         point: { x: dx, y: -dy },
         isRelative: true,
         isPolar: true,
+        isDirectDistance: false,
       };
     }
 
@@ -70,6 +75,7 @@ export function parseCoordinateInput(
       point: { x: dx, y: -dy },
       isRelative: false,
       isPolar: true,
+      isDirectDistance: false,
     };
   }
 
@@ -86,6 +92,7 @@ export function parseCoordinateInput(
         point: { x: lastPoint.x + x, y: lastPoint.y + y },
         isRelative: true,
         isPolar: false,
+        isDirectDistance: false,
       };
     }
 
@@ -93,17 +100,19 @@ export function parseCoordinateInput(
       point: { x, y },
       isRelative: false,
       isPolar: false,
+      isDirectDistance: false,
     };
   }
 
-  // Try single number (direct distance - requires mouse direction)
+  // Try single number (direct distance - requires mouse/tracking direction)
   const singleNumber = parseFloat(coordStr);
   if (!isNaN(singleNumber) && coordStr.match(/^[\d.]+$/)) {
-    // Return distance only - caller needs to apply direction
+    // Return distance only - caller needs to apply direction from tracking angle
     return {
       point: { x: singleNumber, y: 0 }, // x holds the distance
       isRelative: true,
       isPolar: false,
+      isDirectDistance: true,
     };
   }
 

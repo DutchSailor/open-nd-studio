@@ -1,3 +1,3 @@
 export { NavigationPanel } from './NavigationPanel';
-export { DraftsTab } from './DraftsTab';
+export { DrawingsTab, DraftsTab } from './DrawingsTab';
 export { SheetsTab } from './SheetsTab';

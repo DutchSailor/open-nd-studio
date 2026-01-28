@@ -40,7 +40,7 @@ export function CommandLine() {
     selectedShapeIds,
     deselectAll,
     activeLayerId,
-    activeDraftId,
+    activeDrawingId,
     currentStyle,
     setActiveTool,
     pendingCommand,
@@ -57,6 +57,10 @@ export function CommandLine() {
     snapEnabled,
     gridSize,
     setPrintDialogOpen,
+    directDistanceAngle,
+    pendingCommandCancel,
+    clearCommandCancelRequest,
+    setActiveCommandName,
   } = useAppStore();
 
   // Check if we have an active modify command
@@ -74,9 +78,18 @@ export function CommandLine() {
         if (drawingPoints.length === 0) {
           return 'LINE Specify first point:';
         } else if (drawingPoints.length === 1) {
-          return 'Specify next point or [Undo]:';
+          return 'Specify next point, distance, or [Undo]:';
         } else {
-          return 'Specify next point or [Close/Undo]:';
+          return 'Specify next point, distance, or [Close/Undo]:';
+        }
+
+      case 'polyline':
+        if (drawingPoints.length === 0) {
+          return 'POLYLINE Specify first point:';
+        } else if (drawingPoints.length === 1) {
+          return 'Specify next point, distance, or [Undo]:';
+        } else {
+          return 'Specify next point, distance, or [Close/Undo]:';
         }
 
       case 'rectangle':
@@ -119,7 +132,7 @@ export function CommandLine() {
       options.unshift('Undo');
     }
 
-    if (activeTool === 'line' && drawingPoints.length >= 2) {
+    if ((activeTool === 'line' || activeTool === 'polyline') && drawingPoints.length >= 2) {
       options.unshift('Close');
     }
 
@@ -181,7 +194,7 @@ export function CommandLine() {
         id: generateId(),
         type: 'line',
         layerId: activeLayerId,
-        draftId: activeDraftId,
+        drawingId: activeDrawingId,
         style: { ...currentStyle },
         visible: true,
         locked: false,
@@ -190,7 +203,7 @@ export function CommandLine() {
       };
       addShape(lineShape);
     },
-    [activeLayerId, activeDraftId, currentStyle, addShape]
+    [activeLayerId, activeDrawingId, currentStyle, addShape]
   );
 
   const createRectangle = useCallback(
@@ -201,7 +214,7 @@ export function CommandLine() {
         id: generateId(),
         type: 'rectangle',
         layerId: activeLayerId,
-        draftId: activeDraftId,
+        drawingId: activeDrawingId,
         style: { ...currentStyle },
         visible: true,
         locked: false,
@@ -215,7 +228,7 @@ export function CommandLine() {
       };
       addShape(rectShape);
     },
-    [activeLayerId, activeDraftId, currentStyle, addShape]
+    [activeLayerId, activeDrawingId, currentStyle, addShape]
   );
 
   const createCircle = useCallback(
@@ -224,7 +237,7 @@ export function CommandLine() {
         id: generateId(),
         type: 'circle',
         layerId: activeLayerId,
-        draftId: activeDraftId,
+        drawingId: activeDrawingId,
         style: { ...currentStyle },
         visible: true,
         locked: false,
@@ -233,7 +246,7 @@ export function CommandLine() {
       };
       addShape(circleShape);
     },
-    [activeLayerId, activeDraftId, currentStyle, addShape]
+    [activeLayerId, activeDrawingId, currentStyle, addShape]
   );
 
   // Handle option click (for drawing tools)
@@ -402,7 +415,7 @@ export function CommandLine() {
           break;
 
         case 'close':
-          if (activeTool === 'line' && drawingPoints.length >= 2) {
+          if ((activeTool === 'line' || activeTool === 'polyline') && drawingPoints.length >= 2) {
             handleDrawingOption('Close');
             return;
           }
@@ -420,23 +433,55 @@ export function CommandLine() {
       }
 
       // Try to parse as coordinates for drawing tools
-      if (activeTool === 'line' || activeTool === 'rectangle' || activeTool === 'circle') {
+      if (activeTool === 'line' || activeTool === 'polyline' || activeTool === 'rectangle' || activeTool === 'circle') {
         const lastPoint = drawingPoints.length > 0 ? drawingPoints[drawingPoints.length - 1] : null;
         const parsed = parseCoordinateInput(trimmed, lastPoint);
 
         if (parsed) {
-          const point = parsed.point;
+          let point = parsed.point;
+
+          // Handle direct distance entry - use tracking angle to calculate endpoint
+          if (parsed.isDirectDistance && lastPoint) {
+            const distance = parsed.point.x; // Distance is stored in x
+
+            if (directDistanceAngle !== null) {
+              // Use the snapped/tracking angle
+              point = {
+                x: lastPoint.x + distance * Math.cos(directDistanceAngle),
+                y: lastPoint.y + distance * Math.sin(directDistanceAngle),
+              };
+            } else {
+              // No tracking angle - use the current mouse direction
+              const worldX = (mousePosition.x - viewport.offsetX) / viewport.zoom;
+              const worldY = (mousePosition.y - viewport.offsetY) / viewport.zoom;
+              const dx = worldX - lastPoint.x;
+              const dy = worldY - lastPoint.y;
+              const mouseAngle = Math.atan2(dy, dx);
+              point = {
+                x: lastPoint.x + distance * Math.cos(mouseAngle),
+                y: lastPoint.y + distance * Math.sin(mouseAngle),
+              };
+            }
+          }
 
           switch (activeTool) {
             case 'line':
+            case 'polyline':
               if (drawingPoints.length === 0) {
+                // For first point, direct distance doesn't make sense - use as absolute
+                if (parsed.isDirectDistance) {
+                  addMessage('Cannot use direct distance for first point. Enter coordinates.');
+                  return;
+                }
                 addDrawingPoint(point);
                 addMessage(`First point: ${point.x.toFixed(2)}, ${point.y.toFixed(2)}`);
               } else {
                 const prevPoint = drawingPoints[drawingPoints.length - 1];
-                createLine(prevPoint, point);
+                if (activeTool === 'line') {
+                  createLine(prevPoint, point);
+                }
                 addDrawingPoint(point);
-                addMessage(`Line to: ${point.x.toFixed(2)}, ${point.y.toFixed(2)}`);
+                addMessage(`${activeTool === 'line' ? 'Line' : 'Polyline'} to: ${point.x.toFixed(2)}, ${point.y.toFixed(2)}`);
               }
               break;
 
@@ -506,6 +551,9 @@ export function CommandLine() {
       applyCommandResult,
       addMessage,
       setActiveTool,
+      directDistanceAngle,
+      mousePosition,
+      viewport,
     ]
   );
 
@@ -545,22 +593,37 @@ export function CommandLine() {
     }
   };
 
-  // Watch for pending commands from ToolPalette
+  // Watch for pending commands from ToolPalette/Ribbon
+  // This bypasses handleCommand to properly switch between commands
   useEffect(() => {
     if (pendingCommand) {
-      handleCommand(pendingCommand);
+      // Resolve the command name
+      const commandName = resolveCommandName(pendingCommand);
+
+      if (commandName) {
+        // Cancel any active command first (reset state)
+        // Then start the new command from a fresh state
+        const newState = startCommand(commandName, createInitialCommandState(), selectedShapeIds);
+        setCommandState(newState);
+        addMessage(commandName);
+      } else {
+        // Not a recognized command, fall back to handleCommand
+        handleCommand(pendingCommand);
+      }
+
       setPendingCommand(null);
     }
-  }, [pendingCommand, handleCommand, setPendingCommand]);
+  }, [pendingCommand, setPendingCommand, selectedShapeIds, addMessage, handleCommand]);
 
-  // Update hasActiveModifyCommand and commandIsSelecting when command state changes
+  // Update hasActiveModifyCommand, activeCommandName, and commandIsSelecting when command state changes
   useEffect(() => {
     setHasActiveModifyCommand(hasActiveCommand);
+    setActiveCommandName(hasActiveCommand ? commandState.activeCommand : null);
     setCommandIsSelecting(hasActiveCommand && commandState.phase === 'selecting');
     if (!hasActiveCommand) {
       setCommandPreviewShapes([]);
     }
-  }, [hasActiveCommand, commandState.phase, setHasActiveModifyCommand, setCommandIsSelecting, setCommandPreviewShapes]);
+  }, [hasActiveCommand, commandState.activeCommand, commandState.phase, setHasActiveModifyCommand, setActiveCommandName, setCommandIsSelecting, setCommandPreviewShapes]);
 
   // Update command preview shapes on mouse move
   useEffect(() => {
@@ -605,6 +668,22 @@ export function CommandLine() {
     }
   }, [pendingCommandSelection, hasActiveCommand, commandState, shapes, applyCommandResult, setPendingCommandSelection]);
 
+  // Watch for command cancel requests (e.g., when user switches to drawing tool)
+  useEffect(() => {
+    if (pendingCommandCancel && hasActiveCommand) {
+      // Cancel the active command
+      setCommandState(createInitialCommandState());
+      setCommandPreviewShapes([]);
+      deselectAll();
+      addMessage('*Cancel*');
+      // Clear the request
+      clearCommandCancelRequest();
+    } else if (pendingCommandCancel) {
+      // No active command, just clear the request
+      clearCommandCancelRequest();
+    }
+  }, [pendingCommandCancel, hasActiveCommand, clearCommandCancelRequest, setCommandPreviewShapes, deselectAll, addMessage]);
+
   // Auto-scroll history
   useEffect(() => {
     if (historyRef.current) {
@@ -615,7 +694,9 @@ export function CommandLine() {
   // Focus input on key press
   useEffect(() => {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
-      if (document.activeElement?.tagName === 'INPUT') return;
+      // Don't steal focus from inputs or textareas
+      const tagName = document.activeElement?.tagName;
+      if (tagName === 'INPUT' || tagName === 'TEXTAREA') return;
 
       // Focus command line on typing
       if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
@@ -660,7 +741,7 @@ export function CommandLine() {
             hasActiveCommand
               ? 'Enter value, coordinates, or select option'
               : isDrawing
-              ? 'Enter coordinates (e.g., 100,50 or @50,25 or @100<45)'
+              ? 'Enter coordinates (100,50), relative (@50,25), polar (@100<45), or distance (100)'
               : ''
           }
           autoComplete="off"

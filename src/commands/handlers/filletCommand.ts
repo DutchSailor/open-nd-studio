@@ -470,7 +470,7 @@ function calculateFilletArc(
     endAngle,
     style: { ...line1.style },
     layerId: line1.layerId,
-    draftId: line1.draftId,
+    drawingId: line1.drawingId,
     visible: true,
     locked: false,
   };

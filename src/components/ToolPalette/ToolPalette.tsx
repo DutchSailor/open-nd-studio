@@ -1,22 +1,41 @@
 import { useState, useRef, useEffect } from 'react';
 import {
   MousePointer2,
-  Move,
-  Minus,
+  Hand,
   Square,
   Circle,
-  Spline,
   Type,
-  ArrowUpRight,
   RotateCw,
   FlipHorizontal,
   Scissors,
   ArrowRight,
-  CornerUpRight,
   Copy,
   ChevronDown,
+  // Sheet annotation icons
+  TextCursor,
+  ArrowRightFromLine,
+  Ruler,
+  Cloud,
 } from 'lucide-react';
 import { useAppStore } from '../../state/appStore';
+import {
+  LineIcon,
+  ArcIcon,
+  PolylineIcon,
+  SplineIcon,
+  EllipseIcon,
+  SplitIcon,
+  ArrayIcon,
+  AlignIcon,
+  FilletIcon,
+  ChamferIcon,
+  ExtendIcon,
+  ScaleIcon,
+  OffsetIcon,
+  FilledRegionIcon,
+  DetailComponentIcon,
+  InsulationIcon,
+} from '../shared/CadIcons';
 import type { ToolType } from '../../types/geometry';
 
 interface ToolButtonProps {
@@ -24,18 +43,22 @@ interface ToolButtonProps {
   label: string;
   shortcut?: string;
   active?: boolean;
+  disabled?: boolean;
   onClick: () => void;
 }
 
-function ToolButton({ icon, label, shortcut, active, onClick }: ToolButtonProps) {
+function ToolButton({ icon, label, shortcut, active, disabled, onClick }: ToolButtonProps) {
   return (
     <button
       className={`w-10 h-10 flex items-center justify-center rounded transition-colors ${
-        active
-          ? 'bg-cad-accent text-white'
-          : 'text-cad-text hover:bg-cad-border'
+        disabled
+          ? 'text-cad-text-dim opacity-40 cursor-not-allowed'
+          : active
+            ? 'bg-cad-accent text-white'
+            : 'text-cad-text hover:bg-cad-border'
       }`}
-      onClick={onClick}
+      onClick={disabled ? undefined : onClick}
+      disabled={disabled}
       title={shortcut ? `${label} (${shortcut})` : label}
     >
       {icon}
@@ -157,11 +180,11 @@ function ToolSection({ title, children }: { title: string; children: React.React
 }
 
 export function ToolPalette() {
-  const { activeTool, setActiveTool, setPendingCommand, circleMode, setCircleMode, rectangleMode, setRectangleMode } = useAppStore();
+  const { activeTool, switchToDrawingTool, switchToolAndCancelCommand, setPendingCommand, circleMode, setCircleMode, rectangleMode, setRectangleMode, arcMode, setArcMode, editorMode, activeCommandName } = useAppStore();
 
   const selectionTools: { type: ToolType; icon: React.ReactNode; label: string; shortcut: string }[] = [
     { type: 'select', icon: <MousePointer2 size={18} />, label: 'Select', shortcut: 'V' },
-    { type: 'pan', icon: <Move size={18} />, label: 'Pan', shortcut: 'H' },
+    { type: 'pan', icon: <Hand size={18} />, label: 'Pan', shortcut: 'H' },
   ];
 
   const circleOptions: DropdownOption[] = [
@@ -177,18 +200,43 @@ export function ToolPalette() {
     { id: '3point', label: '3-Point (Rotated)' },
   ];
 
+  const arcOptions: DropdownOption[] = [
+    { id: '3point', label: '3-Point (Start, Arc, End)', shortcut: 'A' },
+    { id: 'center-start-end', label: 'Center, Start, End' },
+  ];
+
   // Modify tools trigger commands, not persistent tool modes
-  const modifyCommands: { command: string; icon: React.ReactNode; label: string; shortcut: string }[] = [
-    { command: 'MOVE', icon: <ArrowRight size={18} />, label: 'Move', shortcut: 'M' },
-    { command: 'COPY', icon: <Copy size={18} />, label: 'Copy', shortcut: 'CO' },
-    { command: 'ROTATE', icon: <RotateCw size={18} />, label: 'Rotate', shortcut: 'RO' },
-    { command: 'MIRROR', icon: <FlipHorizontal size={18} />, label: 'Mirror', shortcut: 'MI' },
-    { command: 'TRIM', icon: <Scissors size={18} />, label: 'Trim', shortcut: 'TR' },
-    { command: 'FILLET', icon: <CornerUpRight size={18} />, label: 'Fillet', shortcut: 'F' },
+  // Primary modify commands (most used - displayed with slightly larger emphasis)
+  const primaryModifyCommands: { command: string; icon: React.ReactNode; label: string; shortcut: string; disabled?: boolean }[] = [
+    { command: 'MOVE', icon: <ArrowRight size={18} />, label: 'Move', shortcut: 'M', disabled: true },
+    { command: 'COPY', icon: <Copy size={18} />, label: 'Copy', shortcut: 'CO', disabled: true },
+    { command: 'ROTATE', icon: <RotateCw size={18} />, label: 'Rotate', shortcut: 'RO', disabled: true },
+    { command: 'ARRAY', icon: <ArrayIcon size={18} />, label: 'Array', shortcut: 'AR', disabled: true },
+    { command: 'MIRROR', icon: <FlipHorizontal size={18} />, label: 'Mirror', shortcut: 'MI', disabled: true },
+    { command: 'SCALE', icon: <ScaleIcon size={18} />, label: 'Scale', shortcut: 'SC', disabled: true },
+  ];
+
+  // Secondary modify commands (editing operations)
+  const secondaryModifyCommands: { command: string; icon: React.ReactNode; label: string; shortcut: string; disabled?: boolean }[] = [
+    { command: 'OFFSET', icon: <OffsetIcon size={18} />, label: 'Offset', shortcut: 'O', disabled: true },
+    { command: 'TRIM', icon: <Scissors size={18} />, label: 'Trim', shortcut: 'TR', disabled: true },
+    { command: 'EXTEND', icon: <ExtendIcon size={18} />, label: 'Extend', shortcut: 'EX', disabled: true },
+    { command: 'SPLIT', icon: <SplitIcon size={18} />, label: 'Split', shortcut: 'SP', disabled: true },
+    { command: 'FILLET', icon: <FilletIcon size={18} />, label: 'Fillet', shortcut: 'F', disabled: true },
+    { command: 'CHAMFER', icon: <ChamferIcon size={18} />, label: 'Chamfer', shortcut: 'CHA', disabled: true },
+    { command: 'ALIGN', icon: <AlignIcon size={18} />, label: 'Align', shortcut: 'AL', disabled: true },
+  ];
+
+  // Sheet annotation tools - only visible in sheet mode
+  const sheetAnnotationTools: { type: ToolType; icon: React.ReactNode; label: string }[] = [
+    { type: 'sheet-text', icon: <TextCursor size={18} />, label: 'Sheet Text' },
+    { type: 'sheet-leader', icon: <ArrowRightFromLine size={18} />, label: 'Leader' },
+    { type: 'sheet-dimension', icon: <Ruler size={18} />, label: 'Dimension' },
+    { type: 'sheet-revision-cloud', icon: <Cloud size={18} />, label: 'Revision Cloud' },
   ];
 
   return (
-    <div className="w-12 bg-cad-surface border-r border-cad-border flex flex-col items-center py-2 gap-2">
+    <div className="w-12 bg-cad-surface border-r border-cad-border flex flex-col items-center py-2 gap-2 overflow-y-auto overflow-x-hidden">
       {/* Selection Tools */}
       <ToolSection title="Select">
         {selectionTools.map((tool) => (
@@ -197,8 +245,8 @@ export function ToolPalette() {
             icon={tool.icon}
             label={tool.label}
             shortcut={tool.shortcut}
-            active={activeTool === tool.type}
-            onClick={() => setActiveTool(tool.type)}
+            active={activeTool === tool.type && !activeCommandName}
+            onClick={() => switchToolAndCancelCommand(tool.type)}
           />
         ))}
       </ToolSection>
@@ -207,21 +255,21 @@ export function ToolPalette() {
 
       {/* Drawing Tools */}
       <ToolSection title="Draw">
-        {/* Line */}
+        {/* Line - Primary tool */}
         <ToolButton
-          icon={<Minus size={18} />}
+          icon={<LineIcon size={18} />}
           label="Line"
           shortcut="L"
-          active={activeTool === 'line'}
-          onClick={() => setActiveTool('line')}
+          active={activeTool === 'line' && !activeCommandName}
+          onClick={() => switchToDrawingTool('line')}
         />
         {/* Rectangle with dropdown */}
         <ToolButtonWithDropdown
           icon={<Square size={18} />}
           label="Rectangle"
           shortcut="R"
-          active={activeTool === 'rectangle'}
-          onClick={() => setActiveTool('rectangle')}
+          active={activeTool === 'rectangle' && !activeCommandName}
+          onClick={() => switchToDrawingTool('rectangle')}
           options={rectangleOptions}
           selectedOption={rectangleMode}
           onOptionSelect={(mode) => setRectangleMode(mode as 'corner' | 'center' | '3point')}
@@ -231,53 +279,143 @@ export function ToolPalette() {
           icon={<Circle size={18} />}
           label="Circle"
           shortcut="C"
-          active={activeTool === 'circle'}
-          onClick={() => setActiveTool('circle')}
+          active={activeTool === 'circle' && !activeCommandName}
+          onClick={() => switchToDrawingTool('circle')}
           options={circleOptions}
           selectedOption={circleMode}
           onOptionSelect={(mode) => setCircleMode(mode as 'center-radius' | 'center-diameter' | '2point' | '3point')}
         />
-        {/* Arc */}
-        <ToolButton
-          icon={<ArrowUpRight size={18} />}
+        {/* Arc with dropdown */}
+        <ToolButtonWithDropdown
+          icon={<ArcIcon size={18} />}
           label="Arc"
           shortcut="A"
-          active={activeTool === 'arc'}
-          onClick={() => setActiveTool('arc')}
+          active={activeTool === 'arc' && !activeCommandName}
+          onClick={() => switchToDrawingTool('arc')}
+          options={arcOptions}
+          selectedOption={arcMode}
+          onOptionSelect={(mode) => setArcMode(mode as '3point' | 'center-start-end')}
         />
         {/* Polyline */}
         <ToolButton
-          icon={<Spline size={18} />}
+          icon={<PolylineIcon size={18} />}
           label="Polyline"
           shortcut="P"
-          active={activeTool === 'polyline'}
-          onClick={() => setActiveTool('polyline')}
+          active={activeTool === 'polyline' && !activeCommandName}
+          onClick={() => switchToDrawingTool('polyline')}
+        />
+        {/* Spline - New tool (not yet implemented) */}
+        <ToolButton
+          icon={<SplineIcon size={18} />}
+          label="Spline"
+          shortcut="SPL"
+          disabled={true}
+          onClick={() => {}}
+        />
+        {/* Ellipse */}
+        <ToolButton
+          icon={<EllipseIcon size={18} />}
+          label="Ellipse"
+          shortcut="EL"
+          active={activeTool === 'ellipse' && !activeCommandName}
+          onClick={() => switchToDrawingTool('ellipse')}
         />
         {/* Text */}
         <ToolButton
           icon={<Type size={18} />}
           label="Text"
           shortcut="T"
-          active={activeTool === 'text'}
-          onClick={() => setActiveTool('text')}
+          active={activeTool === 'text' && !activeCommandName}
+          onClick={() => switchToDrawingTool('text')}
         />
       </ToolSection>
 
       <ToolDivider />
 
-      {/* Modify Commands */}
-      <ToolSection title="Modify">
-        {modifyCommands.map((cmd) => (
+      {/* Region Tools - only in draft mode */}
+      {editorMode === 'drawing' && (
+        <ToolSection title="Region">
+          {/* Filled Region - New tool (not yet implemented) */}
           <ToolButton
-            key={cmd.command}
-            icon={cmd.icon}
-            label={cmd.label}
-            shortcut={cmd.shortcut}
-            active={false}
-            onClick={() => setPendingCommand(cmd.command)}
+            icon={<FilledRegionIcon size={18} />}
+            label="Filled Region"
+            shortcut="FR"
+            disabled={true}
+            onClick={() => {}}
           />
-        ))}
-      </ToolSection>
+          {/* Insulation - New tool (not yet implemented) */}
+          <ToolButton
+            icon={<InsulationIcon size={18} />}
+            label="Insulation"
+            shortcut="INS"
+            disabled={true}
+            onClick={() => {}}
+          />
+          {/* Detail Component - New tool (not yet implemented) */}
+          <ToolButton
+            icon={<DetailComponentIcon size={18} />}
+            label="Detail Component"
+            shortcut="DC"
+            disabled={true}
+            onClick={() => {}}
+          />
+        </ToolSection>
+      )}
+
+      <ToolDivider />
+
+      {/* Modify Commands - only in draft mode */}
+      {editorMode === 'drawing' && (
+        <>
+          <ToolSection title="Modify">
+            {primaryModifyCommands.map((cmd) => (
+              <ToolButton
+                key={cmd.command}
+                icon={cmd.icon}
+                label={cmd.label}
+                shortcut={cmd.shortcut}
+                active={activeCommandName === cmd.command}
+                disabled={cmd.disabled}
+                onClick={() => cmd.disabled ? {} : setPendingCommand(cmd.command)}
+              />
+            ))}
+          </ToolSection>
+
+          <ToolDivider />
+
+          <ToolSection title="Edit">
+            {secondaryModifyCommands.map((cmd) => (
+              <ToolButton
+                key={cmd.command}
+                icon={cmd.icon}
+                label={cmd.label}
+                shortcut={cmd.shortcut}
+                active={activeCommandName === cmd.command}
+                disabled={cmd.disabled}
+                onClick={() => cmd.disabled ? {} : setPendingCommand(cmd.command)}
+              />
+            ))}
+          </ToolSection>
+        </>
+      )}
+
+      {/* Sheet Annotation Tools - only in sheet mode */}
+      {editorMode === 'sheet' && (
+        <>
+          <ToolDivider />
+          <ToolSection title="Annotate">
+            {sheetAnnotationTools.map((tool) => (
+              <ToolButton
+                key={tool.type}
+                icon={tool.icon}
+                label={tool.label}
+                active={activeTool === tool.type && !activeCommandName}
+                onClick={() => switchToolAndCancelCommand(tool.type)}
+              />
+            ))}
+          </ToolSection>
+        </>
+      )}
     </div>
   );
 }

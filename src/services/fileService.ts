@@ -4,13 +4,13 @@
 
 import { open, save, message, ask } from '@tauri-apps/plugin-dialog';
 import { readTextFile, writeTextFile } from '@tauri-apps/plugin-fs';
-import type { Shape, Layer, Draft, Sheet, Viewport, DraftBoundary } from '../types/geometry';
+import type { Shape, Layer, Drawing, Sheet, Viewport, DrawingBoundary } from '../types/geometry';
 
 // File format version for future compatibility
 const FILE_FORMAT_VERSION = 2;
 
-// Default draft boundary (in draft units)
-const DEFAULT_DRAFT_BOUNDARY: DraftBoundary = {
+// Default drawing boundary (in drawing units)
+const DEFAULT_DRAWING_BOUNDARY: DrawingBoundary = {
   x: -500,
   y: -500,
   width: 1000,
@@ -55,20 +55,25 @@ export interface ProjectFileV1 {
 }
 
 /**
- * Project file structure V2 (with Drafts & Sheets)
+ * Project file structure V2 (with Drawings & Sheets)
+ * Note: File format uses "draft" naming for backward compatibility
+ * but internal code uses "drawing" naming
  */
 export interface ProjectFileV2 {
   version: 2;
   name: string;
   createdAt: string;
   modifiedAt: string;
-  // Drafts & Sheets
-  drafts: Draft[];
+  // Drawings & Sheets (file format uses "drafts" for backward compatibility)
+  drafts?: Drawing[];
+  drawings?: Drawing[];  // New name, supported for reading
   sheets: Sheet[];
-  activeDraftId: string;
+  activeDraftId?: string;
+  activeDrawingId?: string;  // New name, supported for reading
   activeSheetId: string | null;
-  draftViewports: Record<string, Viewport>;
-  // Shapes & Layers (now with draftId)
+  draftViewports?: Record<string, Viewport>;
+  drawingViewports?: Record<string, Viewport>;  // New name, supported for reading
+  // Shapes & Layers (now with drawingId)
   shapes: Shape[];
   layers: Layer[];
   activeLayerId: string;
@@ -94,19 +99,19 @@ function generateId(): string {
  * Migrate V1 project to V2 format
  */
 function migrateV1ToV2(v1: ProjectFileV1): ProjectFileV2 {
-  const draftId = generateId();
+  const drawingId = generateId();
   const now = new Date().toISOString();
 
-  // Add draftId to all shapes
+  // Add drawingId to all shapes
   const migratedShapes = v1.shapes.map(shape => ({
     ...shape,
-    draftId,
+    drawingId,
   }));
 
-  // Add draftId to all layers
+  // Add drawingId to all layers
   const migratedLayers = v1.layers.map(layer => ({
     ...layer,
-    draftId,
+    drawingId,
   }));
 
   return {
@@ -114,18 +119,18 @@ function migrateV1ToV2(v1: ProjectFileV1): ProjectFileV2 {
     name: v1.name,
     createdAt: v1.createdAt,
     modifiedAt: now,
-    drafts: [{
-      id: draftId,
-      name: 'Draft 1',
-      boundary: { ...DEFAULT_DRAFT_BOUNDARY },
+    drawings: [{
+      id: drawingId,
+      name: 'Drawing 1',
+      boundary: { ...DEFAULT_DRAWING_BOUNDARY },
       createdAt: v1.createdAt,
       modifiedAt: now,
     }],
     sheets: [],
-    activeDraftId: draftId,
+    activeDrawingId: drawingId,
     activeSheetId: null,
-    draftViewports: {
-      [draftId]: v1.viewport,
+    drawingViewports: {
+      [drawingId]: v1.viewport,
     },
     shapes: migratedShapes,
     layers: migratedLayers,
@@ -139,7 +144,7 @@ function migrateV1ToV2(v1: ProjectFileV1): ProjectFileV2 {
  */
 export function createNewProject(): ProjectFile {
   const now = new Date().toISOString();
-  const draftId = generateId();
+  const drawingId = generateId();
   const layerId = generateId();
 
   return {
@@ -147,25 +152,25 @@ export function createNewProject(): ProjectFile {
     name: 'Untitled',
     createdAt: now,
     modifiedAt: now,
-    drafts: [{
-      id: draftId,
-      name: 'Draft 1',
-      boundary: { ...DEFAULT_DRAFT_BOUNDARY },
+    drawings: [{
+      id: drawingId,
+      name: 'Drawing 1',
+      boundary: { ...DEFAULT_DRAWING_BOUNDARY },
       createdAt: now,
       modifiedAt: now,
     }],
     sheets: [],
-    activeDraftId: draftId,
+    activeDrawingId: drawingId,
     activeSheetId: null,
-    draftViewports: {
-      [draftId]: { zoom: 1, offsetX: 0, offsetY: 0 },
+    drawingViewports: {
+      [drawingId]: { zoom: 1, offsetX: 0, offsetY: 0 },
     },
     shapes: [],
     layers: [
       {
         id: layerId,
         name: 'Layer 0',
-        draftId,
+        drawingId,
         visible: true,
         locked: false,
         color: '#ffffff',

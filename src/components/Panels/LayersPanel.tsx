@@ -6,7 +6,7 @@ export function LayersPanel() {
   const {
     layers,
     activeLayerId,
-    activeDraftId,
+    activeDrawingId,
     setActiveLayer,
     addLayer,
     updateLayer,
@@ -15,8 +15,8 @@ export function LayersPanel() {
 
   // Filter layers by active drawing
   const filteredLayers = useMemo(() => {
-    return layers.filter(layer => layer.draftId === activeDraftId);
-  }, [layers, activeDraftId]);
+    return layers.filter(layer => layer.drawingId === activeDrawingId);
+  }, [layers, activeDrawingId]);
 
   return (
     <div className="flex-1 overflow-auto">

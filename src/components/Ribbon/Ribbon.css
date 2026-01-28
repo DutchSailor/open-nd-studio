@@ -79,11 +79,11 @@
 .ribbon-group {
   display: flex;
   flex-direction: column;
-  padding: 0 8px;
+  padding: 0 4px;
   border-right: 1px solid #334155;
   min-width: 50px;
   height: 100%;
-  margin-right: 8px;
+  margin-right: 4px;
 }
 
 .ribbon-group:last-child {

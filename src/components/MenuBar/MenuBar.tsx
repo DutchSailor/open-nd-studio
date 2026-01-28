@@ -272,11 +272,11 @@ export function MenuBar() {
     projectName,
     isModified,
     // Drawings & Sheets state
-    drafts,
+    drawings,
     sheets,
-    activeDraftId,
+    activeDrawingId,
     activeSheetId,
-    draftViewports,
+    drawingViewports,
     // File actions
     newProject,
     loadProject,
@@ -315,11 +315,11 @@ export function MenuBar() {
           activeLayerId: project.activeLayerId,
           settings: project.settings,
           // V2 fields
-          drafts: project.drafts,
+          drawings: project.drawings,
           sheets: project.sheets,
-          activeDraftId: project.activeDraftId,
+          activeDrawingId: project.activeDrawingId,
           activeSheetId: project.activeSheetId,
-          draftViewports: project.draftViewports,
+          drawingViewports: project.drawingViewports,
         },
         filePath,
         project.name
@@ -343,11 +343,11 @@ export function MenuBar() {
         name: projectName,
         createdAt: new Date().toISOString(),
         modifiedAt: new Date().toISOString(),
-        drafts,
+        drawings,
         sheets,
-        activeDraftId,
+        activeDrawingId,
         activeSheetId,
-        draftViewports,
+        drawingViewports,
         shapes,
         layers,
         activeLayerId,
@@ -368,7 +368,7 @@ export function MenuBar() {
     } catch (err) {
       await showError(`Failed to save file: ${err}`);
     }
-  }, [currentFilePath, projectName, shapes, layers, activeLayerId, gridSize, gridVisible, snapEnabled, drafts, sheets, activeDraftId, activeSheetId, draftViewports, setFilePath, setModified, setProjectName]);
+  }, [currentFilePath, projectName, shapes, layers, activeLayerId, gridSize, gridVisible, snapEnabled, drawings, sheets, activeDrawingId, activeSheetId, drawingViewports, setFilePath, setModified, setProjectName]);
 
   const handleSaveAs = useCallback(async () => {
     const filePath = await showSaveDialog(projectName);
@@ -380,11 +380,11 @@ export function MenuBar() {
         name: projectName,
         createdAt: new Date().toISOString(),
         modifiedAt: new Date().toISOString(),
-        drafts,
+        drawings,
         sheets,
-        activeDraftId,
+        activeDrawingId,
         activeSheetId,
-        draftViewports,
+        drawingViewports,
         shapes,
         layers,
         activeLayerId,
@@ -405,7 +405,7 @@ export function MenuBar() {
     } catch (err) {
       await showError(`Failed to save file: ${err}`);
     }
-  }, [projectName, shapes, layers, activeLayerId, gridSize, gridVisible, snapEnabled, drafts, sheets, activeDraftId, activeSheetId, draftViewports, setFilePath, setModified, setProjectName]);
+  }, [projectName, shapes, layers, activeLayerId, gridSize, gridVisible, snapEnabled, drawings, sheets, activeDrawingId, activeSheetId, drawingViewports, setFilePath, setModified, setProjectName]);
 
   const handleExport = useCallback(async () => {
     if (shapes.length === 0) {
@@ -508,12 +508,8 @@ export function MenuBar() {
 
       {/* Draggable area with app title */}
       <div
+        data-tauri-drag-region
         className="flex-1 h-full flex items-center justify-center cursor-default"
-        onMouseDown={(e) => {
-          if (e.button === 0) {
-            getCurrentWindow().startDragging();
-          }
-        }}
         onDoubleClick={() => getCurrentWindow().toggleMaximize()}
       >
         <span className="text-cad-text-dim text-sm font-medium pointer-events-none">

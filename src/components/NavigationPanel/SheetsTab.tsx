@@ -1,7 +1,9 @@
 import { useState } from 'react';
-import { Plus, Trash2, Pencil, Check, X, FileText } from 'lucide-react';
+import { Plus, Trash2, Pencil, Check, X, FileText, LayoutTemplate, Hash } from 'lucide-react';
 import { useAppStore, PAPER_SIZES } from '../../state/appStore';
+import { DISCIPLINE_PREFIXES } from '../../services/sheetTemplateService';
 import type { PaperSize, PaperOrientation } from '../../types/geometry';
+import type { SheetNumberingScheme } from '../../services/sheetTemplateService';
 
 export function SheetsTab() {
   const {
@@ -12,7 +14,9 @@ export function SheetsTab() {
     deleteSheet,
     renameSheet,
     switchToSheet,
-    switchToDraftMode,
+    switchToDrawingMode,
+    setNewSheetDialogOpen,
+    renumberAllSheets,
   } = useAppStore();
 
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -21,6 +25,13 @@ export function SheetsTab() {
   const [newSheetName, setNewSheetName] = useState('');
   const [newSheetPaperSize, setNewSheetPaperSize] = useState<PaperSize>('A4');
   const [newSheetOrientation, setNewSheetOrientation] = useState<PaperOrientation>('landscape');
+  const [showRenumberDialog, setShowRenumberDialog] = useState(false);
+  const [renumberScheme, setRenumberScheme] = useState<SheetNumberingScheme>({
+    prefix: 'A',
+    separator: '-',
+    startNumber: 101,
+    digits: 3,
+  });
 
   const handleStartEdit = (id: string, name: string) => {
     setEditingId(id);
@@ -56,6 +67,11 @@ export function SheetsTab() {
     setNewSheetOrientation('landscape');
   };
 
+  const handleRenumber = () => {
+    renumberAllSheets(renumberScheme);
+    setShowRenumberDialog(false);
+  };
+
   const getPaperSizeLabel = (sheet: { paperSize: PaperSize; orientation: PaperOrientation }) => {
     const size = PAPER_SIZES[sheet.paperSize];
     const w = sheet.orientation === 'landscape' ? size.height : size.width;
@@ -63,18 +79,40 @@ export function SheetsTab() {
     return `${sheet.paperSize} (${w}x${h}mm)`;
   };
 
+  const getSheetNumber = (sheet: { titleBlock: { fields: { id: string; value: string }[] } }) => {
+    const numberField = sheet.titleBlock.fields.find(f => f.id === 'number' || f.id === 'sheetNo');
+    return numberField?.value || 'No number';
+  };
+
   return (
     <div className="flex flex-col h-full">
-      {/* Header with Add button */}
-      <div className="flex items-center justify-between px-3 py-2 border-b border-cad-border">
-        <span className="text-xs text-cad-text-dim">Paper Space</span>
-        <button
-          onClick={() => setShowNewSheetDialog(true)}
-          className="p-1 rounded hover:bg-cad-border transition-colors"
-          title="Add Sheet"
-        >
-          <Plus size={14} />
-        </button>
+      {/* Toolbar */}
+      <div className="flex items-center justify-end px-2 py-1 border-b border-cad-border">
+        <div className="flex gap-1">
+          <button
+            onClick={() => setNewSheetDialogOpen(true)}
+            className="p-1 rounded hover:bg-cad-border transition-colors"
+            title="New Sheet from Template"
+          >
+            <LayoutTemplate size={14} />
+          </button>
+          <button
+            onClick={() => setShowNewSheetDialog(true)}
+            className="p-1 rounded hover:bg-cad-border transition-colors"
+            title="Add Blank Sheet"
+          >
+            <Plus size={14} />
+          </button>
+          {sheets.length > 0 && (
+            <button
+              onClick={() => setShowRenumberDialog(true)}
+              className="p-1 rounded hover:bg-cad-border transition-colors"
+              title="Renumber Sheets"
+            >
+              <Hash size={14} />
+            </button>
+          )}
+        </div>
       </div>
 
       {/* New Sheet Dialog */}
@@ -128,6 +166,68 @@ export function SheetsTab() {
               </button>
               <button
                 onClick={() => setShowNewSheetDialog(false)}
+                className="flex-1 px-2 py-1 text-xs bg-cad-border text-cad-text rounded hover:bg-cad-border/80"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Renumber Sheets Dialog */}
+      {showRenumberDialog && (
+        <div className="p-2 border-b border-cad-border bg-cad-bg-light">
+          <div className="space-y-2">
+            <label className="block text-xs text-cad-text-dim">Discipline Prefix:</label>
+            <select
+              value={renumberScheme.prefix}
+              onChange={(e) => setRenumberScheme(prev => ({ ...prev, prefix: e.target.value }))}
+              className="w-full bg-cad-bg border border-cad-border rounded px-2 py-1 text-xs text-cad-text outline-none focus:border-cad-accent"
+            >
+              {Object.entries(DISCIPLINE_PREFIXES).map(([key, { prefix, name }]) => (
+                <option key={key} value={prefix}>{prefix} - {name}</option>
+              ))}
+            </select>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="block text-xs text-cad-text-dim mb-1">Start Number:</label>
+                <input
+                  type="number"
+                  value={renumberScheme.startNumber}
+                  onChange={(e) => setRenumberScheme(prev => ({ ...prev, startNumber: parseInt(e.target.value) || 1 }))}
+                  className="w-full bg-cad-bg border border-cad-border rounded px-2 py-1 text-xs text-cad-text outline-none focus:border-cad-accent"
+                  min={1}
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-cad-text-dim mb-1">Separator:</label>
+                <select
+                  value={renumberScheme.separator}
+                  onChange={(e) => setRenumberScheme(prev => ({ ...prev, separator: e.target.value }))}
+                  className="w-full bg-cad-bg border border-cad-border rounded px-2 py-1 text-xs text-cad-text outline-none focus:border-cad-accent"
+                >
+                  <option value="-">Dash (-)</option>
+                  <option value=".">Dot (.)</option>
+                  <option value="">None</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="text-xs text-cad-text-dim">
+              Preview: {renumberScheme.prefix}{renumberScheme.separator}{String(renumberScheme.startNumber).padStart(renumberScheme.digits, '0')}, {renumberScheme.prefix}{renumberScheme.separator}{String(renumberScheme.startNumber + 1).padStart(renumberScheme.digits, '0')}, ...
+            </div>
+
+            <div className="flex gap-1">
+              <button
+                onClick={handleRenumber}
+                className="flex-1 px-2 py-1 text-xs bg-cad-accent text-white rounded hover:bg-cad-accent/80"
+              >
+                Renumber ({sheets.length} sheets)
+              </button>
+              <button
+                onClick={() => setShowRenumberDialog(false)}
                 className="flex-1 px-2 py-1 text-xs bg-cad-border text-cad-text rounded hover:bg-cad-border/80"
               >
                 Cancel
@@ -226,9 +326,9 @@ export function SheetsTab() {
                       </button>
                     </div>
 
-                    {/* Paper size info */}
+                    {/* Sheet number and paper size info */}
                     <span className="text-[10px] text-cad-text-dim ml-5">
-                      {getPaperSizeLabel(sheet)}
+                      {getSheetNumber(sheet)} | {getPaperSizeLabel(sheet)}
                     </span>
                   </>
                 )}
@@ -242,7 +342,7 @@ export function SheetsTab() {
       {editorMode === 'sheet' && (
         <div className="p-2 border-t border-cad-border">
           <button
-            onClick={switchToDraftMode}
+            onClick={switchToDrawingMode}
             className="w-full px-2 py-1 text-xs bg-cad-border text-cad-text rounded hover:bg-cad-border/80"
           >
             Back to Model Space

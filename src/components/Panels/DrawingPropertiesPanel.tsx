@@ -1,58 +1,58 @@
 import { useCallback } from 'react';
 import { useAppStore } from '../../state/appStore';
 
-export function DraftPropertiesPanel() {
+export function DrawingPropertiesPanel() {
   const {
-    drafts,
-    activeDraftId,
-    updateDraftBoundary,
-    renameDraft,
+    drawings,
+    activeDrawingId,
+    updateDrawingBoundary,
+    renameDrawing,
     boundaryEditState,
     selectBoundary,
     deselectBoundary,
     fitBoundaryToContent,
   } = useAppStore();
 
-  const activeDraft = drafts.find(d => d.id === activeDraftId);
+  const activeDrawing = drawings.find(d => d.id === activeDrawingId);
 
   const handleBoundaryChange = useCallback((
     field: 'x' | 'y' | 'width' | 'height',
     value: string
   ) => {
-    if (!activeDraftId) return;
+    if (!activeDrawingId) return;
     const numValue = parseFloat(value);
     if (isNaN(numValue)) return;
 
     // Ensure width and height are positive
     if ((field === 'width' || field === 'height') && numValue <= 0) return;
 
-    updateDraftBoundary(activeDraftId, { [field]: numValue });
-  }, [activeDraftId, updateDraftBoundary]);
+    updateDrawingBoundary(activeDrawingId, { [field]: numValue });
+  }, [activeDrawingId, updateDrawingBoundary]);
 
   const handleNameChange = useCallback((value: string) => {
-    if (!activeDraftId || !value.trim()) return;
-    renameDraft(activeDraftId, value.trim());
-  }, [activeDraftId, renameDraft]);
+    if (!activeDrawingId || !value.trim()) return;
+    renameDrawing(activeDrawingId, value.trim());
+  }, [activeDrawingId, renameDrawing]);
 
-  if (!activeDraft) {
+  if (!activeDrawing) {
     return (
       <div className="p-3 text-cad-text-dim text-sm">
-        No draft selected
+        No drawing selected
       </div>
     );
   }
 
   return (
     <div className="flex flex-col h-full text-sm">
-      {/* Draft Info */}
+      {/* Drawing Info */}
       <div className="p-3 border-b border-cad-border">
-        <h3 className="font-medium text-cad-text mb-2">Draft Properties</h3>
+        <h3 className="font-medium text-cad-text mb-2">Drawing Properties</h3>
         <div className="space-y-2">
           <div>
             <label className="block text-xs text-cad-text-dim mb-1">Name:</label>
             <input
               type="text"
-              value={activeDraft.name}
+              value={activeDrawing.name}
               onChange={(e) => handleNameChange(e.target.value)}
               className="w-full px-2 py-1 text-xs bg-cad-input border border-cad-border text-cad-text"
             />
@@ -87,7 +87,7 @@ export function DraftPropertiesPanel() {
             {boundaryEditState.isSelected ? 'Deselect' : 'Select Boundary'}
           </button>
           <button
-            onClick={() => activeDraftId && fitBoundaryToContent(activeDraftId)}
+            onClick={() => activeDrawingId && fitBoundaryToContent(activeDrawingId)}
             className="flex-1 px-2 py-1.5 text-xs bg-cad-input border border-cad-border text-cad-text hover:bg-cad-hover"
             title="Adjust boundary to fit all shapes with padding"
           >
@@ -100,7 +100,7 @@ export function DraftPropertiesPanel() {
             <label className="block text-xs text-cad-text-dim mb-1">X:</label>
             <input
               type="number"
-              value={activeDraft.boundary.x}
+              value={activeDrawing.boundary.x}
               onChange={(e) => handleBoundaryChange('x', e.target.value)}
               className="w-full px-2 py-1 text-xs bg-cad-input border border-cad-border text-cad-text"
             />
@@ -109,7 +109,7 @@ export function DraftPropertiesPanel() {
             <label className="block text-xs text-cad-text-dim mb-1">Y:</label>
             <input
               type="number"
-              value={activeDraft.boundary.y}
+              value={activeDrawing.boundary.y}
               onChange={(e) => handleBoundaryChange('y', e.target.value)}
               className="w-full px-2 py-1 text-xs bg-cad-input border border-cad-border text-cad-text"
             />
@@ -119,7 +119,7 @@ export function DraftPropertiesPanel() {
             <input
               type="number"
               min="1"
-              value={activeDraft.boundary.width}
+              value={activeDrawing.boundary.width}
               onChange={(e) => handleBoundaryChange('width', e.target.value)}
               className="w-full px-2 py-1 text-xs bg-cad-input border border-cad-border text-cad-text"
             />
@@ -129,7 +129,7 @@ export function DraftPropertiesPanel() {
             <input
               type="number"
               min="1"
-              value={activeDraft.boundary.height}
+              value={activeDrawing.boundary.height}
               onChange={(e) => handleBoundaryChange('height', e.target.value)}
               className="w-full px-2 py-1 text-xs bg-cad-input border border-cad-border text-cad-text"
             />
@@ -148,10 +148,13 @@ export function DraftPropertiesPanel() {
       <div className="p-3 flex-1">
         <h4 className="font-medium text-cad-text mb-2">Information</h4>
         <div className="space-y-1 text-xs text-cad-text-dim">
-          <div>Created: {new Date(activeDraft.createdAt).toLocaleDateString()}</div>
-          <div>Modified: {new Date(activeDraft.modifiedAt).toLocaleDateString()}</div>
+          <div>Created: {new Date(activeDrawing.createdAt).toLocaleDateString()}</div>
+          <div>Modified: {new Date(activeDrawing.modifiedAt).toLocaleDateString()}</div>
         </div>
       </div>
     </div>
   );
 }
+
+// Legacy alias
+export { DrawingPropertiesPanel as DraftPropertiesPanel };
