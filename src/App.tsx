@@ -8,6 +8,7 @@ import { SheetPropertiesPanel } from './components/Panels/SheetPropertiesPanel';
 import { RightPanelLayout } from './components/Panels/RightPanelLayout';
 import { StatusBar } from './components/StatusBar/StatusBar';
 import { CommandLine } from './components/CommandLine/CommandLine';
+import { FileTabBar } from './components/FileTabBar/FileTabBar';
 import { PrintDialog } from './components/PrintDialog/PrintDialog';
 import { AboutDialog } from './components/AboutDialog/AboutDialog';
 import { SnapSettingsDialog } from './components/SnapSettingsDialog/SnapSettingsDialog';
@@ -120,8 +121,9 @@ function App() {
         {/* Tool Palette */}
         <ToolPalette />
 
-        {/* Center - Canvas */}
+        {/* Center - Canvas + Tabs */}
         <div className="flex-1 flex flex-col overflow-hidden">
+          <FileTabBar />
           <Canvas />
           <CommandLine />
         </div>

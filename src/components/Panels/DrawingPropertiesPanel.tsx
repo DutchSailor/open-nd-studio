@@ -11,6 +11,8 @@ export function DrawingPropertiesPanel({ showHeader = true }: { showHeader?: boo
     selectBoundary,
     deselectBoundary,
     fitBoundaryToContent,
+    boundaryVisible,
+    toggleBoundaryVisible,
   } = useAppStore();
 
   const activeDrawing = drawings.find(d => d.id === activeDrawingId);
@@ -68,7 +70,16 @@ export function DrawingPropertiesPanel({ showHeader = true }: { showHeader?: boo
       {/* Boundary Section */}
       <div className="p-3 border-b border-cad-border">
         <div className="flex items-center justify-between mb-2">
-          <h4 className="font-medium text-cad-text">Boundary (Region)</h4>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={boundaryVisible}
+              onChange={toggleBoundaryVisible}
+              className="accent-cad-accent"
+              title="Show/Hide Boundary"
+            />
+            <h4 className="font-medium text-cad-text">Boundary (Region)</h4>
+          </label>
           {boundaryEditState.isSelected && (
             <span className="text-xs px-1.5 py-0.5 bg-orange-500/20 text-orange-400 border border-orange-500/30">
               Selected

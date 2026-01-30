@@ -41,6 +41,12 @@ export function useKeyboardShortcuts() {
     viewportEditState,
     deleteSheetViewport,
     setPendingCommand,
+    // Document management
+    createNewDocument,
+    closeDocument,
+    switchDocument,
+    activeDocumentId,
+    documentOrder,
   } = useAppStore();
 
   useEffect(() => {
@@ -174,6 +180,14 @@ export function useKeyboardShortcuts() {
             e.preventDefault();
             deselectAll();
             break;
+          case 'n':
+            e.preventDefault();
+            createNewDocument();
+            break;
+          case 'w':
+            e.preventDefault();
+            closeDocument(activeDocumentId);
+            break;
           case 's':
             e.preventDefault();
             // TODO: Save file
@@ -196,6 +210,14 @@ export function useKeyboardShortcuts() {
             e.preventDefault();
             setPrintDialogOpen(true);
             break;
+          case 'tab': {
+            e.preventDefault();
+            // Ctrl+Tab: cycle to next tab
+            const currentIdx = documentOrder.indexOf(activeDocumentId);
+            const nextIdx = (currentIdx + 1) % documentOrder.length;
+            switchDocument(documentOrder[nextIdx]);
+            break;
+          }
         }
       }
 
@@ -206,6 +228,14 @@ export function useKeyboardShortcuts() {
             e.preventDefault();
             redo();
             break;
+          case 'tab': {
+            e.preventDefault();
+            // Ctrl+Shift+Tab: cycle to previous tab
+            const currentIdx = documentOrder.indexOf(activeDocumentId);
+            const prevIdx = (currentIdx - 1 + documentOrder.length) % documentOrder.length;
+            switchDocument(documentOrder[prevIdx]);
+            break;
+          }
         }
       }
     };
@@ -234,5 +264,10 @@ export function useKeyboardShortcuts() {
     activeSheetId,
     viewportEditState,
     deleteSheetViewport,
+    createNewDocument,
+    closeDocument,
+    switchDocument,
+    activeDocumentId,
+    documentOrder,
   ]);
 }

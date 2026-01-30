@@ -18,8 +18,6 @@ export const StatusBar = memo(function StatusBar() {
   const toggleOrthoMode = useAppStore(s => s.toggleOrthoMode);
   const toggleObjectTracking = useAppStore(s => s.toggleObjectTracking);
   const toggleSnap = useAppStore(s => s.toggleSnap);
-  const boundaryVisible = useAppStore(s => s.boundaryVisible);
-  const toggleBoundaryVisible = useAppStore(s => s.toggleBoundaryVisible);
 
   // Convert screen position to world position
   const worldX = (mousePosition.x - viewport.offsetX) / viewport.zoom;
@@ -92,17 +90,6 @@ export const StatusBar = memo(function StatusBar() {
           title="Object Snap Tracking - align to geometry [F11]"
         >
           OTRACK
-        </button>
-        <button
-          onClick={toggleBoundaryVisible}
-          className={`px-2 py-0.5 text-xs font-medium rounded transition-colors cursor-default ${
-            boundaryVisible
-              ? 'bg-purple-600 text-white hover:bg-purple-500'
-              : 'bg-cad-bg text-cad-text-dim hover:bg-cad-hover'
-          }`}
-          title="Show/Hide Drawing Boundary (Region)"
-        >
-          REGION
         </button>
       </div>
 

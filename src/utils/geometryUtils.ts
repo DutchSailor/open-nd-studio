@@ -4,6 +4,7 @@
  */
 
 import type { Point, Shape, RectangleShape, TextShape, ArcShape, EllipseShape } from '../types/geometry';
+import { isPointNearSpline } from './splineUtils';
 import type { DimensionShape } from '../types/dimension';
 import {
   calculateAlignedDimensionGeometry,
@@ -37,6 +38,8 @@ export function isPointNearShape(point: Point, shape: Shape, tolerance: number =
       return isPointNearArc(point, shape, tolerance);
     case 'polyline':
       return isPointNearPolyline(point, shape.points, tolerance);
+    case 'spline':
+      return isPointNearSpline(point, shape.points, tolerance);
     case 'ellipse':
       return isPointNearEllipse(point, shape, tolerance);
     case 'text':
@@ -521,6 +524,7 @@ export function getShapeBounds(shape: Shape): ShapeBounds | null {
         maxY: shape.center.y + shape.radiusY,
       };
     case 'polyline':
+    case 'spline':
       if (shape.points.length === 0) return null;
       const xs = shape.points.map((p) => p.x);
       const ys = shape.points.map((p) => p.y);

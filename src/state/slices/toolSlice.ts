@@ -102,7 +102,6 @@ export const createToolSlice = (
   setCircleMode: (mode) =>
     set((state) => {
       state.circleMode = mode;
-      // Reset drawing state when changing mode
       state.isDrawing = false;
       state.drawingPreview = null;
       state.drawingPoints = [];
@@ -111,7 +110,6 @@ export const createToolSlice = (
   setRectangleMode: (mode) =>
     set((state) => {
       state.rectangleMode = mode;
-      // Reset drawing state when changing mode
       state.isDrawing = false;
       state.drawingPreview = null;
       state.drawingPoints = [];
@@ -120,7 +118,6 @@ export const createToolSlice = (
   setArcMode: (mode) =>
     set((state) => {
       state.arcMode = mode;
-      // Reset drawing state when changing mode
       state.isDrawing = false;
       state.drawingPreview = null;
       state.drawingPoints = [];
@@ -129,7 +126,6 @@ export const createToolSlice = (
   setEllipseMode: (mode) =>
     set((state) => {
       state.ellipseMode = mode;
-      // Reset drawing state when changing mode
       state.isDrawing = false;
       state.drawingPreview = null;
       state.drawingPoints = [];
@@ -138,7 +134,6 @@ export const createToolSlice = (
   setDimensionMode: (mode) =>
     set((state) => {
       state.dimensionMode = mode;
-      // Reset drawing state when changing mode
       state.isDrawing = false;
       state.drawingPreview = null;
       state.drawingPoints = [];
@@ -185,8 +180,6 @@ export const createToolSlice = (
 
   closeDrawing: () =>
     set((state) => {
-      // This will be handled in the canvas events to create a closing line
-      // Just mark that we want to close
       state.drawingPoints = [];
       state.isDrawing = false;
       state.drawingPreview = null;

@@ -35,7 +35,7 @@ export interface BaseShape {
 /** @deprecated Use drawingId instead */
 export type BaseShapeWithDraftId = BaseShape & { draftId?: string };
 
-export type ShapeType = 'line' | 'rectangle' | 'circle' | 'arc' | 'polyline' | 'ellipse' | 'text' | 'point' | 'dimension';
+export type ShapeType = 'line' | 'rectangle' | 'circle' | 'arc' | 'polyline' | 'ellipse' | 'spline' | 'text' | 'point' | 'dimension';
 
 // Specific shape types
 export interface LineShape extends BaseShape {
@@ -80,6 +80,12 @@ export interface PolylineShape extends BaseShape {
   closed: boolean;
 }
 
+export interface SplineShape extends BaseShape {
+  type: 'spline';
+  points: Point[];
+  closed: boolean;
+}
+
 // Text alignment options
 export type TextAlignment = 'left' | 'center' | 'right';
 export type TextVerticalAlignment = 'top' | 'middle' | 'bottom';
@@ -117,6 +123,7 @@ export type Shape =
   | ArcShape
   | EllipseShape
   | PolylineShape
+  | SplineShape
   | TextShape
   | PointShape
   | DimensionShape;

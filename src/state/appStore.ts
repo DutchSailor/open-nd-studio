@@ -1,20 +1,13 @@
 /**
- * Combined App Store - Composes all slices into a single store
+ * Combined App Store — Facade over global state + active document store
  *
- * This is the modular architecture that organizes state into focused slices.
- * Each slice is responsible for a specific domain of the application state.
+ * This store maintains backward compatibility: all existing useAppStore() calls
+ * continue to work. Per-document state is delegated to the active document store
+ * via the documentStore registry. Components can also use useDocStore() directly.
  *
- * Slices:
- * - modelSlice: drawings, sheets, shapes, layers
- * - viewSlice: viewport, zoom, pan, canvas size
- * - toolSlice: active tool, drawing modes, style
- * - snapSlice: snap settings, tracking, polar, ortho
- * - selectionSlice: selected shapes, selection box
- * - commandSlice: command line state
- * - historySlice: undo/redo
- * - uiSlice: dialogs, file state
- * - boundarySlice: drawing boundary editing
- * - viewportEditSlice: sheet viewport editing
+ * Global state: tool modes, snap settings, command state, dialogs, document management
+ * Per-doc state (via facade): shapes, layers, drawings, sheets, selection, viewport,
+ *   history, boundary, viewport editing, annotations, drawing placement, file info
  */
 
 import { enablePatches } from 'immer';
@@ -103,6 +96,149 @@ export {
   createDefaultTitleBlock,
 } from './slices/types';
 
+import { generateId } from './slices/types';
+
+import {
+  createDocumentStore,
+  removeDocumentStore,
+  getDocumentStoreIfExists,
+} from './documentStore';
+
+// ============================================================================
+// Per-Document State Save/Restore
+// ============================================================================
+
+/** Fields that belong to each document (saved/restored on tab switch) */
+function extractPerDocState(s: any) {
+  return {
+    // Model
+    drawings: s.drawings,
+    activeDrawingId: s.activeDrawingId,
+    sheets: s.sheets,
+    activeSheetId: s.activeSheetId,
+    editorMode: s.editorMode,
+    drawingViewports: s.drawingViewports,
+    shapes: s.shapes,
+    layers: s.layers,
+    activeLayerId: s.activeLayerId,
+    customTitleBlockTemplates: s.customTitleBlockTemplates,
+    customSheetTemplates: s.customSheetTemplates,
+    // View
+    viewport: s.viewport,
+    // Selection
+    selectedShapeIds: s.selectedShapeIds,
+    selectionBox: s.selectionBox,
+    hoveredShapeId: s.hoveredShapeId,
+    // History
+    historyStack: s.historyStack,
+    historyIndex: s.historyIndex,
+    maxHistorySize: s.maxHistorySize,
+    // Tool per-doc fields
+    isDrawing: s.isDrawing,
+    drawingPreview: s.drawingPreview,
+    drawingPoints: s.drawingPoints,
+    currentStyle: s.currentStyle,
+    textEditingId: s.textEditingId,
+    defaultTextStyle: s.defaultTextStyle,
+    // UI per-doc fields
+    currentFilePath: s.currentFilePath,
+    projectName: s.projectName,
+    isModified: s.isModified,
+    // Boundary
+    boundaryEditState: s.boundaryEditState,
+    // Snap per-doc
+    boundaryVisible: s.boundaryVisible,
+    // Viewport edit
+    viewportEditState: s.viewportEditState,
+    cropRegionEditState: s.cropRegionEditState,
+    layerOverrideEditState: s.layerOverrideEditState,
+    // Annotation
+    selectedAnnotationIds: s.selectedAnnotationIds,
+    annotationEditState: s.annotationEditState,
+    // Drawing placement
+    isPlacing: s.isPlacing,
+    placingDrawingId: s.placingDrawingId,
+    previewPosition: s.previewPosition,
+    placementScale: s.placementScale,
+  };
+}
+
+/** Save current appStore per-doc state into the document store for given id */
+function saveDocState(docId: string, appState: any) {
+  const store = getDocumentStoreIfExists(docId);
+  if (!store) return;
+  const perDoc = extractPerDocState(appState);
+  // Map appStore field names to documentStore field names
+  const docPerDoc: any = { ...perDoc };
+  docPerDoc.filePath = perDoc.currentFilePath;
+  delete docPerDoc.currentFilePath;
+  store.setState(docPerDoc);
+}
+
+/** Restore per-doc state from a document store into the appStore */
+function restoreDocState(docId: string, set: any) {
+  const store = getDocumentStoreIfExists(docId);
+  if (!store) return;
+  const saved = store.getState();
+  set((state: any) => {
+    state.drawings = saved.drawings;
+    state.activeDrawingId = saved.activeDrawingId;
+    state.sheets = saved.sheets;
+    state.activeSheetId = saved.activeSheetId;
+    state.editorMode = saved.editorMode;
+    state.drawingViewports = saved.drawingViewports;
+    state.shapes = saved.shapes;
+    state.layers = saved.layers;
+    state.activeLayerId = saved.activeLayerId;
+    state.customTitleBlockTemplates = saved.customTitleBlockTemplates;
+    state.customSheetTemplates = saved.customSheetTemplates;
+    state.viewport = saved.viewport;
+    state.selectedShapeIds = saved.selectedShapeIds;
+    state.selectionBox = saved.selectionBox;
+    state.hoveredShapeId = saved.hoveredShapeId;
+    state.historyStack = saved.historyStack;
+    state.historyIndex = saved.historyIndex;
+    state.maxHistorySize = saved.maxHistorySize;
+    state.isDrawing = saved.isDrawing;
+    state.drawingPreview = saved.drawingPreview;
+    state.drawingPoints = saved.drawingPoints;
+    state.currentStyle = saved.currentStyle;
+    state.textEditingId = saved.textEditingId;
+    state.defaultTextStyle = saved.defaultTextStyle;
+    state.currentFilePath = saved.filePath;
+    state.projectName = saved.projectName;
+    state.isModified = saved.isModified;
+    state.boundaryEditState = saved.boundaryEditState;
+    state.boundaryVisible = saved.boundaryVisible;
+    state.viewportEditState = saved.viewportEditState;
+    state.cropRegionEditState = saved.cropRegionEditState;
+    state.layerOverrideEditState = saved.layerOverrideEditState;
+    state.selectedAnnotationIds = saved.selectedAnnotationIds;
+    state.annotationEditState = saved.annotationEditState;
+    state.isPlacing = saved.isPlacing;
+    state.placingDrawingId = saved.placingDrawingId;
+    state.previewPosition = saved.previewPosition;
+    state.placementScale = saved.placementScale;
+  });
+}
+
+// ============================================================================
+// Document Management State & Actions
+// ============================================================================
+
+export interface DocumentManagementState {
+  activeDocumentId: string;
+  documentOrder: string[];
+}
+
+export interface DocumentManagementActions {
+  createNewDocument: (projectName?: string) => string;
+  openDocument: (id: string, initial?: Partial<import('./documentStore').DocumentState>) => string;
+  closeDocument: (id: string) => void;
+  switchDocument: (id: string) => void;
+  reorderTabs: (order: string[]) => void;
+}
+
 // ============================================================================
 // Coordinating Actions Type (cross-slice operations)
 // ============================================================================
@@ -115,7 +251,7 @@ export interface CoordinatingActions {
 }
 
 // ============================================================================
-// Combined State Type
+// Combined State Type (maintains backward compatibility)
 // ============================================================================
 
 export type AppState =
@@ -143,7 +279,9 @@ export type AppState =
   & ViewportEditActions
   & AnnotationActions
   & DrawingPlacementActions
-  & CoordinatingActions;
+  & CoordinatingActions
+  & DocumentManagementState
+  & DocumentManagementActions;
 
 // ============================================================================
 // Combined Initial State
@@ -165,63 +303,211 @@ const initialState = {
 };
 
 // ============================================================================
+// Initial Document Setup
+// ============================================================================
+
+const initialDocId = generateId();
+
+// ============================================================================
 // Store Creation
 // ============================================================================
 
 export const useAppStore = create<AppState>()(
-  immer((set, get) => ({
-    // Spread initial state
-    ...initialState,
+  immer((set, get) => {
+    // Create initial document store
+    createDocumentStore(initialDocId);
 
-    // Compose all slice actions
-    // The type assertion is needed because each slice creator expects a specific subset of state,
-    // but we're passing the full store. The slices are designed to work with the full store.
-    ...createModelSlice(set as any, get as any),
-    ...createViewSlice(set as any, get as any),
-    ...createToolSlice(set as any, get as any),
-    ...createSnapSlice(set as any, get as any),
-    ...createSelectionSlice(set as any, get as any),
-    ...createCommandSlice(set as any, get as any),
-    ...createHistorySlice(set as any, get as any),
-    ...createUISlice(set as any, get as any),
-    ...createBoundarySlice(set as any, get as any),
-    ...createViewportEditSlice(set as any, get as any),
-    ...createAnnotationSlice(set as any, get as any),
-    ...createDrawingPlacementSlice(set as any, get as any),
+    return {
+      // Spread initial state
+      ...initialState,
 
-    // ========================================================================
-    // Coordinating Actions (cross-slice operations)
-    // ========================================================================
+      // Document management
+      activeDocumentId: initialDocId,
+      documentOrder: [initialDocId],
 
-    /**
-     * Switch to a drawing tool, canceling any active command first.
-     * This ensures commands are properly canceled when user clicks a drawing tool.
-     */
-    switchToDrawingTool: (tool: ToolState['activeTool']) => {
-      const state = get();
-      // Cancel any active command
-      if (state.hasActiveModifyCommand) {
-        state.requestCommandCancel();
-      }
-      // Then switch the tool
-      state.setActiveTool(tool);
-    },
+      // Compose all slice actions
+      ...createModelSlice(set as any, get as any),
+      ...createViewSlice(set as any, get as any),
+      ...createToolSlice(set as any, get as any),
+      ...createSnapSlice(set as any, get as any),
+      ...createSelectionSlice(set as any, get as any),
+      ...createCommandSlice(set as any, get as any),
+      ...createHistorySlice(set as any, get as any),
+      ...createUISlice(set as any, get as any),
+      ...createBoundarySlice(set as any, get as any),
+      ...createViewportEditSlice(set as any, get as any),
+      ...createAnnotationSlice(set as any, get as any),
+      ...createDrawingPlacementSlice(set as any, get as any),
 
-    /**
-     * Switch to any tool (including select/pan), canceling any active command first.
-     * Use this for Select and Pan buttons to ensure commands are canceled.
-     */
-    switchToolAndCancelCommand: (tool: ToolState['activeTool']) => {
-      const state = get();
-      // Cancel any active command
-      if (state.hasActiveModifyCommand) {
-        state.requestCommandCancel();
-      }
-      // Then switch the tool
-      state.setActiveTool(tool);
-    },
-  }))
+      // ========================================================================
+      // Coordinating Actions (cross-slice operations)
+      // ========================================================================
+
+      switchToDrawingTool: (tool: ToolState['activeTool']) => {
+        const state = get();
+        if (state.hasActiveModifyCommand) {
+          state.requestCommandCancel();
+        }
+        state.setActiveTool(tool);
+      },
+
+      switchToolAndCancelCommand: (tool: ToolState['activeTool']) => {
+        const state = get();
+        if (state.hasActiveModifyCommand) {
+          state.requestCommandCancel();
+        }
+        state.setActiveTool(tool);
+      },
+
+      // ========================================================================
+      // Document Management Actions
+      // ========================================================================
+
+      createNewDocument: (projectName?: string) => {
+        const id = generateId();
+        const appState = get();
+        const existingDocs = appState.documentOrder;
+        let name = projectName || 'Untitled';
+        if (!projectName) {
+          const untitledCount = existingDocs.reduce((count, docId) => {
+            const store = getDocumentStoreIfExists(docId);
+            if (store && store.getState().projectName.startsWith('Untitled')) return count + 1;
+            return count;
+          }, 0);
+          if (untitledCount > 0) name = `Untitled ${untitledCount + 1}`;
+        }
+
+        // Cancel any active drawing/command
+        if (appState.hasActiveModifyCommand) appState.requestCommandCancel();
+        appState.clearDrawingPoints();
+
+        // Save current document state before switching
+        saveDocState(appState.activeDocumentId, appState);
+
+        createDocumentStore(id, { projectName: name });
+
+        set((state) => {
+          state.documentOrder.push(id);
+          state.activeDocumentId = id;
+        });
+
+        // Restore new (empty) document state
+        restoreDocState(id, set);
+
+        return id;
+      },
+
+      openDocument: (id: string, initial?) => {
+        const appState = get();
+
+        // Check if already open by filePath
+        if (initial?.filePath) {
+          for (const docId of appState.documentOrder) {
+            const store = getDocumentStoreIfExists(docId);
+            if (store && store.getState().filePath === initial.filePath) {
+              // Use switchDocument to properly save/restore
+              appState.switchDocument(docId);
+              return docId;
+            }
+          }
+        }
+
+        // Save current document state before switching
+        saveDocState(appState.activeDocumentId, appState);
+
+        createDocumentStore(id, initial);
+
+        set((state) => {
+          state.documentOrder.push(id);
+          state.activeDocumentId = id;
+        });
+
+        // Restore opened document state
+        restoreDocState(id, set);
+
+        return id;
+      },
+
+      closeDocument: (id: string) => {
+        const appState = get();
+        const order = [...appState.documentOrder];
+        const idx = order.indexOf(id);
+        if (idx === -1) return;
+
+        const wasActive = appState.activeDocumentId === id;
+        order.splice(idx, 1);
+
+        if (order.length === 0) {
+          const newId = generateId();
+          createDocumentStore(newId);
+          set((s) => {
+            s.documentOrder = [newId];
+            s.activeDocumentId = newId;
+          });
+          restoreDocState(newId, set);
+        } else {
+          const newActiveIdx = Math.min(idx, order.length - 1);
+          const newActiveId = wasActive ? order[newActiveIdx] : appState.activeDocumentId;
+          set((s) => {
+            s.documentOrder = order;
+            if (wasActive) {
+              s.activeDocumentId = newActiveId;
+            }
+          });
+          if (wasActive) {
+            restoreDocState(newActiveId, set);
+          }
+        }
+
+        removeDocumentStore(id);
+      },
+
+      switchDocument: (id: string) => {
+        const appState = get();
+        if (!appState.documentOrder.includes(id)) return;
+        if (id === appState.activeDocumentId) return;
+
+        if (appState.hasActiveModifyCommand) appState.requestCommandCancel();
+        appState.clearDrawingPoints();
+
+        // Save current document state
+        saveDocState(appState.activeDocumentId, appState);
+
+        // Switch active id
+        set((state) => { state.activeDocumentId = id; });
+
+        // Restore new document state
+        restoreDocState(id, set);
+      },
+
+      reorderTabs: (order: string[]) => {
+        set((state) => { state.documentOrder = order; });
+      },
+    };
+  })
 );
+
+// ============================================================================
+// Active Document Store Sync
+// ============================================================================
+// Keep the active document store in sync with appStore for fields that are
+// read from document stores directly (e.g., FileTabBar, duplicate detection).
+useAppStore.subscribe((state, prevState) => {
+  if (
+    state.projectName !== prevState.projectName ||
+    state.isModified !== prevState.isModified ||
+    state.currentFilePath !== prevState.currentFilePath
+  ) {
+    const store = getDocumentStoreIfExists(state.activeDocumentId);
+    if (store) {
+      store.setState({
+        projectName: state.projectName,
+        isModified: state.isModified,
+        filePath: state.currentFilePath,
+      });
+    }
+  }
+});
 
 // ============================================================================
 // Selector Hooks (for optimized component subscriptions)

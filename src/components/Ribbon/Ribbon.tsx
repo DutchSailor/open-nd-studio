@@ -377,8 +377,8 @@ export const Ribbon = memo(function Ribbon() {
                 <RibbonSmallButton
                   icon={<SplineIcon size={14} />}
                   label="Spline"
-                  onClick={() => {}}
-                  disabled={true}
+                  onClick={() => switchToDrawingTool('spline')}
+                  active={activeTool === 'spline' && !activeCommandName}
                 />
               </RibbonButtonStack>
               <RibbonButton
@@ -456,14 +456,12 @@ export const Ribbon = memo(function Ribbon() {
                   label="Copy"
                   onClick={() => setPendingCommand('COPY')}
                   active={activeCommandName === 'COPY'}
-                  disabled={true}
                 />
                 <RibbonSmallButton
                   icon={<RotateCw size={14} />}
                   label="Rotate"
                   onClick={() => setPendingCommand('ROTATE')}
                   active={activeCommandName === 'ROTATE'}
-                  disabled={true}
                 />
               </RibbonButtonStack>
               <RibbonButtonStack>
@@ -640,12 +638,6 @@ export const Ribbon = memo(function Ribbon() {
                 icon={<Settings size={24} />}
                 label="Snap Settings"
                 onClick={() => setSnapSettingsOpen(true)}
-              />
-              <RibbonButton
-                icon={<Grid3X3 size={24} />}
-                label="Grid"
-                onClick={toggleGrid}
-                active={gridVisible}
               />
             </RibbonGroup>
 

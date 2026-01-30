@@ -160,7 +160,7 @@ export const rotateCommand: CommandHandler = {
           // Calculate angle from base point to clicked point
           const dx = input.point.x - state.basePoint.x;
           const dy = input.point.y - state.basePoint.y;
-          const angleRad = Math.atan2(-dy, dx); // Negative Y for screen coords
+          const angleRad = Math.atan2(dy, dx);
           const angleDeg = (angleRad * 180) / Math.PI;
 
           if (state.data.copy) {
@@ -266,7 +266,7 @@ export const rotateCommand: CommandHandler = {
     // Calculate angle from base point to current point
     const dx = currentPoint.x - state.basePoint.x;
     const dy = currentPoint.y - state.basePoint.y;
-    const angleRad = Math.atan2(-dy, dx);
+    const angleRad = Math.atan2(dy, dx);
 
     return state.selectedIds
       .map((id) => {
@@ -344,6 +344,7 @@ function rotateShape(shape: Shape, center: Point, angleRad: number): Partial<Sha
       };
     }
     case 'polyline':
+    case 'spline':
       return {
         points: shape.points.map((p) => rotatePoint(p, center, angleRad)),
       };

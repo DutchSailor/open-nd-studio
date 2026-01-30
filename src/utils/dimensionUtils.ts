@@ -449,6 +449,7 @@ export function getSnapPointFromShape(
       break;
 
     case 'polyline':
+    case 'spline':
       if (snapType === 'endpoint' && pointIndex !== undefined && pointIndex < shape.points.length) {
         return shape.points[pointIndex];
       }

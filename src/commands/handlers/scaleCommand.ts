@@ -344,6 +344,7 @@ function scaleShape(shape: Shape, center: Point, factor: number): Partial<Shape>
         radiusY: shape.radiusY * factor,
       };
     case 'polyline':
+    case 'spline':
       return {
         points: shape.points.map((p) => scalePoint(p, center, factor)),
       };

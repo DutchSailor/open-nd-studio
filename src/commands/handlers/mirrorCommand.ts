@@ -307,6 +307,7 @@ function mirrorShapeCopy(shape: Shape, lineP1: Point, lineP2: Point): Shape {
         rotation: -shape.rotation,
       };
     case 'polyline':
+    case 'spline':
       return {
         ...shape,
         id: newId,

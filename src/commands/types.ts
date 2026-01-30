@@ -8,6 +8,7 @@ export type CommandName =
   | 'RECTANGLE'
   | 'ARC'
   | 'POLYLINE'
+  | 'SPLINE'
   | 'POLYGON'
   | 'ELLIPSE'
   // Modify commands
@@ -47,6 +48,8 @@ export const COMMAND_SHORTCUTS: Record<string, CommandName> = {
   'pl': 'POLYLINE',
   'pline': 'POLYLINE',
   'polyline': 'POLYLINE',
+  'spl': 'SPLINE',
+  'spline': 'SPLINE',
   'pol': 'POLYGON',
   'polygon': 'POLYGON',
   'el': 'ELLIPSE',

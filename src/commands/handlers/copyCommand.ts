@@ -323,6 +323,7 @@ function copyShape(shape: Shape, dx: number, dy: number): Shape {
         center: { x: shape.center.x + dx, y: shape.center.y + dy },
       };
     case 'polyline':
+    case 'spline':
       return {
         ...shape,
         id: newId,

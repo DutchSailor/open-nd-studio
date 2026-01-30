@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect } from 'react';
 import { X, Printer, FileDown } from 'lucide-react';
 import { useAppStore } from '../../state/appStore';
 import type { Shape, Point } from '../../types/geometry';
+import { catmullRomToBezier } from '../../utils/splineUtils';
 
 // Paper sizes in mm
 const PAPER_SIZES: Record<string, { width: number; height: number; label: string }> = {
@@ -109,6 +110,7 @@ export function PrintDialog({ isOpen, onClose }: PrintDialogProps) {
           maxY = Math.max(maxY, shape.center.y + shape.radiusY);
           break;
         case 'polyline':
+        case 'spline':
           for (const point of shape.points) {
             minX = Math.min(minX, point.x);
             minY = Math.min(minY, point.y);
@@ -223,6 +225,19 @@ export function PrintDialog({ isOpen, onClose }: PrintDialogProps) {
           }
           if (shape.closed) {
             ctx.closePath();
+          }
+          ctx.stroke();
+        }
+        break;
+
+      case 'spline':
+        if (shape.points.length >= 2) {
+          const scaledPts = shape.points.map(p => ({ x: tx(p.x), y: ty(p.y) }));
+          const segs = catmullRomToBezier(scaledPts);
+          ctx.beginPath();
+          ctx.moveTo(scaledPts[0].x, scaledPts[0].y);
+          for (const seg of segs) {
+            ctx.bezierCurveTo(seg.cp1.x, seg.cp1.y, seg.cp2.x, seg.cp2.y, seg.end.x, seg.end.y);
           }
           ctx.stroke();
         }

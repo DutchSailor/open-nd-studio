@@ -16,6 +16,7 @@ import type {
   ArcShape,
   EllipseShape,
   PolylineShape,
+  SplineShape,
   TextShape,
   PointShape,
   ShapeType,
@@ -96,6 +97,13 @@ export function isPolylineShape(shape: Shape): shape is PolylineShape {
 }
 
 /**
+ * Check if a shape is a spline
+ */
+export function isSplineShape(shape: Shape): shape is SplineShape {
+  return shape.type === 'spline';
+}
+
+/**
  * Check if a shape is a text
  */
 export function isTextShape(shape: Shape): shape is TextShape {
@@ -133,8 +141,8 @@ export function hasRotation(shape: Shape): shape is RectangleShape | EllipseShap
 /**
  * Check if a shape has points array
  */
-export function hasPoints(shape: Shape): shape is PolylineShape {
-  return shape.type === 'polyline';
+export function hasPoints(shape: Shape): shape is PolylineShape | SplineShape {
+  return shape.type === 'polyline' || shape.type === 'spline';
 }
 
 /**
@@ -393,7 +401,7 @@ export function isSnapType(value: unknown): value is SnapType {
  */
 const TOOL_TYPES: ToolType[] = [
   'select', 'pan', 'line', 'rectangle', 'circle', 'arc',
-  'polyline', 'ellipse', 'text', 'move', 'copy', 'rotate',
+  'polyline', 'ellipse', 'spline', 'text', 'move', 'copy', 'rotate',
   'scale', 'mirror', 'trim', 'extend', 'fillet', 'offset'
 ];
 
@@ -408,7 +416,7 @@ export function isToolType(value: unknown): value is ToolType {
  * Check if a tool is a drawing tool
  */
 export function isDrawingTool(tool: ToolType): boolean {
-  return ['line', 'rectangle', 'circle', 'arc', 'polyline', 'ellipse', 'text'].includes(tool);
+  return ['line', 'rectangle', 'circle', 'arc', 'polyline', 'ellipse', 'spline', 'text'].includes(tool);
 }
 
 /**
@@ -440,7 +448,7 @@ export function isNavigationTool(tool: ToolType): boolean {
  * Valid shape types
  */
 const SHAPE_TYPES: ShapeType[] = [
-  'line', 'rectangle', 'circle', 'arc', 'polyline', 'ellipse', 'text', 'point'
+  'line', 'rectangle', 'circle', 'arc', 'polyline', 'ellipse', 'spline', 'text', 'point'
 ];
 
 /**

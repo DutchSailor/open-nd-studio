@@ -250,6 +250,7 @@ export function calculateBounds(shape: {
       break;
 
     case 'polyline':
+    case 'spline':
       if (shape.points && shape.points.length > 0) {
         const xs = shape.points.map((p) => p.x);
         const ys = shape.points.map((p) => p.y);

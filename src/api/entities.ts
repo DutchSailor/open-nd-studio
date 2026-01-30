@@ -9,7 +9,7 @@ import type { TransactionManager } from './transactions';
 import { toPoint, type ApiPoint, type EntityFilter } from './types';
 import {
   createLineShape, createRectangleShape, createCircleShape,
-  createArcShape, createEllipseShape, createPolylineShape, createPointShape,
+  createArcShape, createEllipseShape, createPolylineShape, createSplineShape, createPointShape,
   cloneShape, translateShape, rotateShape, scaleShape, mirrorShape,
   doesShapeIntersectBounds,
 } from '../services/shapeService';
@@ -89,6 +89,11 @@ export class EntitiesApi {
         );
       case 'polyline':
         return createPolylineShape(
+          (params.points as ApiPoint[]).map(toPoint),
+          layerId, drawingId, style, params.closed || false
+        );
+      case 'spline':
+        return createSplineShape(
           (params.points as ApiPoint[]).map(toPoint),
           layerId, drawingId, style, params.closed || false
         );

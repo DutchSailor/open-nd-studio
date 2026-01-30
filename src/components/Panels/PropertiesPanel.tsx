@@ -167,6 +167,14 @@ function ShapeProperties({ shape, updateShape }: { shape: Shape; updateShape: (i
         </>
       );
 
+    case 'spline':
+      return (
+        <>
+          <CheckboxField label="Closed" value={shape.closed} onChange={(v) => update({ closed: v })} />
+          <NumberField label="Control Points" value={shape.points.length} onChange={() => {}} readOnly />
+        </>
+      );
+
     default:
       return (
         <div className="text-xs text-cad-text-dim">

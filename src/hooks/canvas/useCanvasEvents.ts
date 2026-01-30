@@ -205,6 +205,7 @@ export function useCanvasEvents(canvasRef: React.RefObject<HTMLCanvasElement>) {
         case 'circle':
         case 'arc':
         case 'polyline':
+        case 'spline':
         case 'ellipse':
           shapeDrawing.handleDrawingClick(snappedPos, e.shiftKey, snapResult.snapInfo);
           // Clear snap/tracking indicators after click - they'll be recalculated on next mouse move
@@ -299,7 +300,7 @@ export function useCanvasEvents(canvasRef: React.RefObject<HTMLCanvasElement>) {
       }
 
       // Drawing tools - always detect snaps when hovering (even before first click)
-      const isDrawingTool = ['line', 'rectangle', 'circle', 'arc', 'polyline', 'ellipse', 'dimension'].includes(activeTool);
+      const isDrawingTool = ['line', 'rectangle', 'circle', 'arc', 'polyline', 'spline', 'ellipse', 'dimension'].includes(activeTool);
 
       if (isDrawingTool && editorMode === 'drawing') {
         const worldPos = screenToWorld(screenPos.x, screenPos.y, viewport);
@@ -390,7 +391,7 @@ export function useCanvasEvents(canvasRef: React.RefObject<HTMLCanvasElement>) {
       }
 
       // If a drawing tool is selected but not actively drawing, deselect it
-      const drawingTools = ['line', 'rectangle', 'circle', 'arc', 'polyline', 'ellipse', 'text'];
+      const drawingTools = ['line', 'rectangle', 'circle', 'arc', 'polyline', 'spline', 'ellipse', 'text'];
       if (drawingTools.includes(activeTool)) {
         setActiveTool('select');
         // Clear any lingering snap/tracking indicators

@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { useAppStore, generateId } from '../state/appStore';
-import type { LineShape, PolylineShape } from '../types/geometry';
+import type { LineShape, PolylineShape, SplineShape } from '../types/geometry';
 
 /**
  * Hook to handle keyboard shortcuts for drawing operations (AutoCAD-style)
@@ -95,6 +95,19 @@ export function useDrawingKeyboard() {
               closed: false,
             };
             addShape(polylineShape);
+          } else if (activeTool === 'spline' && drawingPoints.length >= 2) {
+            const splineShape: SplineShape = {
+              id: generateId(),
+              type: 'spline',
+              layerId: activeLayerId,
+              drawingId: activeDrawingId,
+              style: { ...currentStyle },
+              visible: true,
+              locked: false,
+              points: [...drawingPoints],
+              closed: false,
+            };
+            addShape(splineShape);
           }
           clearDrawingPoints();
           setDrawingPreview(null);
@@ -149,6 +162,20 @@ export function useDrawingKeyboard() {
                 closed: true,
               };
               addShape(polylineShape);
+            } else if (activeTool === 'spline') {
+              // Create closed spline
+              const splineShape: SplineShape = {
+                id: generateId(),
+                type: 'spline',
+                layerId: activeLayerId,
+                drawingId: activeDrawingId,
+                style: { ...currentStyle },
+                visible: true,
+                locked: false,
+                points: [...drawingPoints],
+                closed: true,
+              };
+              addShape(splineShape);
             }
 
             clearDrawingPoints();

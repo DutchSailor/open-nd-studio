@@ -541,11 +541,12 @@ export function getShapeSnapPoints(
       break;
 
     case 'polyline':
+    case 'spline':
       if (activeSnaps.includes('endpoint')) {
-        snapPoints.push(...getPolylineEndpoints(shape));
+        snapPoints.push(...getPolylineEndpoints(shape as PolylineShape));
       }
       if (activeSnaps.includes('midpoint')) {
-        snapPoints.push(...getPolylineMidpoints(shape));
+        snapPoints.push(...getPolylineMidpoints(shape as PolylineShape));
       }
       break;
 

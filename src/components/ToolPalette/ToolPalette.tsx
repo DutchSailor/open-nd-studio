@@ -218,8 +218,8 @@ export const ToolPalette = memo(function ToolPalette() {
   // Primary modify commands (most used - displayed with slightly larger emphasis)
   const primaryModifyCommands: { command: string; icon: React.ReactNode; label: string; shortcut: string; disabled?: boolean }[] = [
     { command: 'MOVE', icon: <ArrowRight size={18} />, label: 'Move', shortcut: 'M' },
-    { command: 'COPY', icon: <Copy size={18} />, label: 'Copy', shortcut: 'CO', disabled: true },
-    { command: 'ROTATE', icon: <RotateCw size={18} />, label: 'Rotate', shortcut: 'RO', disabled: true },
+    { command: 'COPY', icon: <Copy size={18} />, label: 'Copy', shortcut: 'CO' },
+    { command: 'ROTATE', icon: <RotateCw size={18} />, label: 'Rotate', shortcut: 'RO' },
     { command: 'ARRAY', icon: <ArrayIcon size={18} />, label: 'Array', shortcut: 'AR', disabled: true },
     { command: 'MIRROR', icon: <FlipHorizontal size={18} />, label: 'Mirror', shortcut: 'MI', disabled: true },
     { command: 'SCALE', icon: <ScaleIcon size={18} />, label: 'Scale', shortcut: 'SC', disabled: true },
@@ -313,13 +313,12 @@ export const ToolPalette = memo(function ToolPalette() {
           active={activeTool === 'polyline' && !activeCommandName}
           onClick={() => switchToDrawingTool('polyline')}
         />
-        {/* Spline - New tool (not yet implemented) */}
         <ToolButton
           icon={<SplineIcon size={18} />}
           label="Spline"
           shortcut="SPL"
-          disabled={true}
-          onClick={() => {}}
+          active={activeTool === 'spline' && !activeCommandName}
+          onClick={() => switchToDrawingTool('spline')}
         />
         {/* Ellipse */}
         <ToolButton

@@ -7,6 +7,7 @@ import { BaseRenderer } from './BaseRenderer';
 import { COLORS } from '../types';
 import { DimensionRenderer } from './DimensionRenderer';
 import type { DimensionShape } from '../../../types/dimension';
+import { drawSplinePath } from '../../../utils/splineUtils';
 
 export class ShapeRenderer extends BaseRenderer {
   private dimensionRenderer: DimensionRenderer;
@@ -59,6 +60,9 @@ export class ShapeRenderer extends BaseRenderer {
         break;
       case 'polyline':
         this.drawPolyline(shape);
+        break;
+      case 'spline':
+        this.drawSpline(shape);
         break;
       case 'ellipse':
         this.drawEllipse(shape);
@@ -119,6 +123,9 @@ export class ShapeRenderer extends BaseRenderer {
       case 'polyline':
         this.drawPolyline(shape);
         break;
+      case 'spline':
+        this.drawSpline(shape);
+        break;
       case 'ellipse':
         this.drawEllipse(shape);
         break;
@@ -136,13 +143,17 @@ export class ShapeRenderer extends BaseRenderer {
   /**
    * Draw drawing preview
    */
-  drawPreview(preview: DrawingPreview, style?: CurrentStyle, viewport?: Viewport): void {
+  drawPreview(preview: DrawingPreview, style?: CurrentStyle, viewport?: Viewport, invertColors: boolean = false): void {
     if (!preview) return;
 
     const ctx = this.ctx;
 
     // Set preview style - solid lines matching final appearance
-    ctx.strokeStyle = style?.strokeColor || '#ffffff';
+    let strokeColor = style?.strokeColor || '#ffffff';
+    if (invertColors && strokeColor === '#ffffff') {
+      strokeColor = '#000000';
+    }
+    ctx.strokeStyle = strokeColor;
     ctx.lineWidth = style?.strokeWidth || 1;
     ctx.setLineDash([]);
 
@@ -197,6 +208,14 @@ export class ShapeRenderer extends BaseRenderer {
             ctx.lineTo(preview.points[i].x, preview.points[i].y);
           }
           ctx.lineTo(preview.currentPoint.x, preview.currentPoint.y);
+          ctx.stroke();
+        }
+        break;
+
+      case 'spline':
+        if (preview.points.length > 0) {
+          const allPoints = [...preview.points, preview.currentPoint];
+          drawSplinePath(ctx, allPoints);
           ctx.stroke();
         }
         break;
@@ -280,6 +299,13 @@ export class ShapeRenderer extends BaseRenderer {
             if (shape.closed) {
               ctx.closePath();
             }
+            ctx.stroke();
+          }
+          break;
+
+        case 'spline':
+          if (shape.points.length >= 2) {
+            drawSplinePath(ctx, shape.points);
             ctx.stroke();
           }
           break;
@@ -370,6 +396,14 @@ export class ShapeRenderer extends BaseRenderer {
       }
     }
 
+    ctx.stroke();
+  }
+
+  private drawSpline(shape: Shape): void {
+    if (shape.type !== 'spline') return;
+    if (shape.points.length < 2) return;
+    const ctx = this.ctx;
+    drawSplinePath(ctx, shape.points);
     ctx.stroke();
   }
 
@@ -575,7 +609,8 @@ export class ShapeRenderer extends BaseRenderer {
           { x: shape.center.x, y: shape.center.y + shape.radiusY },
           { x: shape.center.x, y: shape.center.y - shape.radiusY },
         ];
-      case 'polyline': {
+      case 'polyline':
+      case 'spline': {
         const pts: { x: number; y: number }[] = [...shape.points];
         const segCount = shape.closed ? shape.points.length : shape.points.length - 1;
         for (let i = 0; i < segCount; i++) {

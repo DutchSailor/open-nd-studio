@@ -77,7 +77,8 @@ function getGripPoints(shape: Shape): Point[] {
         { x: shape.center.x, y: shape.center.y + shape.radiusY },
         { x: shape.center.x, y: shape.center.y - shape.radiusY },
       ];
-    case 'polyline': {
+    case 'polyline':
+    case 'spline': {
       // Vertex points first, then segment midpoints
       const pts = [...shape.points];
       const segCount = shape.closed ? shape.points.length : shape.points.length - 1;
@@ -289,7 +290,8 @@ function computeGripUpdates(shape: Shape, gripIndex: number, newPos: Point, edge
       return null;
     }
 
-    case 'polyline': {
+    case 'polyline':
+    case 'spline': {
       if (edgeMidpointIndices) {
         // Edge midpoint: move two adjacent points by the same delta
         const [i1, i2] = edgeMidpointIndices;
@@ -401,7 +403,7 @@ export function useGripEditing() {
           } else {
             // For polyline midpoint grips, compute the two vertex indices
             let polylineMidpointIndices: [number, number] | undefined;
-            if (shape.type === 'polyline' && i >= shape.points.length) {
+            if ((shape.type === 'polyline' || shape.type === 'spline') && i >= shape.points.length) {
               const segIdx = i - shape.points.length;
               const j = (segIdx + 1) % shape.points.length;
               polylineMidpointIndices = [segIdx, j];

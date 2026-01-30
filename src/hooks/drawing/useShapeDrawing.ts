@@ -4,7 +4,7 @@
 
 import { useCallback } from 'react';
 import { useAppStore, generateId } from '../../state/appStore';
-import type { Point, LineShape, RectangleShape, CircleShape, ArcShape, PolylineShape, EllipseShape, SnapPoint } from '../../types/geometry';
+import type { Point, LineShape, RectangleShape, CircleShape, ArcShape, PolylineShape, SplineShape, EllipseShape, SnapPoint } from '../../types/geometry';
 import { snapToAngle, calculateCircleFrom3Points } from '../../utils/geometryUtils';
 import { useDimensionDrawing } from './useDimensionDrawing';
 
@@ -173,6 +173,28 @@ export function useShapeDrawing() {
         closed,
       };
       addShape(polylineShape);
+    },
+    [activeLayerId, activeDrawingId, currentStyle, addShape]
+  );
+
+  /**
+   * Create a spline shape
+   */
+  const createSpline = useCallback(
+    (points: Point[], closed: boolean = false) => {
+      if (points.length < 2) return;
+      const splineShape: SplineShape = {
+        id: generateId(),
+        type: 'spline',
+        layerId: activeLayerId,
+        drawingId: activeDrawingId,
+        style: { ...currentStyle },
+        visible: true,
+        locked: false,
+        points: [...points],
+        closed,
+      };
+      addShape(splineShape);
     },
     [activeLayerId, activeDrawingId, currentStyle, addShape]
   );
@@ -436,6 +458,22 @@ export function useShapeDrawing() {
   );
 
   /**
+   * Handle click for spline drawing
+   */
+  const handleSplineClick = useCallback(
+    (snappedPos: Point, shiftKey: boolean) => {
+      if (shiftKey && drawingPoints.length > 0) {
+        const lastPoint = drawingPoints[drawingPoints.length - 1];
+        const finalPos = snapToAngle(lastPoint, snappedPos);
+        addDrawingPoint(finalPos);
+      } else {
+        addDrawingPoint(snappedPos);
+      }
+    },
+    [drawingPoints, addDrawingPoint]
+  );
+
+  /**
    * Handle click for arc drawing
    * Modes:
    * - '3point': Click start, click point on arc, click end (like Revit)
@@ -606,6 +644,9 @@ export function useShapeDrawing() {
         case 'polyline':
           handlePolylineClick(snappedPos, shiftKey);
           return true;
+        case 'spline':
+          handleSplineClick(snappedPos, shiftKey);
+          return true;
         case 'ellipse':
           handleEllipseClick(snappedPos);
           return true;
@@ -616,7 +657,7 @@ export function useShapeDrawing() {
           return false;
       }
     },
-    [activeTool, handleLineClick, handleRectangleClick, handleCircleClick, handleArcClick, handlePolylineClick, handleEllipseClick, dimensionDrawing]
+    [activeTool, handleLineClick, handleRectangleClick, handleCircleClick, handleArcClick, handlePolylineClick, handleSplineClick, handleEllipseClick, dimensionDrawing]
   );
 
   /**
@@ -805,6 +846,23 @@ export function useShapeDrawing() {
   );
 
   /**
+   * Update drawing preview for spline
+   */
+  const updateSplinePreview = useCallback(
+    (snappedPos: Point, shiftKey: boolean) => {
+      if (drawingPoints.length === 0) return;
+      const lastPoint = drawingPoints[drawingPoints.length - 1];
+      const previewPos = shiftKey ? snapToAngle(lastPoint, snappedPos) : snappedPos;
+      setDrawingPreview({
+        type: 'spline',
+        points: drawingPoints,
+        currentPoint: previewPos,
+      });
+    },
+    [drawingPoints, setDrawingPreview]
+  );
+
+  /**
    * Update drawing preview for arc
    */
   const updateArcPreview = useCallback(
@@ -975,6 +1033,9 @@ export function useShapeDrawing() {
         case 'polyline':
           updatePolylinePreview(snappedPos, shiftKey);
           break;
+        case 'spline':
+          updateSplinePreview(snappedPos, shiftKey);
+          break;
         case 'ellipse':
           updateEllipsePreview(snappedPos);
           break;
@@ -983,7 +1044,7 @@ export function useShapeDrawing() {
           break;
       }
     },
-    [activeTool, drawingPoints, updateLinePreview, updateRectanglePreview, updateCirclePreview, updateArcPreview, updatePolylinePreview, updateEllipsePreview, dimensionDrawing]
+    [activeTool, drawingPoints, updateLinePreview, updateRectanglePreview, updateCirclePreview, updateArcPreview, updatePolylinePreview, updateSplinePreview, updateEllipsePreview, dimensionDrawing]
   );
 
   /**
@@ -993,6 +1054,8 @@ export function useShapeDrawing() {
     if (drawingPoints.length > 0) {
       if (activeTool === 'polyline' && drawingPoints.length >= 2) {
         createPolyline(drawingPoints, false);
+      } else if (activeTool === 'spline' && drawingPoints.length >= 2) {
+        createSpline(drawingPoints, false);
       } else if (activeTool === 'dimension') {
         dimensionDrawing.cancelDimensionDrawing();
         return;
@@ -1000,7 +1063,7 @@ export function useShapeDrawing() {
       clearDrawingPoints();
       setDrawingPreview(null);
     }
-  }, [drawingPoints, activeTool, createPolyline, clearDrawingPoints, setDrawingPreview, dimensionDrawing]);
+  }, [drawingPoints, activeTool, createPolyline, createSpline, clearDrawingPoints, setDrawingPreview, dimensionDrawing]);
 
   /**
    * Check if currently drawing
@@ -1025,6 +1088,7 @@ export function useShapeDrawing() {
     createCircle,
     createArc,
     createPolyline,
+    createSpline,
     createEllipse,
     getDimensionStatus: dimensionDrawing.getDimensionStatus,
   };

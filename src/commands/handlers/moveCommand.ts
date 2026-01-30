@@ -251,6 +251,7 @@ function moveShape(shape: Shape, dx: number, dy: number): Partial<Shape> {
         center: { x: shape.center.x + dx, y: shape.center.y + dy },
       };
     case 'polyline':
+    case 'spline':
       return {
         points: shape.points.map((p) => ({ x: p.x + dx, y: p.y + dy })),
       };

@@ -61,6 +61,7 @@ export type DrawingPreview =
   | { type: 'ellipse'; center: Point; radiusX: number; radiusY: number; rotation: number }
   | { type: 'arc'; center: Point; radius: number; startAngle: number; endAngle: number }
   | { type: 'polyline'; points: Point[]; currentPoint: Point }
+  | { type: 'spline'; points: Point[]; currentPoint: Point }
   | { type: 'text'; position: Point }
   | { type: 'dimension'; dimensionType: DimensionType; points: Point[]; dimensionLineOffset: number; linearDirection?: 'horizontal' | 'vertical'; value: string }
   | null;
@@ -233,6 +234,7 @@ export const getShapeBounds = (shape: Shape): { minX: number; minY: number; maxX
         maxY: shape.center.y + shape.radius,
       };
     case 'polyline':
+    case 'spline':
       if (shape.points.length === 0) return null;
       const xs = shape.points.map(p => p.x);
       const ys = shape.points.map(p => p.y);

@@ -5,6 +5,7 @@
 import { open, save, message, ask } from '@tauri-apps/plugin-dialog';
 import { readTextFile, writeTextFile } from '@tauri-apps/plugin-fs';
 import type { Shape, Layer, Drawing, Sheet, Viewport, DrawingBoundary } from '../types/geometry';
+import { splineToSvgPath } from '../utils/splineUtils';
 
 // File format version for future compatibility
 const FILE_FORMAT_VERSION = 2;
@@ -342,6 +343,10 @@ function shapeToSVG(shape: Shape): string {
       }
       return `  <polyline ${baseAttrs} points="${points}" />\n`;
 
+    case 'spline':
+      if (shape.points.length < 2) return '';
+      return `  <path ${baseAttrs} d="${splineToSvgPath(shape.points)}${shape.closed ? ' Z' : ''}" />\n`;
+
     default:
       return '';
   }
@@ -420,6 +425,7 @@ ${shape.endAngle * 180 / Math.PI}
 `;
 
     case 'polyline':
+    case 'spline':
       let result = `0
 POLYLINE
 8
@@ -482,6 +488,7 @@ function getShapeBounds(shape: Shape): { minX: number; minY: number; maxX: numbe
         maxY: shape.center.y + shape.radiusY,
       };
     case 'polyline':
+    case 'spline':
       if (shape.points.length === 0) return null;
       const xs = shape.points.map(p => p.x);
       const ys = shape.points.map(p => p.y);

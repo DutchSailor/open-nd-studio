@@ -18,6 +18,7 @@ import type {
   ArcShape,
   EllipseShape,
   PolylineShape,
+  SplineShape,
   PointShape,
   ShapeStyle,
 } from '../types/geometry';
@@ -191,6 +192,29 @@ export function createPolylineShape(
 }
 
 /**
+ * Create a spline shape
+ */
+export function createSplineShape(
+  points: Point[],
+  layerId: string,
+  drawingId: string,
+  style: Partial<ShapeStyle> = {},
+  closed: boolean = false
+): SplineShape {
+  return {
+    id: generateShapeId(),
+    type: 'spline',
+    layerId,
+    drawingId,
+    style: { ...DEFAULT_STYLE, ...style },
+    visible: true,
+    locked: false,
+    points: [...points],
+    closed,
+  };
+}
+
+/**
  * Create a point shape
  */
 export function createPointShape(
@@ -254,6 +278,7 @@ export function translateShape(shape: Shape, offset: Point): void {
       shape.center.y += offset.y;
       break;
     case 'polyline':
+    case 'spline':
       shape.points.forEach(p => {
         p.x += offset.x;
         p.y += offset.y;
@@ -307,6 +332,7 @@ export function rotateShape(shape: Shape, center: Point, angle: number): void {
       shape.rotation = (shape.rotation || 0) + angle;
       break;
     case 'polyline':
+    case 'spline':
       shape.points = shape.points.map(p => rotatePoint(p, center, angle));
       break;
     case 'point':
@@ -349,6 +375,7 @@ export function scaleShape(shape: Shape, center: Point, scaleX: number, scaleY: 
       shape.radiusY *= scaleY;
       break;
     case 'polyline':
+    case 'spline':
       shape.points = shape.points.map(scale);
       break;
     case 'point':
@@ -402,6 +429,7 @@ export function mirrorShape(shape: Shape, p1: Point, p2: Point): void {
       shape.rotation = -shape.rotation;
       break;
     case 'polyline':
+    case 'spline':
       shape.points = shape.points.map(mirrorPoint);
       break;
     case 'point':
@@ -478,6 +506,7 @@ export function validateShape(shape: Shape): boolean {
     case 'ellipse':
       return !!shape.center && shape.radiusX > 0 && shape.radiusY > 0;
     case 'polyline':
+    case 'spline':
       return Array.isArray(shape.points) && shape.points.length >= 2;
     case 'point':
       return !!shape.position;

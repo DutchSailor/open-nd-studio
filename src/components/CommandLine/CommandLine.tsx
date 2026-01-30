@@ -83,6 +83,15 @@ export const CommandLine = memo(function CommandLine() {
           return 'Specify next point, distance, or [Close/Undo]:';
         }
 
+      case 'spline':
+        if (drawingPointsLength === 0) {
+          return 'SPLINE Specify first point:';
+        } else if (drawingPointsLength === 1) {
+          return 'Specify next point:';
+        } else {
+          return 'Specify next point or [Close/Undo] (right-click to finish):';
+        }
+
       case 'rectangle':
         if (drawingPointsLength === 0) {
           return 'RECTANG Specify first corner point:';
@@ -331,14 +340,15 @@ export const CommandLine = memo(function CommandLine() {
       // Check for tool/command shortcuts
       const commandName = resolveCommandName(trimmed);
       if (commandName) {
-        const drawingTools = ['LINE', 'RECTANGLE', 'CIRCLE', 'ARC', 'POLYLINE', 'ELLIPSE'];
+        const drawingTools = ['LINE', 'RECTANGLE', 'CIRCLE', 'ARC', 'POLYLINE', 'SPLINE', 'ELLIPSE'];
         if (drawingTools.includes(commandName)) {
-          const toolMap: Record<string, 'line' | 'rectangle' | 'circle' | 'arc' | 'polyline' | 'ellipse'> = {
+          const toolMap: Record<string, 'line' | 'rectangle' | 'circle' | 'arc' | 'polyline' | 'spline' | 'ellipse'> = {
             LINE: 'line',
             RECTANGLE: 'rectangle',
             CIRCLE: 'circle',
             ARC: 'arc',
             POLYLINE: 'polyline',
+            SPLINE: 'spline',
             ELLIPSE: 'ellipse',
           };
           setActiveTool(toolMap[commandName] || 'select');

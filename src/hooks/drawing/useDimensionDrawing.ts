@@ -44,7 +44,7 @@ function getLineFromShape(shape: Shape, clickPoint: Point): { start: Point; end:
   if (shape.type === 'line') {
     return { start: shape.start, end: shape.end };
   }
-  if (shape.type === 'polyline' && shape.points.length >= 2) {
+  if ((shape.type === 'polyline' || shape.type === 'spline') && shape.points.length >= 2) {
     // Find the nearest segment
     let bestDist = Infinity;
     let bestSeg: { start: Point; end: Point } | null = null;
