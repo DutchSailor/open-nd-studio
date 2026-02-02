@@ -7,7 +7,7 @@ import type { CadEventBus } from './events';
 import {
   showOpenDialog, showSaveDialog, showExportDialog,
   readProjectFile, writeProjectFile,
-  exportToSVG, exportToDXF,
+  exportToSVG, exportToDXF, exportToIFC,
 } from '../services/fileService';
 import { writeTextFile } from '@tauri-apps/plugin-fs';
 
@@ -91,6 +91,14 @@ export class ApplicationApi {
     if (!filePath) return;
     const dxf = exportToDXF(this.getState().shapes);
     await writeTextFile(filePath, dxf);
+  }
+
+  async exportIFC(path?: string): Promise<void> {
+    const filePath = path || await showExportDialog('ifc', this.getState().projectName);
+    if (!filePath) return;
+    const state = this.getState();
+    const ifc = exportToIFC(state.shapes, state.layers);
+    await writeTextFile(filePath, ifc);
   }
 
   async exportJSON(path?: string): Promise<void> {

@@ -866,3 +866,177 @@ export function DiameterDimensionIcon({ size = 24, className }: IconProps) {
     </svg>
   );
 }
+
+/**
+ * Hatch Icon - Diagonal fill lines inside a rectangle
+ */
+export function HatchIcon({ size = 24, className }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <rect x="4" y="4" width="16" height="16" />
+      <line x1="4" y1="10" x2="10" y2="4" />
+      <line x1="4" y1="16" x2="16" y2="4" />
+      <line x1="8" y1="20" x2="20" y2="8" />
+      <line x1="14" y1="20" x2="20" y2="14" />
+    </svg>
+  );
+}
+
+/**
+ * Cloud Icon - Revision cloud with bumpy edges
+ */
+export function CloudIcon({ size = 24, className }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M4 12 A3 3 0 0 1 7 9 A3 3 0 0 1 10 6 A3 3 0 0 1 14 6 A3 3 0 0 1 17 9 A3 3 0 0 1 20 12 A3 3 0 0 1 17 15 A3 3 0 0 1 14 18 A3 3 0 0 1 10 18 A3 3 0 0 1 7 15 A3 3 0 0 1 4 12Z" />
+    </svg>
+  );
+}
+
+/**
+ * Leader Icon - Arrow with text line
+ */
+export function LeaderIcon({ size = 24, className }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <polyline points="4,18 10,10 16,10" />
+      <line x1="16" y1="10" x2="21" y2="10" />
+      <polygon points="4,18 6,15 7,17" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
+/**
+ * Table Icon - Grid of cells
+ */
+export function TableIcon({ size = 24, className }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <rect x="4" y="4" width="16" height="16" />
+      <line x1="4" y1="10" x2="20" y2="10" />
+      <line x1="4" y1="16" x2="20" y2="16" />
+      <line x1="12" y1="4" x2="12" y2="20" />
+    </svg>
+  );
+}
+
+/**
+ * Construction Line Icon - Infinite line (XLine) with arrows on both ends
+ */
+export function ConstructionLineIcon({ size = 24, className }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <line x1="2" y1="20" x2="22" y2="4" strokeDasharray="4 2" />
+      <polyline points="4,18 2,20 4,20" />
+      <polyline points="20,6 22,4 20,4" />
+    </svg>
+  );
+}
+
+/**
+ * Ray Icon - Semi-infinite line with one arrow
+ */
+export function RayIcon({ size = 24, className }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <circle cx="4" cy="18" r="2" fill="currentColor" />
+      <line x1="6" y1="16" x2="22" y2="4" strokeDasharray="4 2" />
+      <polyline points="20,6 22,4 20,4" />
+    </svg>
+  );
+}
+
+/**
+ * Point/Divide Icon - Points distributed along a line
+ */
+export function DivideIcon({ size = 24, className }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <line x1="3" y1="12" x2="21" y2="12" />
+      <circle cx="6" cy="12" r="1.5" fill="currentColor" stroke="none" />
+      <circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none" />
+      <circle cx="18" cy="12" r="1.5" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
+/**
+ * Stretch Icon - Arrows pulling vertices outward
+ */
+export function StretchIcon({ size = 24, className }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <polyline points="6,18 6,10 14,10 14,18" />
+      <line x1="14" y1="10" x2="20" y2="4" />
+      <polyline points="17,4 20,4 20,7" />
+      <line x1="6" y1="10" x2="4" y2="6" strokeDasharray="2 2" />
+    </svg>
+  );
+}
+
+/**
+ * Break Icon - Line broken at a point
+ */
+export function BreakIcon({ size = 24, className }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <line x1="3" y1="12" x2="9" y2="12" />
+      <line x1="15" y1="12" x2="21" y2="12" />
+      <path d="M9,8 L11,16 L13,8 L15,16" />
+    </svg>
+  );
+}
+
+/**
+ * Join Icon - Two segments merging into one
+ */
+export function JoinIcon({ size = 24, className }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <line x1="3" y1="8" x2="10" y2="12" />
+      <line x1="3" y1="16" x2="10" y2="12" />
+      <line x1="10" y1="12" x2="21" y2="12" />
+      <circle cx="10" cy="12" r="1.5" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
+/**
+ * Pin Icon - Pin/lock position
+ */
+export function PinIcon({ size = 24, className }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M9,3 L15,3 L16,10 L19,12 L19,14 L13,14 L13,21 L11,21 L11,14 L5,14 L5,12 L8,10 Z" />
+    </svg>
+  );
+}
+
+/**
+ * Lengthen Icon - Line with extension arrow
+ */
+export function LengthenIcon({ size = 24, className }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <line x1="3" y1="12" x2="15" y2="12" />
+      <line x1="15" y1="12" x2="21" y2="12" strokeDasharray="2 2" />
+      <polyline points="18,9 21,12 18,15" />
+      <circle cx="3" cy="12" r="1.5" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
+/**
+ * Explode Icon - Shape breaking apart
+ */
+export function ExplodeIcon({ size = 24, className }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <line x1="12" y1="12" x2="5" y2="5" />
+      <line x1="12" y1="12" x2="19" y2="5" />
+      <line x1="12" y1="12" x2="5" y2="19" />
+      <line x1="12" y1="12" x2="19" y2="19" />
+      <circle cx="12" cy="12" r="2" />
+    </svg>
+  );
+}

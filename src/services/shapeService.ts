@@ -22,7 +22,7 @@ import type {
   PointShape,
   ShapeStyle,
 } from '../types/geometry';
-import { getShapeBounds, type ShapeBounds } from '../utils/geometryUtils';
+import { getShapeBounds, type ShapeBounds } from '../engine/geometry/GeometryUtils';
 
 /**
  * Generate a unique ID for shapes
@@ -176,9 +176,10 @@ export function createPolylineShape(
   layerId: string,
   drawingId: string,
   style: Partial<ShapeStyle> = {},
-  closed: boolean = false
+  closed: boolean = false,
+  bulge?: number[]
 ): PolylineShape {
-  return {
+  const shape: PolylineShape = {
     id: generateShapeId(),
     type: 'polyline',
     layerId,
@@ -189,6 +190,10 @@ export function createPolylineShape(
     points: [...points],
     closed,
   };
+  if (bulge && bulge.some(b => b !== 0)) {
+    shape.bulge = [...bulge];
+  }
+  return shape;
 }
 
 /**
@@ -429,6 +434,11 @@ export function mirrorShape(shape: Shape, p1: Point, p2: Point): void {
       shape.rotation = -shape.rotation;
       break;
     case 'polyline':
+      shape.points = shape.points.map(mirrorPoint);
+      if (shape.bulge) {
+        shape.bulge = shape.bulge.map(b => -b);
+      }
+      break;
     case 'spline':
       shape.points = shape.points.map(mirrorPoint);
       break;
@@ -546,5 +556,5 @@ export function doesShapeIntersectBounds(shape: Shape, bounds: ShapeBounds): boo
 }
 
 // Re-export getShapeBounds for convenience
-export { getShapeBounds } from '../utils/geometryUtils';
-export type { ShapeBounds } from '../utils/geometryUtils';
+export { getShapeBounds } from '../engine/geometry/GeometryUtils';
+export type { ShapeBounds } from '../engine/geometry/GeometryUtils';

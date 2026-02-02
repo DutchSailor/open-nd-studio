@@ -14,8 +14,8 @@
 
 import type { Shape, Viewport, SnapPoint, DrawingBoundary, Sheet, Drawing, SheetViewport, Layer } from '../../types/geometry';
 import type { DrawingPreview, SelectionBox } from '../../state/appStore';
-import type { TrackingLine } from '../../core/geometry/Tracking';
-import type { IPoint } from '../../core/geometry/Point';
+import type { TrackingLine } from '../geometry/Tracking';
+import type { IPoint } from '../geometry/Point';
 
 import { DrawingRenderer, DrawingRenderOptions } from './modes/DrawingRenderer';
 import { SheetRenderer, SheetRenderOptions, PlacementPreviewInfo } from './modes/SheetRenderer';
@@ -35,7 +35,6 @@ interface RenderOptions {
   drawingPreview?: DrawingPreview;
   currentStyle?: { strokeColor: string; strokeWidth: number };
   selectionBox?: SelectionBox | null;
-  commandPreviewShapes?: Shape[];
   currentSnapPoint?: SnapPoint | null;
   currentTrackingLines?: TrackingLine[];
   trackingPoint?: IPoint | null;
@@ -44,6 +43,7 @@ interface RenderOptions {
   boundarySelected?: boolean;
   boundaryDragging?: boolean;
   whiteBackground?: boolean;
+  hideSelectionHandles?: boolean;
 }
 
 // Interface for sheet mode rendering (supports both new and legacy property names)
@@ -111,7 +111,6 @@ export class CADRenderer {
       drawingPreview: options.drawingPreview,
       currentStyle: options.currentStyle,
       selectionBox: options.selectionBox,
-      commandPreviewShapes: options.commandPreviewShapes,
       currentSnapPoint: options.currentSnapPoint,
       currentTrackingLines: options.currentTrackingLines,
       trackingPoint: options.trackingPoint,
@@ -119,6 +118,7 @@ export class CADRenderer {
       boundarySelected: options.boundarySelected,
       boundaryDragging: options.boundaryDragging,
       whiteBackground: options.whiteBackground,
+      hideSelectionHandles: options.hideSelectionHandles,
     };
 
     this.drawingRenderer.render(drawingOptions);

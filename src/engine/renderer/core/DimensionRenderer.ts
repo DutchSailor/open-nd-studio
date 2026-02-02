@@ -14,7 +14,7 @@ import {
   calculateAngularDimensionGeometry,
   calculateArrowPoints,
   angleBetweenPoints,
-} from '../../../utils/dimensionUtils';
+} from '../../geometry/DimensionUtils';
 
 export class DimensionRenderer extends BaseRenderer {
   /**

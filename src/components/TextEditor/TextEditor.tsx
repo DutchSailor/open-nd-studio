@@ -7,7 +7,7 @@
 
 import { useRef, useEffect, useState, useCallback } from 'react';
 import { useAppStore } from '../../state/appStore';
-import { worldToScreen } from '../../utils/geometryUtils';
+import { worldToScreen } from '../../engine/geometry/GeometryUtils';
 import type { TextShape } from '../../types/geometry';
 
 interface TextEditorProps {

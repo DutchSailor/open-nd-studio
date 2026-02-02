@@ -3,11 +3,13 @@
  */
 
 import type { Shape, DrawingPreview, CurrentStyle, Viewport } from '../types';
+import type { HatchShape } from '../../../types/geometry';
 import { BaseRenderer } from './BaseRenderer';
 import { COLORS } from '../types';
 import { DimensionRenderer } from './DimensionRenderer';
 import type { DimensionShape } from '../../../types/dimension';
-import { drawSplinePath } from '../../../utils/splineUtils';
+import { drawSplinePath } from '../../geometry/SplineUtils';
+import { bulgeToArc, bulgeArcMidpoint } from '../../geometry/GeometryUtils';
 
 export class ShapeRenderer extends BaseRenderer {
   private dimensionRenderer: DimensionRenderer;
@@ -28,7 +30,7 @@ export class ShapeRenderer extends BaseRenderer {
   /**
    * Draw a shape with selection state
    */
-  drawShape(shape: Shape, isSelected: boolean, isHovered: boolean = false, invertColors: boolean = false): void {
+  drawShape(shape: Shape, isSelected: boolean, isHovered: boolean = false, invertColors: boolean = false, hideHandles: boolean = false): void {
     const ctx = this.ctx;
     const { style } = shape;
 
@@ -73,12 +75,15 @@ export class ShapeRenderer extends BaseRenderer {
       case 'dimension':
         this.dimensionRenderer.drawDimension(shape as DimensionShape, isSelected, isHovered);
         break;
+      case 'hatch':
+        this.drawHatch(shape as HatchShape, invertColors);
+        break;
       default:
         break;
     }
 
-    // Draw selection handles
-    if (isSelected) {
+    // Draw selection handles (hidden during modify tool operations)
+    if (isSelected && !hideHandles) {
       this.drawSelectionHandles(shape);
     }
 
@@ -135,6 +140,9 @@ export class ShapeRenderer extends BaseRenderer {
       case 'dimension':
         this.dimensionRenderer.drawDimension(shape as DimensionShape, false);
         break;
+      case 'hatch':
+        this.drawHatch(shape as HatchShape, invertColors);
+        break;
     }
 
     ctx.setLineDash([]);
@@ -170,8 +178,23 @@ export class ShapeRenderer extends BaseRenderer {
         const y = Math.min(preview.start.y, preview.end.y);
         const width = Math.abs(preview.end.x - preview.start.x);
         const height = Math.abs(preview.end.y - preview.start.y);
+        const r = preview.cornerRadius ?? 0;
         ctx.beginPath();
-        ctx.rect(x, y, width, height);
+        if (r > 0) {
+          const maxR = Math.min(r, width / 2, height / 2);
+          ctx.moveTo(x + maxR, y);
+          ctx.lineTo(x + width - maxR, y);
+          ctx.arcTo(x + width, y, x + width, y + maxR, maxR);
+          ctx.lineTo(x + width, y + height - maxR);
+          ctx.arcTo(x + width, y + height, x + width - maxR, y + height, maxR);
+          ctx.lineTo(x + maxR, y + height);
+          ctx.arcTo(x, y + height, x, y + height - maxR, maxR);
+          ctx.lineTo(x, y + maxR);
+          ctx.arcTo(x, y, x + maxR, y, maxR);
+          ctx.closePath();
+        } else {
+          ctx.rect(x, y, width, height);
+        }
         ctx.stroke();
         break;
       }
@@ -204,10 +227,25 @@ export class ShapeRenderer extends BaseRenderer {
         if (preview.points.length > 0) {
           ctx.beginPath();
           ctx.moveTo(preview.points[0].x, preview.points[0].y);
-          for (let i = 1; i < preview.points.length; i++) {
-            ctx.lineTo(preview.points[i].x, preview.points[i].y);
+          // Draw completed segments (with bulge arcs)
+          for (let i = 0; i < preview.points.length - 1; i++) {
+            const b = preview.bulges?.[i] ?? 0;
+            if (b !== 0) {
+              const arc = bulgeToArc(preview.points[i], preview.points[i + 1], b);
+              ctx.arc(arc.center.x, arc.center.y, arc.radius, arc.startAngle, arc.endAngle, arc.clockwise);
+            } else {
+              ctx.lineTo(preview.points[i + 1].x, preview.points[i + 1].y);
+            }
           }
-          ctx.lineTo(preview.currentPoint.x, preview.currentPoint.y);
+          // Draw current (in-progress) segment
+          const currentBulge = preview.currentBulge ?? 0;
+          if (currentBulge !== 0) {
+            const lastPt = preview.points[preview.points.length - 1];
+            const arc = bulgeToArc(lastPt, preview.currentPoint, currentBulge);
+            ctx.arc(arc.center.x, arc.center.y, arc.radius, arc.startAngle, arc.endAngle, arc.clockwise);
+          } else {
+            ctx.lineTo(preview.currentPoint.x, preview.currentPoint.y);
+          }
           ctx.stroke();
         }
         break;
@@ -248,77 +286,246 @@ export class ShapeRenderer extends BaseRenderer {
           this.dimensionRenderer.drawDimensionPreview(preview, viewport);
         }
         break;
-    }
-  }
 
-  /**
-   * Draw command preview shapes (move/copy preview)
-   */
-  drawCommandPreviewShapes(shapes: Shape[]): void {
-    const ctx = this.ctx;
-
-    // Preview style: green dashed lines
-    ctx.strokeStyle = COLORS.commandPreview;
-    ctx.setLineDash([8, 4]);
-    ctx.lineWidth = 1;
-
-    for (const shape of shapes) {
-      switch (shape.type) {
-        case 'line':
+      case 'hatch':
+        if (preview.points.length > 0) {
           ctx.beginPath();
-          ctx.moveTo(shape.start.x, shape.start.y);
-          ctx.lineTo(shape.end.x, shape.end.y);
+          ctx.moveTo(preview.points[0].x, preview.points[0].y);
+          for (let i = 1; i < preview.points.length; i++) {
+            ctx.lineTo(preview.points[i].x, preview.points[i].y);
+          }
+          ctx.lineTo(preview.currentPoint.x, preview.currentPoint.y);
           ctx.stroke();
-          break;
-
-        case 'rectangle':
-          ctx.beginPath();
-          ctx.rect(shape.topLeft.x, shape.topLeft.y, shape.width, shape.height);
-          ctx.stroke();
-          break;
-
-        case 'circle':
-          ctx.beginPath();
-          ctx.arc(shape.center.x, shape.center.y, shape.radius, 0, Math.PI * 2);
-          ctx.stroke();
-          break;
-
-        case 'arc':
-          ctx.beginPath();
-          ctx.arc(shape.center.x, shape.center.y, shape.radius, shape.startAngle, shape.endAngle);
-          ctx.stroke();
-          break;
-
-        case 'polyline':
-          if (shape.points.length >= 2) {
+          // Draw dashed closing line hint
+          if (preview.points.length >= 2) {
+            ctx.save();
+            ctx.setLineDash([4, 4]);
+            ctx.globalAlpha = 0.4;
             ctx.beginPath();
-            ctx.moveTo(shape.points[0].x, shape.points[0].y);
-            for (let i = 1; i < shape.points.length; i++) {
-              ctx.lineTo(shape.points[i].x, shape.points[i].y);
-            }
-            if (shape.closed) {
-              ctx.closePath();
-            }
+            ctx.moveTo(preview.currentPoint.x, preview.currentPoint.y);
+            ctx.lineTo(preview.points[0].x, preview.points[0].y);
             ctx.stroke();
+            ctx.restore();
           }
-          break;
+        }
+        break;
 
-        case 'spline':
-          if (shape.points.length >= 2) {
-            drawSplinePath(ctx, shape.points);
-            ctx.stroke();
+      case 'modifyPreview':
+        ctx.save();
+        ctx.globalAlpha = 0.5;
+        ctx.setLineDash([6, 4]);
+        for (const shape of preview.shapes) {
+          this.drawShape(shape, false, false, false);
+        }
+        ctx.restore();
+        ctx.setLineDash([]);
+        break;
+
+      case 'mirrorAxis':
+        // Draw ghost shapes
+        ctx.save();
+        ctx.globalAlpha = 0.5;
+        ctx.setLineDash([6, 4]);
+        for (const shape of preview.shapes) {
+          this.drawShape(shape, false, false, false);
+        }
+        ctx.restore();
+        // Draw mirror axis line
+        ctx.save();
+        ctx.strokeStyle = '#00ff00';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([8, 4]);
+        ctx.beginPath();
+        ctx.moveTo(preview.start.x, preview.start.y);
+        ctx.lineTo(preview.end.x, preview.end.y);
+        ctx.stroke();
+        ctx.restore();
+        ctx.setLineDash([]);
+        break;
+
+      case 'rotateGuide': {
+        // Draw ghost shapes
+        if (preview.shapes.length > 0) {
+          ctx.save();
+          ctx.globalAlpha = 0.5;
+          ctx.setLineDash([6, 4]);
+          for (const shape of preview.shapes) {
+            this.drawShape(shape, false, false, false);
           }
-          break;
+          ctx.restore();
+        }
 
-        case 'ellipse':
+        const { center, startRay, endRay, angle } = preview;
+
+        // Draw center crosshair
+        ctx.save();
+        ctx.strokeStyle = '#00ff00';
+        ctx.lineWidth = 1;
+        const cross = 6 / (viewport?.zoom || 1);
+        ctx.beginPath();
+        ctx.moveTo(center.x - cross, center.y);
+        ctx.lineTo(center.x + cross, center.y);
+        ctx.moveTo(center.x, center.y - cross);
+        ctx.lineTo(center.x, center.y + cross);
+        ctx.stroke();
+        ctx.restore();
+
+        // Draw start ray (fixed, if set)
+        if (startRay) {
+          ctx.save();
+          ctx.strokeStyle = '#00ff00';
+          ctx.lineWidth = 1;
+          ctx.setLineDash([8, 4]);
           ctx.beginPath();
-          ctx.ellipse(shape.center.x, shape.center.y, shape.radiusX, shape.radiusY, shape.rotation, 0, Math.PI * 2);
+          ctx.moveTo(center.x, center.y);
+          ctx.lineTo(startRay.x, startRay.y);
           ctx.stroke();
-          break;
+          ctx.restore();
+        }
+
+        // Draw current ray
+        ctx.save();
+        ctx.strokeStyle = '#00ccff';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([8, 4]);
+        ctx.beginPath();
+        ctx.moveTo(center.x, center.y);
+        ctx.lineTo(endRay.x, endRay.y);
+        ctx.stroke();
+        ctx.restore();
+
+        // Draw angle arc between start and end rays
+        if (startRay && angle !== undefined) {
+          const startAngle = Math.atan2(startRay.y - center.y, startRay.x - center.x);
+          const endAngle = Math.atan2(endRay.y - center.y, endRay.x - center.x);
+          const arcRadius = Math.min(
+            30 / (viewport?.zoom || 1),
+            Math.hypot(startRay.x - center.x, startRay.y - center.y) * 0.4,
+            Math.hypot(endRay.x - center.x, endRay.y - center.y) * 0.4
+          );
+
+          ctx.save();
+          ctx.strokeStyle = '#ffcc00';
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.arc(center.x, center.y, arcRadius, startAngle, endAngle, angle < 0);
+          ctx.stroke();
+
+          // Draw angle text
+          const midAngle = (startAngle + endAngle) / 2;
+          const textRadius = arcRadius + 10 / (viewport?.zoom || 1);
+          const textX = center.x + textRadius * Math.cos(midAngle);
+          const textY = center.y + textRadius * Math.sin(midAngle);
+          const fontSize = 11 / (viewport?.zoom || 1);
+          ctx.fillStyle = '#ffcc00';
+          ctx.font = `${fontSize}px monospace`;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          let displayAngle = angle % 360;
+          if (displayAngle > 180) displayAngle -= 360;
+          if (displayAngle < -180) displayAngle += 360;
+          ctx.fillText(`${displayAngle.toFixed(1)}\u00B0`, textX, textY);
+          ctx.restore();
+        }
+
+        ctx.setLineDash([]);
+        break;
+      }
+
+      case 'scaleGuide': {
+        const { origin, refPoint, currentPoint, factor, shapes } = preview;
+        const zoom = viewport?.zoom || 1;
+
+        // Draw ghost shapes
+        if (shapes.length > 0) {
+          ctx.save();
+          ctx.globalAlpha = 0.5;
+          ctx.setLineDash([6, 4]);
+          for (const shape of shapes) {
+            this.drawShape(shape, false, false, false);
+          }
+          ctx.restore();
+        }
+
+        // Draw origin crosshair
+        ctx.save();
+        ctx.strokeStyle = '#00ff00';
+        ctx.lineWidth = 1;
+        const cross = 6 / zoom;
+        ctx.beginPath();
+        ctx.moveTo(origin.x - cross, origin.y);
+        ctx.lineTo(origin.x + cross, origin.y);
+        ctx.moveTo(origin.x, origin.y - cross);
+        ctx.lineTo(origin.x, origin.y + cross);
+        ctx.stroke();
+        ctx.restore();
+
+        // Draw reference line (fixed, green dashed)
+        if (refPoint) {
+          ctx.save();
+          ctx.strokeStyle = '#00ff00';
+          ctx.lineWidth = 1;
+          ctx.setLineDash([8, 4]);
+          ctx.beginPath();
+          ctx.moveTo(origin.x, origin.y);
+          ctx.lineTo(refPoint.x, refPoint.y);
+          ctx.stroke();
+          ctx.restore();
+
+          // Reference distance label
+          const refDist = Math.hypot(refPoint.x - origin.x, refPoint.y - origin.y);
+          const refMidX = (origin.x + refPoint.x) / 2;
+          const refMidY = (origin.y + refPoint.y) / 2;
+          const fontSize = 11 / zoom;
+          ctx.save();
+          ctx.fillStyle = '#00ff00';
+          ctx.font = `${fontSize}px monospace`;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'bottom';
+          ctx.fillText(refDist.toFixed(1), refMidX, refMidY - 4 / zoom);
+          ctx.restore();
+        }
+
+        // Draw current line (cyan dashed)
+        ctx.save();
+        ctx.strokeStyle = '#00ccff';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([8, 4]);
+        ctx.beginPath();
+        ctx.moveTo(origin.x, origin.y);
+        ctx.lineTo(currentPoint.x, currentPoint.y);
+        ctx.stroke();
+        ctx.restore();
+
+        // Current distance label
+        const curDist = Math.hypot(currentPoint.x - origin.x, currentPoint.y - origin.y);
+        const curMidX = (origin.x + currentPoint.x) / 2;
+        const curMidY = (origin.y + currentPoint.y) / 2;
+        const fontSize2 = 11 / zoom;
+        ctx.save();
+        ctx.fillStyle = '#00ccff';
+        ctx.font = `${fontSize2}px monospace`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'top';
+        ctx.fillText(curDist.toFixed(1), curMidX, curMidY + 4 / zoom);
+        ctx.restore();
+
+        // Scale factor label near origin
+        if (factor !== undefined) {
+          const factorFontSize = 12 / zoom;
+          ctx.save();
+          ctx.fillStyle = '#ffcc00';
+          ctx.font = `bold ${factorFontSize}px monospace`;
+          ctx.textAlign = 'left';
+          ctx.textBaseline = 'bottom';
+          ctx.fillText(`\u00D7${factor.toFixed(3)}`, origin.x + 8 / zoom, origin.y - 8 / zoom);
+          ctx.restore();
+        }
+
+        ctx.setLineDash([]);
+        break;
       }
     }
-
-    ctx.setLineDash([]);
   }
 
   // Private shape drawing methods
@@ -337,15 +544,33 @@ export class ShapeRenderer extends BaseRenderer {
     ctx.save();
 
     if (shape.rotation) {
-      const centerX = shape.topLeft.x + shape.width / 2;
-      const centerY = shape.topLeft.y + shape.height / 2;
-      ctx.translate(centerX, centerY);
+      ctx.translate(shape.topLeft.x, shape.topLeft.y);
       ctx.rotate(shape.rotation);
-      ctx.translate(-centerX, -centerY);
+      ctx.translate(-shape.topLeft.x, -shape.topLeft.y);
     }
 
+    const r = shape.cornerRadius ?? 0;
     ctx.beginPath();
-    ctx.rect(shape.topLeft.x, shape.topLeft.y, shape.width, shape.height);
+    if (r > 0) {
+      // Clamp radius so it doesn't exceed half the smallest side
+      const maxR = Math.min(r, shape.width / 2, shape.height / 2);
+      const x = shape.topLeft.x;
+      const y = shape.topLeft.y;
+      const w = shape.width;
+      const h = shape.height;
+      ctx.moveTo(x + maxR, y);
+      ctx.lineTo(x + w - maxR, y);
+      ctx.arcTo(x + w, y, x + w, y + maxR, maxR);
+      ctx.lineTo(x + w, y + h - maxR);
+      ctx.arcTo(x + w, y + h, x + w - maxR, y + h, maxR);
+      ctx.lineTo(x + maxR, y + h);
+      ctx.arcTo(x, y + h, x, y + h - maxR, maxR);
+      ctx.lineTo(x, y + maxR);
+      ctx.arcTo(x, y, x + maxR, y, maxR);
+      ctx.closePath();
+    } else {
+      ctx.rect(shape.topLeft.x, shape.topLeft.y, shape.width, shape.height);
+    }
 
     if (shape.style.fillColor) {
       ctx.fill();
@@ -378,19 +603,31 @@ export class ShapeRenderer extends BaseRenderer {
   private drawPolyline(shape: Shape): void {
     if (shape.type !== 'polyline') return;
     const ctx = this.ctx;
-    const { points, closed } = shape;
+    const { points, closed, bulge } = shape;
 
     if (points.length < 2) return;
 
     ctx.beginPath();
     ctx.moveTo(points[0].x, points[0].y);
 
-    for (let i = 1; i < points.length; i++) {
-      ctx.lineTo(points[i].x, points[i].y);
+    for (let i = 0; i < points.length - 1; i++) {
+      const b = bulge?.[i] ?? 0;
+      if (b !== 0) {
+        const arc = bulgeToArc(points[i], points[i + 1], b);
+        ctx.arc(arc.center.x, arc.center.y, arc.radius, arc.startAngle, arc.endAngle, arc.clockwise);
+      } else {
+        ctx.lineTo(points[i + 1].x, points[i + 1].y);
+      }
     }
 
     if (closed) {
-      ctx.closePath();
+      const lastB = bulge?.[points.length - 1] ?? 0;
+      if (lastB !== 0) {
+        const arc = bulgeToArc(points[points.length - 1], points[0], lastB);
+        ctx.arc(arc.center.x, arc.center.y, arc.radius, arc.startAngle, arc.endAngle, arc.clockwise);
+      } else {
+        ctx.closePath();
+      }
       if (shape.style.fillColor) {
         ctx.fill();
       }
@@ -410,10 +647,13 @@ export class ShapeRenderer extends BaseRenderer {
   private drawEllipse(shape: Shape): void {
     if (shape.type !== 'ellipse') return;
     const ctx = this.ctx;
+    const startAngle = shape.startAngle ?? 0;
+    const endAngle = shape.endAngle ?? Math.PI * 2;
+    const isPartial = shape.startAngle !== undefined && shape.endAngle !== undefined;
     ctx.beginPath();
-    ctx.ellipse(shape.center.x, shape.center.y, shape.radiusX, shape.radiusY, shape.rotation, 0, Math.PI * 2);
+    ctx.ellipse(shape.center.x, shape.center.y, shape.radiusX, shape.radiusY, shape.rotation, startAngle, isPartial ? endAngle : Math.PI * 2);
 
-    if (shape.style.fillColor) {
+    if (shape.style.fillColor && !isPartial) {
       ctx.fill();
     }
     ctx.stroke();
@@ -489,6 +729,47 @@ export class ShapeRenderer extends BaseRenderer {
     }
 
     ctx.restore();
+
+    // Draw leader lines if present
+    if (shape.leaderPoints && shape.leaderPoints.length > 0) {
+      ctx.save();
+      let leaderColor = color || shape.style.strokeColor;
+      if (invertColors && leaderColor === '#ffffff') {
+        leaderColor = '#000000';
+      }
+      ctx.strokeStyle = leaderColor;
+      ctx.lineWidth = 1;
+      ctx.setLineDash([]);
+      ctx.beginPath();
+      ctx.moveTo(position.x, position.y);
+      for (const pt of shape.leaderPoints) {
+        ctx.lineTo(pt.x, pt.y);
+      }
+      ctx.stroke();
+
+      // Draw arrowhead at the last leader point
+      if (shape.leaderPoints.length >= 1) {
+        const lastPt = shape.leaderPoints[shape.leaderPoints.length - 1];
+        const prevPt = shape.leaderPoints.length > 1
+          ? shape.leaderPoints[shape.leaderPoints.length - 2]
+          : position;
+        const arrowAngle = Math.atan2(lastPt.y - prevPt.y, lastPt.x - prevPt.x);
+        const arrowLen = 6;
+        ctx.beginPath();
+        ctx.moveTo(lastPt.x, lastPt.y);
+        ctx.lineTo(
+          lastPt.x - arrowLen * Math.cos(arrowAngle - 0.4),
+          lastPt.y - arrowLen * Math.sin(arrowAngle - 0.4)
+        );
+        ctx.moveTo(lastPt.x, lastPt.y);
+        ctx.lineTo(
+          lastPt.x - arrowLen * Math.cos(arrowAngle + 0.4),
+          lastPt.y - arrowLen * Math.sin(arrowAngle + 0.4)
+        );
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
 
     // Draw selection box if selected
     if (isSelected) {
@@ -623,16 +904,24 @@ export class ShapeRenderer extends BaseRenderer {
         const tl = shape.topLeft;
         const w = shape.width;
         const h = shape.height;
+        const rot = shape.rotation || 0;
+        const cos = Math.cos(rot);
+        const sin = Math.sin(rot);
+        // topLeft is the rotation origin; offsets are in local space
+        const toWorld = (lx: number, ly: number) => ({
+          x: tl.x + lx * cos - ly * sin,
+          y: tl.y + lx * sin + ly * cos,
+        });
         return [
-          tl,
-          { x: tl.x + w, y: tl.y },
-          { x: tl.x + w, y: tl.y + h },
-          { x: tl.x, y: tl.y + h },
-          { x: tl.x + w / 2, y: tl.y },
-          { x: tl.x + w, y: tl.y + h / 2 },
-          { x: tl.x + w / 2, y: tl.y + h },
-          { x: tl.x, y: tl.y + h / 2 },
-          { x: tl.x + w / 2, y: tl.y + h / 2 },
+          toWorld(0, 0),
+          toWorld(w, 0),
+          toWorld(w, h),
+          toWorld(0, h),
+          toWorld(w / 2, 0),
+          toWorld(w, h / 2),
+          toWorld(w / 2, h),
+          toWorld(0, h / 2),
+          toWorld(w / 2, h / 2),
         ];
       }
       case 'circle':
@@ -661,7 +950,23 @@ export class ShapeRenderer extends BaseRenderer {
           { x: shape.center.x, y: shape.center.y + shape.radiusY },
           { x: shape.center.x, y: shape.center.y - shape.radiusY },
         ];
-      case 'polyline':
+      case 'polyline': {
+        const pts: { x: number; y: number }[] = [...shape.points];
+        const segCount = shape.closed ? shape.points.length : shape.points.length - 1;
+        for (let i = 0; i < segCount; i++) {
+          const j = (i + 1) % shape.points.length;
+          const b = shape.bulge?.[i] ?? 0;
+          if (b !== 0) {
+            pts.push(bulgeArcMidpoint(shape.points[i], shape.points[j], b));
+          } else {
+            pts.push({
+              x: (shape.points[i].x + shape.points[j].x) / 2,
+              y: (shape.points[i].y + shape.points[j].y) / 2,
+            });
+          }
+        }
+        return pts;
+      }
       case 'spline': {
         const pts: { x: number; y: number }[] = [...shape.points];
         const segCount = shape.closed ? shape.points.length : shape.points.length - 1;
@@ -677,8 +982,139 @@ export class ShapeRenderer extends BaseRenderer {
       case 'text':
         // Text uses selection box instead of handles
         return [shape.position];
+      case 'hatch': {
+        const pts: { x: number; y: number }[] = [...shape.points];
+        // Add edge midpoints
+        for (let i = 0; i < shape.points.length; i++) {
+          const j = (i + 1) % shape.points.length;
+          pts.push({
+            x: (shape.points[i].x + shape.points[j].x) / 2,
+            y: (shape.points[i].y + shape.points[j].y) / 2,
+          });
+        }
+        return pts;
+      }
       default:
         return [];
     }
+  }
+
+  private drawHatch(shape: HatchShape, invertColors: boolean = false): void {
+    const ctx = this.ctx;
+    const { points, patternType, patternAngle, patternScale, fillColor, backgroundColor } = shape;
+
+    if (points.length < 3) return;
+
+    // Build boundary path
+    const buildPath = () => {
+      ctx.beginPath();
+      ctx.moveTo(points[0].x, points[0].y);
+      for (let i = 1; i < points.length; i++) {
+        ctx.lineTo(points[i].x, points[i].y);
+      }
+      ctx.closePath();
+    };
+
+    // Fill background if set
+    if (backgroundColor) {
+      buildPath();
+      ctx.fillStyle = backgroundColor;
+      ctx.fill();
+    }
+
+    // Get bounding box
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const p of points) {
+      if (p.x < minX) minX = p.x;
+      if (p.y < minY) minY = p.y;
+      if (p.x > maxX) maxX = p.x;
+      if (p.y > maxY) maxY = p.y;
+    }
+
+    let patternColor = fillColor;
+    if (invertColors && patternColor === '#ffffff') {
+      patternColor = '#000000';
+    }
+
+    ctx.save();
+    buildPath();
+    ctx.clip();
+
+    if (patternType === 'solid') {
+      ctx.fillStyle = patternColor;
+      ctx.fill();
+    } else if (patternType === 'dots') {
+      const spacing = 10 * patternScale;
+      const dotRadius = 1 * patternScale;
+      ctx.fillStyle = patternColor;
+      for (let x = minX; x <= maxX; x += spacing) {
+        for (let y = minY; y <= maxY; y += spacing) {
+          ctx.beginPath();
+          ctx.arc(x, y, dotRadius, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+    } else {
+      // Line patterns
+      const spacing = 10 * patternScale;
+      const angles: number[] = [];
+
+      switch (patternType) {
+        case 'horizontal':
+          angles.push(0);
+          break;
+        case 'vertical':
+          angles.push(90);
+          break;
+        case 'diagonal':
+          angles.push(patternAngle);
+          break;
+        case 'crosshatch':
+          angles.push(patternAngle);
+          angles.push(patternAngle + 90);
+          break;
+      }
+
+      ctx.strokeStyle = patternColor;
+      ctx.lineWidth = shape.style.strokeWidth * 0.5;
+      ctx.setLineDash([]);
+
+      for (const angleDeg of angles) {
+        const angleRad = (angleDeg * Math.PI) / 180;
+        const cosA = Math.cos(angleRad);
+        const sinA = Math.sin(angleRad);
+
+        // Expand bounding box to cover rotated lines
+        const cx = (minX + maxX) / 2;
+        const cy = (minY + maxY) / 2;
+        const diagonal = Math.sqrt((maxX - minX) ** 2 + (maxY - minY) ** 2);
+        const halfDiag = diagonal / 2 + spacing;
+
+        // Draw parallel lines perpendicular to the angle direction
+        const numLines = Math.ceil((halfDiag * 2) / spacing);
+
+        ctx.beginPath();
+        for (let i = -numLines; i <= numLines; i++) {
+          const offset = i * spacing;
+          // Line perpendicular offset from center
+          const ox = cx + offset * (-sinA);
+          const oy = cy + offset * cosA;
+          // Line extends along the angle direction
+          const x1 = ox - halfDiag * cosA;
+          const y1 = oy - halfDiag * sinA;
+          const x2 = ox + halfDiag * cosA;
+          const y2 = oy + halfDiag * sinA;
+          ctx.moveTo(x1, y1);
+          ctx.lineTo(x2, y2);
+        }
+        ctx.stroke();
+      }
+    }
+
+    ctx.restore();
+
+    // Stroke boundary
+    buildPath();
+    ctx.stroke();
   }
 }

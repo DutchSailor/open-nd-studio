@@ -18,6 +18,7 @@
     "core:webview:default",
     "dialog:default",
     "fs:default",
+    "store:default",
     {
       "identifier": "fs:allow-read-text-file",
       "allow": [{ "path": "**" }]

@@ -4,7 +4,7 @@
 
 import type { Viewport, Point, TrackingLine } from '../types';
 import { BaseRenderer } from '../core/BaseRenderer';
-import { getTrackingLineColor } from '../../../core/geometry/Tracking';
+import { getTrackingLineColor } from '../../geometry/Tracking';
 
 export class TrackingLayer extends BaseRenderer {
   /**

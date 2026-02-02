@@ -4,8 +4,10 @@
 
 import { open, save, message, ask } from '@tauri-apps/plugin-dialog';
 import { readTextFile, writeTextFile } from '@tauri-apps/plugin-fs';
-import type { Shape, Layer, Drawing, Sheet, Viewport, DrawingBoundary } from '../types/geometry';
-import { splineToSvgPath } from '../utils/splineUtils';
+import type { Shape, ShapeStyle, LineStyle, Layer, Drawing, Sheet, Viewport, DrawingBoundary, PolylineShape } from '../types/geometry';
+import { splineToSvgPath } from '../engine/geometry/SplineUtils';
+import { bulgeToArc, bulgeArcBounds } from '../engine/geometry/GeometryUtils';
+export { exportToIFC } from './ifcExport';
 
 // File format version for future compatibility
 const FILE_FORMAT_VERSION = 2;
@@ -29,6 +31,7 @@ export const PROJECT_FILTER = {
 export const EXPORT_FILTERS = {
   svg: { name: 'SVG Vector Image', extensions: ['svg'] },
   dxf: { name: 'DXF', extensions: ['dxf'] },
+  ifc: { name: 'IFC4 (Industry Foundation Classes)', extensions: ['ifc'] },
   json: { name: 'JSON Data', extensions: ['json'] },
 };
 
@@ -84,6 +87,8 @@ export interface ProjectFileV2 {
     gridVisible: boolean;
     snapEnabled: boolean;
   };
+  // Print presets (optional)
+  savedPrintPresets?: Record<string, import('../state/slices/uiSlice').PrintSettings>;
 }
 
 // Current project file type
@@ -232,6 +237,21 @@ export async function showExportDialog(
 }
 
 /**
+ * Show export dialog with all supported formats
+ */
+export async function showExportAllFormatsDialog(
+  defaultName?: string
+): Promise<string | null> {
+  const allFilters = Object.values(EXPORT_FILTERS);
+  const result = await save({
+    filters: allFilters,
+    title: 'Export Drawing',
+    defaultPath: defaultName ? `${defaultName}.svg` : undefined,
+  });
+  return result;
+}
+
+/**
  * Read project file from disk
  */
 export async function readProjectFile(path: string): Promise<ProjectFile> {
@@ -336,12 +356,49 @@ function shapeToSVG(shape: Shape): string {
       const largeArc = Math.abs(shape.endAngle - shape.startAngle) > Math.PI ? 1 : 0;
       return `  <path ${baseAttrs} d="M ${startX} ${startY} A ${shape.radius} ${shape.radius} 0 ${largeArc} 1 ${endX} ${endY}" />\n`;
 
-    case 'polyline':
-      const points = shape.points.map(p => `${p.x},${p.y}`).join(' ');
-      if (shape.closed) {
+    case 'polyline': {
+      const polyShape = shape as PolylineShape;
+      const hasBulge = polyShape.bulge?.some(b => b !== 0);
+      if (hasBulge) {
+        let d = `M ${polyShape.points[0].x} ${polyShape.points[0].y}`;
+        for (let idx = 0; idx < polyShape.points.length - 1; idx++) {
+          const b = polyShape.bulge?.[idx] ?? 0;
+          if (b !== 0) {
+            const arc = bulgeToArc(polyShape.points[idx], polyShape.points[idx + 1], b);
+            let sweep = arc.clockwise
+              ? arc.startAngle - arc.endAngle
+              : arc.endAngle - arc.startAngle;
+            if (sweep < 0) sweep += 2 * Math.PI;
+            const largeArc = sweep > Math.PI ? 1 : 0;
+            const sweepFlag = arc.clockwise ? 0 : 1;
+            const p2 = polyShape.points[idx + 1];
+            d += ` A ${arc.radius} ${arc.radius} 0 ${largeArc} ${sweepFlag} ${p2.x} ${p2.y}`;
+          } else {
+            d += ` L ${polyShape.points[idx + 1].x} ${polyShape.points[idx + 1].y}`;
+          }
+        }
+        if (polyShape.closed) {
+          const closingB = polyShape.bulge?.[polyShape.points.length - 1] ?? 0;
+          if (closingB !== 0) {
+            const arc = bulgeToArc(polyShape.points[polyShape.points.length - 1], polyShape.points[0], closingB);
+            let sweep = arc.clockwise
+              ? arc.startAngle - arc.endAngle
+              : arc.endAngle - arc.startAngle;
+            if (sweep < 0) sweep += 2 * Math.PI;
+            const largeArc = sweep > Math.PI ? 1 : 0;
+            const sweepFlag = arc.clockwise ? 0 : 1;
+            d += ` A ${arc.radius} ${arc.radius} 0 ${largeArc} ${sweepFlag} ${polyShape.points[0].x} ${polyShape.points[0].y}`;
+          }
+          d += ' Z';
+        }
+        return `  <path ${baseAttrs} d="${d}" />\n`;
+      }
+      const points = polyShape.points.map(p => `${p.x},${p.y}`).join(' ');
+      if (polyShape.closed) {
         return `  <polygon ${baseAttrs} points="${points}" />\n`;
       }
       return `  <polyline ${baseAttrs} points="${points}" />\n`;
+    }
 
     case 'spline':
       if (shape.points.length < 2) return '';
@@ -424,8 +481,34 @@ ${shape.startAngle * 180 / Math.PI}
 ${shape.endAngle * 180 / Math.PI}
 `;
 
-    case 'polyline':
-    case 'spline':
+    case 'polyline': {
+      const polyShape = shape as PolylineShape;
+      let result = `0
+LWPOLYLINE
+8
+0
+90
+${polyShape.points.length}
+70
+${polyShape.closed ? 1 : 0}
+`;
+      for (let idx = 0; idx < polyShape.points.length; idx++) {
+        const pt = polyShape.points[idx];
+        result += `10
+${pt.x}
+20
+${-pt.y}
+`;
+        const b = polyShape.bulge?.[idx] ?? 0;
+        if (b !== 0) {
+          result += `42
+${-b}
+`;
+        }
+      }
+      return result;
+    }
+    case 'spline': {
       let result = `0
 POLYLINE
 8
@@ -448,6 +531,7 @@ ${point.y}
 SEQEND
 `;
       return result;
+    }
 
     default:
       return '';
@@ -487,7 +571,29 @@ function getShapeBounds(shape: Shape): { minX: number; minY: number; maxX: numbe
         maxX: shape.center.x + shape.radiusX,
         maxY: shape.center.y + shape.radiusY,
       };
-    case 'polyline':
+    case 'polyline': {
+      if (shape.points.length === 0) return null;
+      let pMinX = Infinity, pMinY = Infinity, pMaxX = -Infinity, pMaxY = -Infinity;
+      for (const p of shape.points) {
+        if (p.x < pMinX) pMinX = p.x;
+        if (p.y < pMinY) pMinY = p.y;
+        if (p.x > pMaxX) pMaxX = p.x;
+        if (p.y > pMaxY) pMaxY = p.y;
+      }
+      if (shape.bulge) {
+        for (let idx = 0; idx < shape.points.length - 1; idx++) {
+          const b = shape.bulge[idx] ?? 0;
+          if (b !== 0) {
+            const ab = bulgeArcBounds(shape.points[idx], shape.points[idx + 1], b);
+            if (ab.minX < pMinX) pMinX = ab.minX;
+            if (ab.minY < pMinY) pMinY = ab.minY;
+            if (ab.maxX > pMaxX) pMaxX = ab.maxX;
+            if (ab.maxY > pMaxY) pMaxY = ab.maxY;
+          }
+        }
+      }
+      return { minX: pMinX, minY: pMinY, maxX: pMaxX, maxY: pMaxY };
+    }
     case 'spline':
       if (shape.points.length === 0) return null;
       const xs = shape.points.map(p => p.x);
@@ -501,6 +607,163 @@ function getShapeBounds(shape: Shape): { minX: number; minY: number; maxX: numbe
     default:
       return null;
   }
+}
+
+/**
+ * Show import DXF file dialog
+ */
+export async function showImportDxfDialog(): Promise<string | null> {
+  const result = await open({
+    multiple: false,
+    filters: [{ name: 'DXF Files', extensions: ['dxf'] }],
+    title: 'Import DXF',
+  });
+  return result as string | null;
+}
+
+/**
+ * Parse a DXF string into shapes.
+ * Supports LINE, CIRCLE, ARC, POLYLINE/LWPOLYLINE entities.
+ */
+export function parseDXF(
+  content: string,
+  layerId: string,
+  drawingId: string,
+): Shape[] {
+  const defaultStyle: ShapeStyle = {
+    strokeColor: '#ffffff',
+    strokeWidth: 1,
+    lineStyle: 'solid' as LineStyle,
+  };
+
+  const shapes: Shape[] = [];
+  const lines = content.split(/\r?\n/);
+  let i = 0;
+
+  const next = (): [number, string] => {
+    const code = parseInt(lines[i]?.trim() ?? '0', 10);
+    const value = lines[i + 1]?.trim() ?? '';
+    i += 2;
+    return [code, value];
+  };
+
+  // Advance to ENTITIES section
+  while (i < lines.length) {
+    const line = lines[i]?.trim();
+    if (line === 'ENTITIES') { i++; break; }
+    i++;
+  }
+
+  while (i < lines.length - 1) {
+    const [code, value] = next();
+    if (code === 0 && value === 'EOF') break;
+    if (code === 0 && value === 'ENDSEC') break;
+
+    if (code === 0 && value === 'LINE') {
+      let x1 = 0, y1 = 0, x2 = 0, y2 = 0;
+      while (i < lines.length - 1) {
+        const [c, v] = next();
+        if (c === 0) { i -= 2; break; }
+        if (c === 10) x1 = parseFloat(v);
+        if (c === 20) y1 = parseFloat(v);
+        if (c === 11) x2 = parseFloat(v);
+        if (c === 21) y2 = parseFloat(v);
+      }
+      shapes.push({
+        id: crypto.randomUUID(),
+        type: 'line',
+        layerId, drawingId, style: { ...defaultStyle },
+        visible: true, locked: false,
+        start: { x: x1, y: -y1 },
+        end: { x: x2, y: -y2 },
+      } as Shape);
+    }
+
+    if (code === 0 && value === 'CIRCLE') {
+      let cx = 0, cy = 0, r = 0;
+      while (i < lines.length - 1) {
+        const [c, v] = next();
+        if (c === 0) { i -= 2; break; }
+        if (c === 10) cx = parseFloat(v);
+        if (c === 20) cy = parseFloat(v);
+        if (c === 40) r = parseFloat(v);
+      }
+      shapes.push({
+        id: crypto.randomUUID(),
+        type: 'circle',
+        layerId, drawingId, style: { ...defaultStyle },
+        visible: true, locked: false,
+        center: { x: cx, y: -cy },
+        radius: r,
+      } as Shape);
+    }
+
+    if (code === 0 && value === 'ARC') {
+      let cx = 0, cy = 0, r = 0, sa = 0, ea = 0;
+      while (i < lines.length - 1) {
+        const [c, v] = next();
+        if (c === 0) { i -= 2; break; }
+        if (c === 10) cx = parseFloat(v);
+        if (c === 20) cy = parseFloat(v);
+        if (c === 40) r = parseFloat(v);
+        if (c === 50) sa = parseFloat(v);
+        if (c === 51) ea = parseFloat(v);
+      }
+      shapes.push({
+        id: crypto.randomUUID(),
+        type: 'arc',
+        layerId, drawingId, style: { ...defaultStyle },
+        visible: true, locked: false,
+        center: { x: cx, y: -cy },
+        radius: r,
+        startAngle: (sa * Math.PI) / 180,
+        endAngle: (ea * Math.PI) / 180,
+      } as Shape);
+    }
+
+    if (code === 0 && (value === 'LWPOLYLINE' || value === 'POLYLINE')) {
+      const pts: { x: number; y: number }[] = [];
+      const bulgeValues: number[] = [];
+      let closed = false;
+      let currentBulge = 0;
+      while (i < lines.length - 1) {
+        const [c, v] = next();
+        if (c === 0) { i -= 2; break; }
+        if (c === 70) closed = (parseInt(v) & 1) === 1;
+        if (c === 10) {
+          // Push previous vertex's bulge before starting a new vertex
+          if (pts.length > 0) {
+            bulgeValues.push(currentBulge);
+            currentBulge = 0;
+          }
+          const x = parseFloat(v);
+          // read group 20 next
+          const [c2, v2] = next();
+          const y = c2 === 20 ? parseFloat(v2) : 0;
+          pts.push({ x, y: -y });
+        }
+        if (c === 42) currentBulge = -parseFloat(v); // negate because Y is flipped
+      }
+      // Push last vertex's bulge
+      if (pts.length > 0) {
+        bulgeValues.push(currentBulge);
+      }
+      if (pts.length >= 2) {
+        const hasBulge = bulgeValues.some(b => b !== 0);
+        shapes.push({
+          id: crypto.randomUUID(),
+          type: 'polyline',
+          layerId, drawingId, style: { ...defaultStyle },
+          visible: true, locked: false,
+          points: pts,
+          closed,
+          ...(hasBulge ? { bulge: bulgeValues } : {}),
+        } as Shape);
+      }
+    }
+  }
+
+  return shapes;
 }
 
 /**

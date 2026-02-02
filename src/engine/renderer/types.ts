@@ -85,7 +85,6 @@ export interface RenderOptions {
   drawingPreview?: DrawingPreview;
   currentStyle?: CurrentStyle;
   selectionBox?: SelectionBox | null;
-  commandPreviewShapes?: Shape[];
   currentSnapPoint?: SnapPoint | null;
   currentTrackingLines?: TrackingLine[];
   trackingPoint?: Point | null;

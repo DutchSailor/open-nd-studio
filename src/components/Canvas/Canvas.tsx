@@ -1,8 +1,8 @@
 import { useRef, useEffect, useCallback } from 'react';
 import { useAppStore } from '../../state/appStore';
 import { CADRenderer } from '../../engine/renderer/CADRenderer';
-import { useCanvasEvents } from '../../hooks/useCanvasEvents';
-import { useDrawingKeyboard } from '../../hooks/useDrawingKeyboard';
+import { useCanvasEvents } from '../../hooks/canvas/useCanvasEvents';
+import { useDrawingKeyboard } from '../../hooks/keyboard/useDrawingKeyboard';
 import { DynamicInput } from '../DynamicInput/DynamicInput';
 import { TextEditor } from '../TextEditor/TextEditor';
 import type { TextShape } from '../../types/geometry';
@@ -15,7 +15,6 @@ export function Canvas() {
 
   // Only subscribe to state needed for React DOM rendering
   const activeTool = useAppStore(s => s.activeTool);
-  const hasActiveModifyCommand = useAppStore(s => s.hasActiveModifyCommand);
   const whiteBackground = useAppStore(s => s.whiteBackground);
   const setCanvasSize = useAppStore(s => s.setCanvasSize);
   const setMousePosition = useAppStore(s => s.setMousePosition);
@@ -173,7 +172,6 @@ export function Canvas() {
             drawingPreview: s.drawingPreview,
             currentStyle: s.currentStyle,
             selectionBox: s.selectionBox,
-            commandPreviewShapes: s.commandPreviewShapes,
             currentSnapPoint: s.currentSnapPoint,
             currentTrackingLines: s.currentTrackingLines,
             trackingPoint: s.trackingPoint,
@@ -182,6 +180,7 @@ export function Canvas() {
             boundarySelected: s.boundaryEditState.isSelected,
             boundaryDragging: s.boundaryEditState.activeHandle !== null,
             whiteBackground: s.whiteBackground,
+            hideSelectionHandles: ['move','copy','rotate','scale','mirror','array','trim','extend','fillet','offset'].includes(s.activeTool),
           });
         }
       }
@@ -245,9 +244,6 @@ export function Canvas() {
     // Show grabbing cursor when actively panning
     if (isPanning) {
       return 'cursor-grabbing';
-    }
-    if (hasActiveModifyCommand) {
-      return 'cursor-crosshair';
     }
     switch (activeTool) {
       case 'pan':

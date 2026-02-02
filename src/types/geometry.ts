@@ -35,7 +35,19 @@ export interface BaseShape {
 /** @deprecated Use drawingId instead */
 export type BaseShapeWithDraftId = BaseShape & { draftId?: string };
 
-export type ShapeType = 'line' | 'rectangle' | 'circle' | 'arc' | 'polyline' | 'ellipse' | 'spline' | 'text' | 'point' | 'dimension';
+export type ShapeType = 'line' | 'rectangle' | 'circle' | 'arc' | 'polyline' | 'ellipse' | 'spline' | 'text' | 'point' | 'dimension' | 'hatch';
+
+export type HatchPatternType = 'solid' | 'diagonal' | 'crosshatch' | 'horizontal' | 'vertical' | 'dots';
+
+export interface HatchShape extends BaseShape {
+  type: 'hatch';
+  points: Point[];          // Boundary polygon vertices (always closed)
+  patternType: HatchPatternType;
+  patternAngle: number;     // Rotation in degrees
+  patternScale: number;     // Spacing multiplier (1 = default)
+  fillColor: string;        // Pattern line/fill color
+  backgroundColor?: string; // Optional background (undefined = transparent)
+}
 
 // Specific shape types
 export interface LineShape extends BaseShape {
@@ -50,6 +62,7 @@ export interface RectangleShape extends BaseShape {
   width: number;
   height: number;
   rotation: number;
+  cornerRadius?: number;  // Rounded corners (0 or undefined = sharp)
 }
 
 export interface CircleShape extends BaseShape {
@@ -72,12 +85,15 @@ export interface EllipseShape extends BaseShape {
   radiusX: number;
   radiusY: number;
   rotation: number;
+  startAngle?: number;  // For partial ellipse (arc of ellipse)
+  endAngle?: number;    // For partial ellipse (arc of ellipse)
 }
 
 export interface PolylineShape extends BaseShape {
   type: 'polyline';
   points: Point[];
   closed: boolean;
+  bulge?: number[];
 }
 
 export interface SplineShape extends BaseShape {
@@ -105,6 +121,7 @@ export interface TextShape extends BaseShape {
   color: string;             // Text color
   lineHeight: number;        // Multiplier (default 1.2)
   fixedWidth?: number;       // If set, text wraps at this width
+  leaderPoints?: Point[];    // Leader line waypoints (from text to geometry)
 }
 
 export interface PointShape extends BaseShape {
@@ -126,7 +143,8 @@ export type Shape =
   | SplineShape
   | TextShape
   | PointShape
-  | DimensionShape;
+  | DimensionShape
+  | HatchShape;
 
 // Layer type
 export interface Layer {
@@ -183,6 +201,7 @@ export type ToolType =
   // Region tools
   | 'filled-region'
   | 'insulation'
+  | 'hatch'
   | 'detail-component'
   // Modify tools (legacy - now commands)
   | 'move'
@@ -193,7 +212,9 @@ export type ToolType =
   | 'trim'
   | 'extend'
   | 'fillet'
+  | 'chamfer'
   | 'offset'
+  | 'array'
   // Sheet annotation tools
   | 'sheet-text'
   | 'sheet-leader'

@@ -3,12 +3,12 @@
  *
  * Currently supports:
  * - Line: drag start/end points
- * - Rectangle: drag a corner → converts to closed polyline (free-form quadrilateral)
+ * - Rectangle: drag corners/edges to resize, preserving cornerRadius
  */
 
 import { useCallback, useRef } from 'react';
 import { useAppStore } from '../../state/appStore';
-import type { Point, Shape, PolylineShape, EllipseShape } from '../../types/geometry';
+import type { Point, Shape, EllipseShape } from '../../types/geometry';
 
 interface GripDragState {
   shapeId: string;
@@ -131,6 +131,17 @@ function getGripPoints(shape: Shape): Point[] {
       }
       return pts;
     }
+    case 'hatch': {
+      const pts: Point[] = [...shape.points];
+      for (let i = 0; i < shape.points.length; i++) {
+        const j = (i + 1) % shape.points.length;
+        pts.push({
+          x: (shape.points[i].x + shape.points[j].x) / 2,
+          y: (shape.points[i].y + shape.points[j].y) / 2,
+        });
+      }
+      return pts;
+    }
     case 'text':
       return [shape.position];
     default:
@@ -138,31 +149,6 @@ function getGripPoints(shape: Shape): Point[] {
   }
 }
 
-/**
- * Convert a rectangle shape into a closed polyline with 4 corner points,
- * preserving all common properties (id, style, layer, etc.).
- */
-function rectangleToPolyline(shape: Shape): PolylineShape | null {
-  if (shape.type !== 'rectangle') return null;
-  const tl = shape.topLeft;
-  const points: Point[] = [
-    { x: tl.x, y: tl.y },
-    { x: tl.x + shape.width, y: tl.y },
-    { x: tl.x + shape.width, y: tl.y + shape.height },
-    { x: tl.x, y: tl.y + shape.height },
-  ];
-  return {
-    id: shape.id,
-    type: 'polyline',
-    layerId: shape.layerId,
-    drawingId: shape.drawingId,
-    style: { ...shape.style },
-    visible: shape.visible,
-    locked: shape.locked,
-    points,
-    closed: true,
-  };
-}
 
 /**
  * Convert a circle shape into an ellipse, preserving all common properties.
@@ -184,20 +170,7 @@ function circleToEllipse(shape: Shape): EllipseShape | null {
   };
 }
 
-/**
- * For rectangle edge midpoint grips (4-7), return the two polyline point indices to move.
- * Polyline points: 0=TL, 1=TR, 2=BR, 3=BL
- * Edge midpoints: 4=top(0,1), 5=right(1,2), 6=bottom(2,3), 7=left(3,0)
- */
-function getRectEdgeMidpointIndices(rectGripIndex: number): [number, number] | undefined {
-  switch (rectGripIndex) {
-    case 4: return [0, 1]; // top edge
-    case 5: return [1, 2]; // right edge
-    case 6: return [2, 3]; // bottom edge
-    case 7: return [3, 0]; // left edge
-    default: return undefined;
-  }
-}
+
 
 /**
  * edgeMidpointIndices: if set, the two polyline point indices to move together (for rect edge midpoints).
@@ -327,13 +300,59 @@ function computeGripUpdates(shape: Shape, gripIndex: number, newPos: Point, edge
           topLeft: { x: shape.topLeft.x + dx, y: shape.topLeft.y + dy },
         } as Partial<Shape>;
       }
-      return null;
+      // Corner grips (0-3): TL, TR, BR, BL
+      const tl = shape.topLeft;
+      const w = shape.width;
+      const h = shape.height;
+      const right = tl.x + w;
+      const bottom = tl.y + h;
+      let newLeft = tl.x, newTop = tl.y, newRight = right, newBottom = bottom;
+      switch (gripIndex) {
+        case 0: newLeft = newPos.x; newTop = newPos.y; break;    // TL
+        case 1: newRight = newPos.x; newTop = newPos.y; break;   // TR
+        case 2: newRight = newPos.x; newBottom = newPos.y; break; // BR
+        case 3: newLeft = newPos.x; newBottom = newPos.y; break;  // BL
+        case 4: newTop = newPos.y; break;    // top edge mid
+        case 5: newRight = newPos.x; break;  // right edge mid
+        case 6: newBottom = newPos.y; break; // bottom edge mid
+        case 7: newLeft = newPos.x; break;   // left edge mid
+        default: return null;
+      }
+      // Normalize so width/height are positive
+      const finalLeft = Math.min(newLeft, newRight);
+      const finalTop = Math.min(newTop, newBottom);
+      return {
+        topLeft: { x: finalLeft, y: finalTop },
+        width: Math.abs(newRight - newLeft),
+        height: Math.abs(newBottom - newTop),
+      } as Partial<Shape>;
     }
 
     case 'polyline':
     case 'spline': {
       if (edgeMidpointIndices) {
         // Edge midpoint: move two adjacent points by the same delta
+        const [i1, i2] = edgeMidpointIndices;
+        const origMid = {
+          x: (shape.points[i1].x + shape.points[i2].x) / 2,
+          y: (shape.points[i1].y + shape.points[i2].y) / 2,
+        };
+        const dx = newPos.x - origMid.x;
+        const dy = newPos.y - origMid.y;
+        const newPoints = shape.points.map((p, i) =>
+          (i === i1 || i === i2) ? { x: p.x + dx, y: p.y + dy } : p
+        );
+        return { points: newPoints } as Partial<Shape>;
+      }
+      if (gripIndex < 0 || gripIndex >= shape.points.length) return null;
+      const newPoints = shape.points.map((p, i) =>
+        i === gripIndex ? { x: newPos.x, y: newPos.y } : p
+      );
+      return { points: newPoints } as Partial<Shape>;
+    }
+
+    case 'hatch': {
+      if (edgeMidpointIndices) {
         const [i1, i2] = edgeMidpointIndices;
         const origMid = {
           x: (shape.points[i1].x + shape.points[i2].x) / 2,
@@ -414,24 +433,8 @@ export function useGripEditing() {
             return true;
           }
 
-          if (shape.type === 'rectangle' && i < 8) {
-            const polyline = rectangleToPolyline(shape);
-            if (!polyline) return false;
-            useAppStore.setState((state) => {
-              const idx = state.shapes.findIndex(s => s.id === shapeId);
-              if (idx !== -1) state.shapes[idx] = polyline as Shape;
-            });
-            dragRef.current = {
-              shapeId, gripIndex: i,
-              originalShape: JSON.parse(JSON.stringify(shape)),
-              convertedToPolyline: true, originalRectGripIndex: i,
-              axisConstraint: axisHit, originalGripPoint: { ...grips[i] },
-            };
-            return true;
-          }
-
           let polylineMidpointIndices: [number, number] | undefined;
-          if ((shape.type === 'polyline' || shape.type === 'spline') && i >= shape.points.length) {
+          if ((shape.type === 'polyline' || shape.type === 'spline' || shape.type === 'hatch') && i >= shape.points.length) {
             const segIdx = i - shape.points.length;
             const j = (segIdx + 1) % shape.points.length;
             polylineMidpointIndices = [segIdx, j];
@@ -480,29 +483,7 @@ export function useGripEditing() {
             return true;
           }
 
-          // For rectangles, convert to polyline for corner (0-3) and edge midpoint (4-7) drags
-          // Center drag (8) keeps the rectangle as-is
-          if (shape.type === 'rectangle' && i < 8) {
-            const polyline = rectangleToPolyline(shape);
-            if (!polyline) return false;
-
-            // Replace the rectangle with a polyline in the store (no history)
-            useAppStore.setState((state) => {
-              const idx = state.shapes.findIndex(s => s.id === shapeId);
-              if (idx !== -1) {
-                state.shapes[idx] = polyline as Shape;
-              }
-            });
-
-            dragRef.current = {
-              shapeId,
-              gripIndex: i < 4 ? i : i, // corner or edge mid index
-              originalShape: JSON.parse(JSON.stringify(shape)),
-              convertedToPolyline: true,
-              originalRectGripIndex: i,
-              axisConstraint: null,
-            };
-          } else {
+          {
             // For polyline midpoint grips, compute the two vertex indices
             let polylineMidpointIndices: [number, number] | undefined;
             if ((shape.type === 'polyline' || shape.type === 'spline') && i >= shape.points.length) {
@@ -547,7 +528,7 @@ export function useGripEditing() {
         if (drag.axisConstraint === 'y') constrainedPos.x = drag.originalGripPoint.x;
       }
 
-      const edgeIndices = drag.polylineMidpointIndices ?? (drag.convertedToPolyline ? getRectEdgeMidpointIndices(drag.originalRectGripIndex) : undefined);
+      const edgeIndices = drag.polylineMidpointIndices;
       const updates = computeGripUpdates(currentShape, drag.gripIndex, constrainedPos, edgeIndices);
       if (updates) {
         useAppStore.setState((state) => {

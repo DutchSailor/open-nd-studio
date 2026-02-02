@@ -1,6 +1,6 @@
-import { memo } from 'react';
+import { memo, useState, useRef, useEffect } from 'react';
 import { useAppStore } from '../../state/appStore';
-import type { LineStyle, Shape, TextAlignment, TextVerticalAlignment } from '../../types/geometry';
+import type { LineStyle, Shape, TextAlignment, TextVerticalAlignment, HatchPatternType } from '../../types/geometry';
 import { DrawingPropertiesPanel } from './DrawingPropertiesPanel';
 
 const RAD2DEG = 180 / Math.PI;
@@ -59,6 +59,83 @@ function SelectField<T extends string>({ label, value, options, onChange }: {
       <select value={value} onChange={(e) => onChange(e.target.value as T)} className={inputClass}>
         {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
       </select>
+    </div>
+  );
+}
+
+const NAMED_COLORS: { hex: string; name?: string }[] = [
+  // Row 1: Primary + Secondary
+  { hex: '#ff0000', name: 'Red' }, { hex: '#ff8000', name: 'Orange' }, { hex: '#ffff00', name: 'Yellow' }, { hex: '#00ff00', name: 'Green' },
+  { hex: '#00ffff', name: 'Cyan' }, { hex: '#0000ff', name: 'Blue' }, { hex: '#8000ff', name: 'Violet' }, { hex: '#ff00ff', name: 'Magenta' },
+  // Row 2: Dark variants
+  { hex: '#800000', name: 'Maroon' }, { hex: '#804000', name: 'Brown' }, { hex: '#808000', name: 'Olive' }, { hex: '#008000', name: 'Dark Green' },
+  { hex: '#008080', name: 'Teal' }, { hex: '#000080', name: 'Navy' }, { hex: '#400080', name: 'Indigo' }, { hex: '#800080', name: 'Purple' },
+  // Row 3: Light variants
+  { hex: '#ff9999', name: 'Light Red' }, { hex: '#ffcc99', name: 'Peach' }, { hex: '#ffff99', name: 'Light Yellow' }, { hex: '#99ff99', name: 'Light Green' },
+  { hex: '#99ffff', name: 'Light Cyan' }, { hex: '#9999ff', name: 'Light Blue' }, { hex: '#cc99ff', name: 'Lavender' }, { hex: '#ff99ff', name: 'Light Pink' },
+  // Row 4: Grays
+  { hex: '#000000', name: 'Black' }, { hex: '#404040', name: 'Dark Gray' }, { hex: '#808080', name: 'Gray' }, { hex: '#a0a0a0', name: 'Medium Gray' },
+  { hex: '#c0c0c0', name: 'Silver' }, { hex: '#d9d9d9', name: 'Light Gray' }, { hex: '#f0f0f0', name: 'Near White' }, { hex: '#ffffff', name: 'White' },
+];
+
+function ColorPalette({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [open]);
+
+  return (
+    <div className="mb-2" ref={ref}>
+      <label className={labelClass}>{label}</label>
+      <div className="flex items-center gap-2 relative">
+        <button
+          onClick={() => setOpen(!open)}
+          className="w-6 h-6 rounded-sm border border-cad-border cursor-pointer shrink-0 hover:border-cad-accent"
+          style={{ backgroundColor: value }}
+        />
+        <input type="text" value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className="flex-1 bg-cad-bg border border-cad-border rounded px-2 py-1 text-xs text-cad-text font-mono" />
+        {open && (
+          <div className="absolute left-0 top-full mt-1 z-50 bg-cad-surface border border-cad-border rounded shadow-lg p-2">
+            <div className="grid grid-cols-8 gap-1">
+              {NAMED_COLORS.map((c, i) => (
+                <button
+                  key={i}
+                  title={c.name ? `${c.name}\n${c.hex}` : c.hex}
+                  onClick={() => { onChange(c.hex); setOpen(false); }}
+                  className={`w-5 h-5 rounded-sm border ${
+                    value.toLowerCase() === c.hex.toLowerCase()
+                      ? 'border-cad-accent border-2'
+                      : 'border-cad-border hover:border-cad-text'
+                  }`}
+                  style={{ backgroundColor: c.hex }}
+                />
+              ))}
+            </div>
+            <div className="mt-2 pt-2 border-t border-cad-border">
+              <label className="block text-xs text-cad-text-dim mb-1">Custom Color</label>
+              <div className="flex items-center gap-2">
+                <input type="color" value={value}
+                  onChange={(e) => { onChange(e.target.value); }}
+                  className="w-8 h-8 rounded border border-cad-border cursor-pointer" />
+                <input type="text" value={value}
+                  onChange={(e) => onChange(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') setOpen(false); }}
+                  className="flex-1 bg-cad-bg border border-cad-border rounded px-2 py-1 text-xs text-cad-text font-mono"
+                  placeholder="#rrggbb" />
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -175,6 +252,34 @@ function ShapeProperties({ shape, updateShape }: { shape: Shape; updateShape: (i
         </>
       );
 
+    case 'hatch':
+      return (
+        <>
+          <SelectField label="Pattern Type" value={shape.patternType}
+            options={[
+              { value: 'solid', label: 'Solid' },
+              { value: 'diagonal', label: 'Diagonal' },
+              { value: 'crosshatch', label: 'Crosshatch' },
+              { value: 'horizontal', label: 'Horizontal' },
+              { value: 'vertical', label: 'Vertical' },
+              { value: 'dots', label: 'Dots' },
+            ] as { value: HatchPatternType; label: string }[]}
+            onChange={(v) => update({ patternType: v })} />
+          <NumberField label="Pattern Angle (deg)" value={shape.patternAngle} onChange={(v) => update({ patternAngle: v })} step={1} />
+          <NumberField label="Pattern Scale" value={shape.patternScale} onChange={(v) => update({ patternScale: v })} step={0.1} min={0.1} />
+          <ColorPalette label="Fill Color" value={shape.fillColor} onChange={(v) => update({ fillColor: v })} />
+          <ColorPalette label="Background Color" value={shape.backgroundColor || '#000000'} onChange={(v) => update({ backgroundColor: v })} />
+          {shape.backgroundColor && (
+            <button
+              onClick={() => update({ backgroundColor: undefined })}
+              className="text-xs text-cad-accent hover:underline -mt-1 mb-2">
+              Clear background
+            </button>
+          )}
+          <NumberField label="Boundary Points" value={shape.points.length} onChange={() => {}} readOnly />
+        </>
+      );
+
     default:
       return (
         <div className="text-xs text-cad-text-dim">
@@ -244,23 +349,7 @@ export const PropertiesPanel = memo(function PropertiesPanel() {
         </div>
 
         {/* Stroke Color */}
-        <div className="mb-3">
-          <label className="block text-xs text-cad-text-dim mb-1">Stroke Color</label>
-          <div className="flex items-center gap-2">
-            <input
-              type="color"
-              value={displayStyle.strokeColor}
-              onChange={(e) => handleColorChange(e.target.value)}
-              className="w-8 h-8 rounded border border-cad-border cursor-pointer"
-            />
-            <input
-              type="text"
-              value={displayStyle.strokeColor}
-              onChange={(e) => handleColorChange(e.target.value)}
-              className="flex-1 bg-cad-bg border border-cad-border rounded px-2 py-1 text-xs text-cad-text font-mono"
-            />
-          </div>
-        </div>
+        <ColorPalette label="Stroke Color" value={displayStyle.strokeColor} onChange={handleColorChange} />
 
         {/* Stroke Width */}
         <div className="mb-3">

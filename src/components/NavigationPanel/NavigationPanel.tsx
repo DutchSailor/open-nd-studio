@@ -1,14 +1,45 @@
-import { useState, useCallback, useRef, memo } from 'react';
+import { useState, useCallback, useRef, useEffect, memo } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { DrawingsTab } from './DrawingsTab';
 import { SheetsTab } from './SheetsTab';
+import { getSetting, setSetting } from '../../utils/settings';
 
 export const NavigationPanel = memo(function NavigationPanel() {
   const [drawingsCollapsed, setDrawingsCollapsed] = useState(false);
   const [sheetsCollapsed, setSheetsCollapsed] = useState(false);
   const [drawingsHeight, setDrawingsHeight] = useState(50); // percentage
+  const [panelWidth, setPanelWidth] = useState(192);
+
+  // Restore saved width
+  useEffect(() => {
+    getSetting<number>('navPanelWidth', 192).then(setPanelWidth);
+  }, []);
   const containerRef = useRef<HTMLDivElement>(null);
   const isDragging = useRef(false);
+  const isResizingWidth = useRef(false);
+
+  // Horizontal resize handler
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isResizingWidth.current) return;
+      const newWidth = Math.max(140, Math.min(500, e.clientX));
+      setPanelWidth(newWidth);
+    };
+    const handleMouseUp = () => {
+      if (isResizingWidth.current) {
+        isResizingWidth.current = false;
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+        setPanelWidth(w => { setSetting('navPanelWidth', w); return w; });
+      }
+    };
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, []);
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -54,7 +85,8 @@ export const NavigationPanel = memo(function NavigationPanel() {
   return (
     <div
       ref={containerRef}
-      className="w-48 flex flex-col bg-cad-bg border-r border-cad-border"
+      className="flex flex-col bg-cad-bg border-r border-cad-border relative"
+      style={{ width: panelWidth, minWidth: 140, maxWidth: 500 }}
     >
       {/* Drawings Section */}
       <div className="flex flex-col min-h-0 overflow-hidden" style={getDrawingsStyle()}>
@@ -111,6 +143,17 @@ export const NavigationPanel = memo(function NavigationPanel() {
           </div>
         )}
       </div>
+
+      {/* Horizontal resize handle */}
+      <div
+        className="absolute top-0 right-0 w-px h-full cursor-col-resize hover:bg-cad-accent z-10"
+        onMouseDown={(e) => {
+          e.preventDefault();
+          isResizingWidth.current = true;
+          document.body.style.cursor = 'col-resize';
+          document.body.style.userSelect = 'none';
+        }}
+      />
     </div>
   );
 });

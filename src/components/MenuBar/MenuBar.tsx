@@ -1,100 +1,7 @@
-import { useState, useRef, useEffect, useCallback, memo } from 'react';
+import { useState, useEffect, memo } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { useAppStore } from '../../state/appStore';
-import {
-  showOpenDialog,
-  showSaveDialog,
-  showExportDialog,
-  readProjectFile,
-  writeProjectFile,
-  exportToSVG,
-  exportToDXF,
-  confirmUnsavedChanges,
-  showError,
-  showInfo,
-  type ProjectFile,
-} from '../../services/fileService';
-import { writeTextFile } from '@tauri-apps/plugin-fs';
-
-type MenuItem = {
-  label: string;
-  shortcut?: string;
-  onClick?: () => void;
-  disabled?: boolean;
-  separator?: false;
-} | {
-  separator: true;
-};
-
-interface MenuProps {
-  label: string;
-  items: MenuItem[];
-  isOpen: boolean;
-  onOpen: () => void;
-  onClose: () => void;
-  menuBarHovered: boolean;
-}
-
-function Menu({ label, items, isOpen, onOpen, onClose, menuBarHovered }: MenuProps) {
-  const menuRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        onClose();
-      }
-    };
-
-    if (isOpen) {
-      document.addEventListener('mousedown', handleClickOutside);
-    }
-
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [isOpen, onClose]);
-
-  return (
-    <div className="relative" ref={menuRef}>
-      <button
-        className={`px-3 py-1 text-sm hover:bg-cad-border rounded transition-colors cursor-default ${
-          isOpen ? 'bg-cad-border' : ''
-        }`}
-        onClick={() => (isOpen ? onClose() : onOpen())}
-        onMouseEnter={() => menuBarHovered && onOpen()}
-      >
-        {label}
-      </button>
-
-      {isOpen && (
-        <div className="absolute top-full left-0 mt-1 bg-cad-surface border border-cad-border rounded shadow-lg min-w-48 py-1 z-50">
-          {items.map((item, index) =>
-            item.separator ? (
-              <div key={index} className="h-px bg-cad-border my-1" />
-            ) : (
-              <button
-                key={index}
-                className={`w-full px-4 py-1.5 text-sm text-left flex justify-between items-center hover:bg-cad-border transition-colors ${
-                  item.disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-default'
-                }`}
-                onClick={() => {
-                  if (!item.disabled && item.onClick) {
-                    item.onClick();
-                    onClose();
-                  }
-                }}
-                disabled={item.disabled}
-              >
-                <span>{item.label}</span>
-                {item.shortcut && (
-                  <span className="text-cad-text-dim text-xs ml-4">{item.shortcut}</span>
-                )}
-              </button>
-            )
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
+import { useFileOperations } from '../../hooks/file/useFileOperations';
 
 // Detect platform
 type Platform = 'windows' | 'linux' | 'macos';
@@ -254,217 +161,59 @@ function WindowControls() {
 }
 
 export const MenuBar = memo(function MenuBar() {
-  const [openMenu, setOpenMenu] = useState<string | null>(null);
-
-  // Only subscribe to render-affecting state
   const canUndo = useAppStore(s => s.canUndo());
   const canRedo = useAppStore(s => s.canRedo());
   const isModified = useAppStore(s => s.isModified);
   const projectName = useAppStore(s => s.projectName);
 
-  // Actions (stable references)
   const undo = useAppStore(s => s.undo);
   const redo = useAppStore(s => s.redo);
-  const setPrintDialogOpen = useAppStore(s => s.setPrintDialogOpen);
-  const newProject = useAppStore(s => s.newProject);
-  const loadProject = useAppStore(s => s.loadProject);
-  const setFilePath = useAppStore(s => s.setFilePath);
-  const setProjectName = useAppStore(s => s.setProjectName);
-  const setModified = useAppStore(s => s.setModified);
 
-  // File operations
-  const handleNew = useCallback(async () => {
-    if (useAppStore.getState().isModified) {
-      const proceed = await confirmUnsavedChanges();
-      if (!proceed) return;
-    }
-    newProject();
-  }, [newProject]);
+  const { handleNew, handleOpen, handleSave, handleSaveAs, handlePrint } = useFileOperations();
 
-  const handleOpenFile = useCallback(async () => {
-    if (useAppStore.getState().isModified) {
-      const proceed = await confirmUnsavedChanges();
-      if (!proceed) return;
-    }
-
-    const filePath = await showOpenDialog();
-    if (!filePath) return;
-
-    try {
-      const project = await readProjectFile(filePath);
-      loadProject(
-        {
-          shapes: project.shapes,
-          layers: project.layers,
-          activeLayerId: project.activeLayerId,
-          settings: project.settings,
-          // V2 fields
-          drawings: project.drawings,
-          sheets: project.sheets,
-          activeDrawingId: project.activeDrawingId,
-          activeSheetId: project.activeSheetId,
-          drawingViewports: project.drawingViewports,
-        },
-        filePath,
-        project.name
-      );
-    } catch (err) {
-      await showError(`Failed to open file: ${err}`);
-    }
-  }, [isModified, loadProject]);
-
-  const handleSave = useCallback(async () => {
-    const s = useAppStore.getState();
-    let filePath = s.currentFilePath;
-
-    if (!filePath) {
-      filePath = await showSaveDialog(s.projectName);
-      if (!filePath) return;
-    }
-
-    try {
-      const project: ProjectFile = {
-        version: 2,
-        name: s.projectName,
-        createdAt: new Date().toISOString(),
-        modifiedAt: new Date().toISOString(),
-        drawings: s.drawings,
-        sheets: s.sheets,
-        activeDrawingId: s.activeDrawingId,
-        activeSheetId: s.activeSheetId,
-        drawingViewports: s.drawingViewports,
-        shapes: s.shapes,
-        layers: s.layers,
-        activeLayerId: s.activeLayerId,
-        settings: {
-          gridSize: s.gridSize,
-          gridVisible: s.gridVisible,
-          snapEnabled: s.snapEnabled,
-        },
-      };
-
-      await writeProjectFile(filePath, project);
-      setFilePath(filePath);
-      setModified(false);
-
-      const fileName = filePath.split(/[/\\]/).pop()?.replace('.o2d', '') || 'Untitled';
-      setProjectName(fileName);
-    } catch (err) {
-      await showError(`Failed to save file: ${err}`);
-    }
-  }, [setFilePath, setModified, setProjectName]);
-
-  const handleSaveAs = useCallback(async () => {
-    const s = useAppStore.getState();
-    const filePath = await showSaveDialog(s.projectName);
-    if (!filePath) return;
-
-    try {
-      const project: ProjectFile = {
-        version: 2,
-        name: s.projectName,
-        createdAt: new Date().toISOString(),
-        modifiedAt: new Date().toISOString(),
-        drawings: s.drawings,
-        sheets: s.sheets,
-        activeDrawingId: s.activeDrawingId,
-        activeSheetId: s.activeSheetId,
-        drawingViewports: s.drawingViewports,
-        shapes: s.shapes,
-        layers: s.layers,
-        activeLayerId: s.activeLayerId,
-        settings: {
-          gridSize: s.gridSize,
-          gridVisible: s.gridVisible,
-          snapEnabled: s.snapEnabled,
-        },
-      };
-
-      await writeProjectFile(filePath, project);
-      setFilePath(filePath);
-      setModified(false);
-
-      const fileName = filePath.split(/[/\\]/).pop()?.replace('.o2d', '') || 'Untitled';
-      setProjectName(fileName);
-    } catch (err) {
-      await showError(`Failed to save file: ${err}`);
-    }
-  }, [setFilePath, setModified, setProjectName]);
-
-  const handleExport = useCallback(async () => {
-    const s = useAppStore.getState();
-    if (s.shapes.length === 0) {
-      await showInfo('Nothing to export. Draw some shapes first.');
-      return;
-    }
-
-    const filePath = await showExportDialog('svg', s.projectName);
-    if (!filePath) return;
-
-    try {
-      const extension = filePath.split('.').pop()?.toLowerCase();
-      let content: string;
-
-      if (extension === 'dxf') {
-        content = exportToDXF(s.shapes);
-      } else if (extension === 'json') {
-        content = JSON.stringify({ shapes: s.shapes, layers: s.layers }, null, 2);
-      } else {
-        content = exportToSVG(s.shapes);
-      }
-
-      await writeTextFile(filePath, content);
-      await showInfo(`Exported successfully to ${filePath}`);
-    } catch (err) {
-      await showError(`Failed to export: ${err}`);
-    }
-  }, []);
-
-  const handleMenuOpen = (menu: string) => setOpenMenu(menu);
-  const handleMenuClose = () => setOpenMenu(null);
-  const menuBarHovered = openMenu !== null;
-
-  const fileMenu: MenuItem[] = [
-    { label: 'New', shortcut: 'Ctrl+N', onClick: handleNew },
-    { label: 'Open...', shortcut: 'Ctrl+O', onClick: handleOpenFile },
-    { separator: true },
-    { label: 'Save', shortcut: 'Ctrl+S', onClick: handleSave },
-    { label: 'Save As...', shortcut: 'Ctrl+Shift+S', onClick: handleSaveAs },
-    { separator: true },
-    { label: 'Export...', onClick: handleExport },
-    { separator: true },
-    { label: 'Print...', shortcut: 'Ctrl+P', onClick: () => setPrintDialogOpen(true) },
-    { separator: true },
-    { label: 'Exit', shortcut: 'Alt+F4', onClick: () => getCurrentWindow().close() },
-  ];
+  const qatBtn = "p-1.5 rounded hover:bg-cad-border transition-colors text-cad-text-dim hover:text-cad-text cursor-default";
 
   return (
     <div className="h-8 bg-cad-surface border-b border-cad-border flex items-center select-none">
-      {/* Menu items */}
-      <div className="flex items-center px-2 gap-1">
-        <Menu
-          label="File"
-          items={fileMenu}
-          isOpen={openMenu === 'file'}
-          onOpen={() => handleMenuOpen('file')}
-          onClose={handleMenuClose}
-          menuBarHovered={menuBarHovered}
-        />
-      </div>
-
       {/* Quick Access Toolbar */}
-      <div className="flex items-center gap-0.5 px-2 border-l border-cad-border ml-1">
-        <button
-          onClick={handleSave}
-          className="p-1.5 rounded hover:bg-cad-border transition-colors text-cad-text-dim hover:text-cad-text cursor-default"
-          title="Save (Ctrl+S)"
-        >
+      <div className="flex items-center gap-0.5 px-2">
+        <button onClick={handleNew} className={qatBtn} title="New (Ctrl+N)">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+            <polyline points="14 2 14 8 20 8"/>
+            <line x1="12" y1="18" x2="12" y2="12"/>
+            <line x1="9" y1="15" x2="15" y2="15"/>
+          </svg>
+        </button>
+        <button onClick={handleOpen} className={qatBtn} title="Open (Ctrl+O)">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+          </svg>
+        </button>
+        <button onClick={handleSave} className={qatBtn} title="Save (Ctrl+S)">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
             <polyline points="17 21 17 13 7 13 7 21"/>
             <polyline points="7 3 7 8 15 8"/>
           </svg>
         </button>
+        <button onClick={handleSaveAs} className={qatBtn} title="Save As (Ctrl+Shift+S)">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+            <polyline points="17 21 17 13 7 13 7 21"/>
+            <polyline points="7 3 7 8 15 8"/>
+            <line x1="12" y1="11" x2="12" y2="7"/>
+            <polyline points="9 9 12 6 15 9"/>
+          </svg>
+        </button>
+        <button onClick={handlePrint} className={qatBtn} title="Print (Ctrl+P)">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="6 9 6 2 18 2 18 9"/>
+            <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/>
+            <rect x="6" y="14" width="12" height="8"/>
+          </svg>
+        </button>
+        <div className="w-px h-4 bg-cad-border mx-0.5" />
         <button
           onClick={undo}
           disabled={!canUndo}

@@ -23,7 +23,6 @@ export interface DrawingRenderOptions {
   drawingPreview?: DrawingPreview;
   currentStyle?: { strokeColor: string; strokeWidth: number };
   selectionBox?: SelectionBox | null;
-  commandPreviewShapes?: Shape[];
   currentSnapPoint?: SnapPoint | null;
   currentTrackingLines?: TrackingLine[];
   trackingPoint?: Point | null;
@@ -31,6 +30,7 @@ export interface DrawingRenderOptions {
   boundarySelected?: boolean;
   boundaryDragging?: boolean;
   whiteBackground?: boolean;
+  hideSelectionHandles?: boolean;
 }
 
 // Legacy alias
@@ -81,7 +81,6 @@ export class DrawingRenderer extends BaseRenderer {
       drawingPreview,
       currentStyle,
       selectionBox,
-      commandPreviewShapes,
       currentSnapPoint,
       currentTrackingLines,
       trackingPoint,
@@ -90,6 +89,7 @@ export class DrawingRenderer extends BaseRenderer {
       boundaryDragging,
       hoveredShapeId,
       whiteBackground,
+      hideSelectionHandles,
     } = options;
 
     const ctx = this.ctx;
@@ -125,12 +125,7 @@ export class DrawingRenderer extends BaseRenderer {
       if (!shape.visible) continue;
       const isSelected = selectedShapeIds.includes(shape.id);
       const isHovered = hoveredShapeId === shape.id;
-      this.shapeRenderer.drawShape(shape, isSelected, isHovered, whiteBackground);
-    }
-
-    // Draw command preview shapes (move/copy preview)
-    if (commandPreviewShapes && commandPreviewShapes.length > 0) {
-      this.shapeRenderer.drawCommandPreviewShapes(commandPreviewShapes);
+      this.shapeRenderer.drawShape(shape, isSelected, isHovered, whiteBackground, hideSelectionHandles);
     }
 
     // Draw preview shape while drawing

@@ -8,7 +8,7 @@
  */
 
 import type { Shape, Point, Layer } from '../types/geometry';
-import { isPointNearShape, getShapeBounds } from '../utils/geometryUtils';
+import { isPointNearShape, getShapeBounds } from '../engine/geometry/GeometryUtils';
 
 /**
  * Selection box mode

@@ -13,8 +13,8 @@
 import { useCallback, useMemo } from 'react';
 import { useAppStore } from '../../state/appStore';
 import type { Point } from '../../types/geometry';
-import { screenToWorld } from '../../utils/geometryUtils';
-import { isPointNearShape } from '../../utils/geometryUtils';
+import { screenToWorld } from '../../engine/geometry/GeometryUtils';
+import { isPointNearShape } from '../../engine/geometry/GeometryUtils';
 import { QuadTree } from '../../engine/spatial/QuadTree';
 
 import { usePanZoom } from '../navigation/usePanZoom';
@@ -26,6 +26,7 @@ import { useBoundaryEditing } from '../editing/useBoundaryEditing';
 import { useViewportEditing } from '../editing/useViewportEditing';
 import { useAnnotationEditing } from '../editing/useAnnotationEditing';
 import { useGripEditing } from '../editing/useGripEditing';
+import { useModifyTools } from '../editing/useModifyTools';
 
 export function useCanvasEvents(canvasRef: React.RefObject<HTMLCanvasElement>) {
   // Compose specialized hooks
@@ -38,6 +39,7 @@ export function useCanvasEvents(canvasRef: React.RefObject<HTMLCanvasElement>) {
   const viewportEditing = useViewportEditing();
   const annotationEditing = useAnnotationEditing();
   const gripEditing = useGripEditing();
+  const modifyTools = useModifyTools();
 
   const {
     viewport,
@@ -46,15 +48,12 @@ export function useCanvasEvents(canvasRef: React.RefObject<HTMLCanvasElement>) {
     shapes,
     selectShape,
     deselectAll,
-    hasActiveModifyCommand,
-    commandBasePoint,
-    commandIsSelecting,
-    setPendingCommandPoint,
-    setPendingCommandSelection,
     editorMode,
     activeDrawingId,
     dimensionMode,
     setHoveredShapeId,
+    pickLinesMode,
+    setPrintDialogOpen,
   } = useAppStore();
 
   // Build spatial index for efficient shape lookup
@@ -166,21 +165,6 @@ export function useCanvasEvents(canvasRef: React.RefObject<HTMLCanvasElement>) {
       const snapResult = snapDetection.snapPoint(worldPos, basePoint);
       const snappedPos = snapResult.point;
 
-      // Command selection phase
-      if (hasActiveModifyCommand && commandIsSelecting) {
-        const shapeId = findShapeAtPoint(worldPos);
-        if (shapeId) {
-          setPendingCommandSelection([shapeId]);
-        }
-        return;
-      }
-
-      // Command point input
-      if (hasActiveModifyCommand) {
-        setPendingCommandPoint(snappedPos);
-        return;
-      }
-
       // Tool-specific handling
       switch (activeTool) {
         case 'select': {
@@ -208,6 +192,7 @@ export function useCanvasEvents(canvasRef: React.RefObject<HTMLCanvasElement>) {
         case 'polyline':
         case 'spline':
         case 'ellipse':
+        case 'hatch':
           shapeDrawing.handleDrawingClick(snappedPos, e.shiftKey, snapResult.snapInfo);
           // Clear snap/tracking indicators after click - they'll be recalculated on next mouse move
           snapDetection.clearTracking();
@@ -226,6 +211,21 @@ export function useCanvasEvents(canvasRef: React.RefObject<HTMLCanvasElement>) {
         case 'pan':
           // Pan tool doesn't use click
           break;
+
+        case 'move':
+        case 'copy':
+        case 'rotate':
+        case 'scale':
+        case 'mirror':
+        case 'array':
+        case 'trim':
+        case 'extend':
+        case 'fillet':
+        case 'chamfer':
+        case 'offset':
+          modifyTools.handleModifyClick(snappedPos, e.shiftKey, findShapeAtPoint);
+          snapDetection.clearTracking();
+          break;
       }
     },
     [
@@ -238,15 +238,12 @@ export function useCanvasEvents(canvasRef: React.RefObject<HTMLCanvasElement>) {
       shapeDrawing,
       textDrawing,
       snapDetection,
-      hasActiveModifyCommand,
-      commandIsSelecting,
-      setPendingCommandPoint,
-      setPendingCommandSelection,
       findShapeAtPoint,
       activeTool,
       boundaryEditing,
       selectShape,
       deselectAll,
+      modifyTools,
     ]
   );
 
@@ -307,14 +304,26 @@ export function useCanvasEvents(canvasRef: React.RefObject<HTMLCanvasElement>) {
         return;
       }
 
-      // Modify commands (MOVE etc.) - detect snaps during point-picking phases
-      if (hasActiveModifyCommand && editorMode === 'drawing') {
+      // Modify tools - update preview
+      const isModifyToolActive = ['move', 'copy', 'rotate', 'scale', 'mirror', 'array', 'trim', 'extend', 'fillet', 'chamfer', 'offset'].includes(activeTool);
+      if (isModifyToolActive && editorMode === 'drawing') {
         const worldPos = screenToWorld(screenPos.x, screenPos.y, viewport);
-        snapDetection.snapPoint(worldPos, commandBasePoint ?? undefined);
+        const basePoint = shapeDrawing.getLastDrawingPoint();
+        const snapResult = snapDetection.snapPoint(worldPos, basePoint);
+        modifyTools.updateModifyPreview(snapResult.point);
+
+        // Hover highlight for trim/extend/fillet/offset
+        if (['trim', 'extend', 'fillet', 'chamfer', 'offset'].includes(activeTool)) {
+          const hoveredShape = findShapeAtPoint(worldPos);
+          setHoveredShapeId(hoveredShape);
+        } else {
+          setHoveredShapeId(null);
+        }
+        return;
       }
 
       // Drawing tools - always detect snaps when hovering (even before first click)
-      const isDrawingTool = ['line', 'rectangle', 'circle', 'arc', 'polyline', 'spline', 'ellipse', 'dimension'].includes(activeTool);
+      const isDrawingTool = ['line', 'rectangle', 'circle', 'arc', 'polyline', 'spline', 'ellipse', 'hatch', 'dimension'].includes(activeTool);
 
       if (isDrawingTool && editorMode === 'drawing') {
         const worldPos = screenToWorld(screenPos.x, screenPos.y, viewport);
@@ -329,13 +338,17 @@ export function useCanvasEvents(canvasRef: React.RefObject<HTMLCanvasElement>) {
         // Hover highlight for dimension tools that require clicking on geometry
         if (activeTool === 'dimension') {
           const needsHover =
-            (dimensionMode === 'radius' || dimensionMode === 'diameter' || dimensionMode === 'angular');
+            (dimensionMode === 'radius' || dimensionMode === 'diameter' || dimensionMode === 'angular' || dimensionMode === 'arc-length');
           if (needsHover) {
             const hoveredShape = findShapeAtPoint(worldPos);
             setHoveredShapeId(hoveredShape);
           } else {
             setHoveredShapeId(null);
           }
+        } else if (pickLinesMode && (activeTool === 'line' || activeTool === 'circle' || activeTool === 'arc')) {
+          // Pick-lines mode: highlight shape under cursor
+          const hoveredShape = findShapeAtPoint(worldPos);
+          setHoveredShapeId(hoveredShape);
         } else {
           setHoveredShapeId(null);
         }
@@ -343,7 +356,7 @@ export function useCanvasEvents(canvasRef: React.RefObject<HTMLCanvasElement>) {
         setHoveredShapeId(null);
       }
     },
-    [panZoom, annotationEditing, viewportEditing, editorMode, viewport, boundaryEditing, gripEditing, boxSelection, shapeDrawing, snapDetection, activeTool, dimensionMode, findShapeAtPoint, setHoveredShapeId, hasActiveModifyCommand, commandBasePoint, canvasRef]
+    [panZoom, annotationEditing, viewportEditing, editorMode, viewport, boundaryEditing, gripEditing, boxSelection, shapeDrawing, snapDetection, activeTool, dimensionMode, pickLinesMode, findShapeAtPoint, setHoveredShapeId, canvasRef, modifyTools]
   );
 
   /**
@@ -389,9 +402,38 @@ export function useCanvasEvents(canvasRef: React.RefObject<HTMLCanvasElement>) {
     (e: React.MouseEvent<HTMLCanvasElement>) => {
       e.preventDefault();
 
-      // In sheet mode, finish leader annotation
+      // In sheet mode, finish leader if active, then show context menu
       if (editorMode === 'sheet') {
         annotationEditing.finishLeader();
+
+        const menu = document.createElement('div');
+        menu.className = 'fixed z-[9999] bg-cad-surface border border-cad-border shadow-lg text-xs';
+        menu.style.left = `${e.clientX}px`;
+        menu.style.top = `${e.clientY}px`;
+
+        const onOutsideClick = (ev: MouseEvent) => { if (!menu.contains(ev.target as Node)) cleanup(); };
+        const escHandler = (ev: KeyboardEvent) => { if (ev.key === 'Escape') cleanup(); };
+        function cleanup() { menu.remove(); document.removeEventListener('mousedown', onOutsideClick); document.removeEventListener('keydown', escHandler); }
+
+        const items = [
+          { label: 'Print', action: () => setPrintDialogOpen(true) },
+          { label: 'Print Preview', action: () => setPrintDialogOpen(true) },
+        ];
+
+        items.forEach(item => {
+          const el = document.createElement('div');
+          el.className = 'px-4 py-1.5 hover:bg-cad-hover cursor-pointer text-cad-text';
+          el.textContent = item.label;
+          el.onclick = () => { cleanup(); item.action(); };
+          menu.appendChild(el);
+        });
+
+        document.body.appendChild(menu);
+        setTimeout(() => {
+          document.addEventListener('mousedown', onOutsideClick);
+          document.addEventListener('keydown', escHandler);
+        }, 0);
+
         return;
       }
 
@@ -404,15 +446,24 @@ export function useCanvasEvents(canvasRef: React.RefObject<HTMLCanvasElement>) {
         return;
       }
 
+      // Modify tools: right-click finishes / cancels
+      const modifyToolsList = ['move', 'copy', 'rotate', 'scale', 'mirror', 'array', 'trim', 'extend', 'fillet', 'chamfer', 'offset'];
+      if (modifyToolsList.includes(activeTool)) {
+        modifyTools.finishModify();
+        setActiveTool('select');
+        snapDetection.clearTracking();
+        return;
+      }
+
       // If a drawing tool is selected but not actively drawing, deselect it
-      const drawingTools = ['line', 'rectangle', 'circle', 'arc', 'polyline', 'spline', 'ellipse', 'text'];
+      const drawingTools = ['line', 'rectangle', 'circle', 'arc', 'polyline', 'spline', 'ellipse', 'hatch', 'text'];
       if (drawingTools.includes(activeTool)) {
         setActiveTool('select');
         // Clear any lingering snap/tracking indicators
         snapDetection.clearTracking();
       }
     },
-    [editorMode, annotationEditing, shapeDrawing, activeTool, setActiveTool, snapDetection]
+    [editorMode, annotationEditing, shapeDrawing, activeTool, setActiveTool, snapDetection, modifyTools, setPrintDialogOpen]
   );
 
   /**

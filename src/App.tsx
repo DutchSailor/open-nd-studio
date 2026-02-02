@@ -1,21 +1,22 @@
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { getSetting, setSetting } from './utils/settings';
 import { MenuBar } from './components/MenuBar/MenuBar';
 import { Ribbon } from './components/Ribbon/Ribbon';
 import { Canvas } from './components/Canvas/Canvas';
 import { NavigationPanel } from './components/NavigationPanel';
-import { ToolPalette } from './components/ToolPalette/ToolPalette';
 import { SheetPropertiesPanel } from './components/Panels/SheetPropertiesPanel';
 import { RightPanelLayout } from './components/Panels/RightPanelLayout';
 import { StatusBar } from './components/StatusBar/StatusBar';
-import { CommandLine } from './components/CommandLine/CommandLine';
 import { FileTabBar } from './components/FileTabBar/FileTabBar';
 import { PrintDialog } from './components/PrintDialog/PrintDialog';
-import { AboutDialog } from './components/AboutDialog/AboutDialog';
+
 import { SnapSettingsDialog } from './components/SnapSettingsDialog/SnapSettingsDialog';
+import { Backstage, type BackstageView } from './components/Backstage/Backstage';
 import { TitleBlockEditor } from './components/TitleBlockEditor';
 import { NewSheetDialog } from './components/NewSheetDialog';
-import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
-import { useGlobalKeyboard } from './hooks/useGlobalKeyboard';
+import { OptionsBar } from './components/OptionsBar/OptionsBar';
+import { useKeyboardShortcuts } from './hooks/keyboard/useKeyboardShortcuts';
+import { useGlobalKeyboard } from './hooks/keyboard/useGlobalKeyboard';
 import { useAppStore } from './state/appStore';
 import { CadApi } from './api';
 
@@ -23,6 +24,44 @@ function App() {
   // Initialize keyboard shortcuts
   useKeyboardShortcuts();
   useGlobalKeyboard();
+
+  // Backstage view
+  const [backstageOpen, setBackstageOpen] = useState(false);
+  const [backstageInitialView, setBackstageInitialView] = useState<BackstageView | undefined>();
+  const openBackstage = useCallback(() => setBackstageOpen(true), []);
+  const closeBackstage = useCallback(() => { setBackstageOpen(false); setBackstageInitialView(undefined); }, []);
+  const onSendFeedback = useCallback(() => { setBackstageInitialView('feedback'); setBackstageOpen(true); }, []);
+
+  // Right panel resizing
+  const [rightPanelWidth, setRightPanelWidth] = useState(256);
+
+  // Restore saved width
+  useEffect(() => {
+    getSetting<number>('rightPanelWidth', 256).then(setRightPanelWidth);
+  }, []);
+  const isResizingRight = useRef(false);
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isResizingRight.current) return;
+      const newWidth = Math.max(180, Math.min(500, window.innerWidth - e.clientX));
+      setRightPanelWidth(newWidth);
+    };
+    const handleMouseUp = () => {
+      if (isResizingRight.current) {
+        isResizingRight.current = false;
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+        setRightPanelWidth(w => { setSetting('rightPanelWidth', w); return w; });
+      }
+    };
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, []);
 
   // Block browser shortcuts in production (F5, Ctrl+R, Ctrl+Shift+I, Ctrl+U, etc.)
   useEffect(() => {
@@ -93,9 +132,7 @@ function App() {
   const {
     printDialogOpen,
     setPrintDialogOpen,
-    aboutDialogOpen,
-    setAboutDialogOpen,
-    snapSettingsOpen,
+snapSettingsOpen,
     setSnapSettingsOpen,
     titleBlockEditorOpen,
     setTitleBlockEditorOpen,
@@ -111,25 +148,37 @@ function App() {
       <MenuBar />
 
       {/* Ribbon */}
-      <Ribbon />
+      <Ribbon onOpenBackstage={openBackstage} />
+
+      {/* Options Bar (shows when Array or similar commands are active) */}
+      <OptionsBar />
 
       {/* Main Content Area */}
       <div className="flex flex-1 overflow-hidden">
         {/* Left Panel - Navigation (Drawings & Sheets) */}
         <NavigationPanel />
 
-        {/* Tool Palette */}
-        <ToolPalette />
-
         {/* Center - Canvas + Tabs */}
         <div className="flex-1 flex flex-col overflow-hidden">
           <FileTabBar />
           <Canvas />
-          <CommandLine />
         </div>
 
         {/* Right Panel - Properties & Layers (or Sheet Properties in sheet mode) */}
-        <div className="w-64 bg-cad-surface border-l border-cad-border flex flex-col overflow-hidden">
+        <div
+          className="bg-cad-surface border-l border-cad-border flex flex-col overflow-hidden relative"
+          style={{ width: rightPanelWidth, minWidth: 180, maxWidth: 500 }}
+        >
+          {/* Resize handle */}
+          <div
+            className="absolute top-0 left-0 w-px h-full cursor-col-resize hover:bg-cad-accent z-10"
+            onMouseDown={(e) => {
+              e.preventDefault();
+              isResizingRight.current = true;
+              document.body.style.cursor = 'col-resize';
+              document.body.style.userSelect = 'none';
+            }}
+          />
           {editorMode === 'sheet' ? (
             <SheetPropertiesPanel />
           ) : (
@@ -139,7 +188,7 @@ function App() {
       </div>
 
       {/* Bottom Status Bar */}
-      <StatusBar />
+      <StatusBar onSendFeedback={onSendFeedback} />
 
       {/* Print Dialog */}
       <PrintDialog
@@ -147,13 +196,7 @@ function App() {
         onClose={() => setPrintDialogOpen(false)}
       />
 
-      {/* About Dialog */}
-      <AboutDialog
-        isOpen={aboutDialogOpen}
-        onClose={() => setAboutDialogOpen(false)}
-      />
-
-      {/* Snap Settings Dialog */}
+{/* Snap Settings Dialog */}
       <SnapSettingsDialog
         isOpen={snapSettingsOpen}
         onClose={() => setSnapSettingsOpen(false)}
@@ -167,6 +210,9 @@ function App() {
           sheetId={activeSheetId}
         />
       )}
+
+      {/* Backstage View */}
+      <Backstage isOpen={backstageOpen} onClose={closeBackstage} initialView={backstageInitialView} />
 
       {/* New Sheet Dialog */}
       <NewSheetDialog

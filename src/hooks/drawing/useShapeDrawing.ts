@@ -4,8 +4,8 @@
 
 import { useCallback } from 'react';
 import { useAppStore, generateId } from '../../state/appStore';
-import type { Point, LineShape, RectangleShape, CircleShape, ArcShape, PolylineShape, SplineShape, EllipseShape, SnapPoint } from '../../types/geometry';
-import { snapToAngle, calculateCircleFrom3Points } from '../../utils/geometryUtils';
+import type { Point, LineShape, RectangleShape, CircleShape, ArcShape, PolylineShape, SplineShape, EllipseShape, SnapPoint, Shape, HatchShape } from '../../types/geometry';
+import { snapToAngle, calculateCircleFrom3Points, isPointNearShape } from '../../engine/geometry/GeometryUtils';
 import { useDimensionDrawing } from './useDimensionDrawing';
 
 /**
@@ -70,6 +70,33 @@ function calculateArcFrom3Points(
   }
 }
 
+/**
+ * Apply locked distance and angle constraints to a point relative to a base point.
+ */
+function applyLockedConstraints(
+  basePoint: Point,
+  currentPoint: Point,
+  lockedDistance: number | null,
+  lockedAngle: number | null
+): Point {
+  const dx = currentPoint.x - basePoint.x;
+  const dy = currentPoint.y - basePoint.y;
+  let dist = Math.sqrt(dx * dx + dy * dy);
+  let angle = Math.atan2(dy, dx);
+
+  if (lockedDistance !== null) {
+    dist = lockedDistance;
+  }
+  if (lockedAngle !== null) {
+    angle = (lockedAngle * Math.PI) / 180; // Convert degrees to radians
+  }
+
+  return {
+    x: basePoint.x + dist * Math.cos(angle),
+    y: basePoint.y + dist * Math.sin(angle),
+  };
+}
+
 export function useShapeDrawing() {
   const {
     activeTool,
@@ -85,6 +112,15 @@ export function useShapeDrawing() {
     rectangleMode,
     arcMode,
     ellipseMode,
+    chainMode,
+    lockedRadius,
+    lockedDistance,
+    lockedAngle,
+    setLockedDistance,
+    setLockedAngle,
+    polylineArcMode,
+    drawingBulges,
+    addDrawingBulge,
   } = useAppStore();
 
   // Dimension drawing hook
@@ -116,6 +152,7 @@ export function useShapeDrawing() {
    */
   const createRectangle = useCallback(
     (topLeft: Point, width: number, height: number, rotation: number = 0) => {
+      const { cornerRadius } = useAppStore.getState();
       const rectShape: RectangleShape = {
         id: generateId(),
         type: 'rectangle',
@@ -128,6 +165,7 @@ export function useShapeDrawing() {
         width,
         height,
         rotation,
+        ...(cornerRadius > 0 && { cornerRadius }),
       };
       addShape(rectShape);
     },
@@ -159,7 +197,7 @@ export function useShapeDrawing() {
    * Create a polyline shape
    */
   const createPolyline = useCallback(
-    (points: Point[], closed: boolean = false) => {
+    (points: Point[], closed: boolean = false, bulge?: number[]) => {
       if (points.length < 2) return;
       const polylineShape: PolylineShape = {
         id: generateId(),
@@ -171,6 +209,7 @@ export function useShapeDrawing() {
         locked: false,
         points: [...points],
         closed,
+        bulge: bulge && bulge.some(b => b !== 0) ? [...bulge] : undefined,
       };
       addShape(polylineShape);
     },
@@ -226,7 +265,7 @@ export function useShapeDrawing() {
    * Create an ellipse shape
    */
   const createEllipse = useCallback(
-    (center: Point, radiusX: number, radiusY: number, rotation: number = 0) => {
+    (center: Point, radiusX: number, radiusY: number, rotation: number = 0, startAngle?: number, endAngle?: number) => {
       const ellipseShape: EllipseShape = {
         id: generateId(),
         type: 'ellipse',
@@ -239,10 +278,82 @@ export function useShapeDrawing() {
         radiusX,
         radiusY,
         rotation,
+        ...(startAngle !== undefined && { startAngle }),
+        ...(endAngle !== undefined && { endAngle }),
       };
       addShape(ellipseShape);
     },
     [activeLayerId, activeDrawingId, currentStyle, addShape]
+  );
+
+  /**
+   * Create a hatch shape
+   */
+  const createHatch = useCallback(
+    (points: Point[]) => {
+      if (points.length < 3) return;
+      const {
+        hatchPatternType,
+        hatchPatternAngle,
+        hatchPatternScale,
+        hatchFillColor,
+        hatchBackgroundColor,
+      } = useAppStore.getState();
+      const hatchShape: HatchShape = {
+        id: generateId(),
+        type: 'hatch',
+        layerId: activeLayerId,
+        drawingId: activeDrawingId,
+        style: { ...currentStyle },
+        visible: true,
+        locked: false,
+        points: [...points],
+        patternType: hatchPatternType,
+        patternAngle: hatchPatternAngle,
+        patternScale: hatchPatternScale,
+        fillColor: hatchFillColor,
+        backgroundColor: hatchBackgroundColor ?? undefined,
+      };
+      addShape(hatchShape);
+    },
+    [activeLayerId, activeDrawingId, currentStyle, addShape]
+  );
+
+  /**
+   * Handle click for hatch drawing (same pattern as polyline)
+   */
+  const handleHatchClick = useCallback(
+    (snappedPos: Point, shiftKey: boolean) => {
+      let finalPos = snappedPos;
+      if (shiftKey && drawingPoints.length > 0) {
+        const lastPoint = drawingPoints[drawingPoints.length - 1];
+        finalPos = snapToAngle(lastPoint, snappedPos);
+      }
+      addDrawingPoint(finalPos);
+    },
+    [drawingPoints, addDrawingPoint]
+  );
+
+  /**
+   * Update hatch preview (polyline-like)
+   */
+  const updateHatchPreview = useCallback(
+    (snappedPos: Point, shiftKey: boolean) => {
+      if (drawingPoints.length === 0) return;
+      const lastPoint = drawingPoints[drawingPoints.length - 1];
+      let previewPos = shiftKey ? snapToAngle(lastPoint, snappedPos) : snappedPos;
+
+      if (lockedDistance !== null || lockedAngle !== null) {
+        previewPos = applyLockedConstraints(lastPoint, previewPos, lockedDistance, lockedAngle);
+      }
+
+      setDrawingPreview({
+        type: 'hatch',
+        points: drawingPoints,
+        currentPoint: previewPos,
+      });
+    },
+    [drawingPoints, setDrawingPreview, lockedDistance, lockedAngle]
   );
 
   /**
@@ -254,17 +365,35 @@ export function useShapeDrawing() {
         addDrawingPoint(snappedPos);
       } else {
         const lastPoint = drawingPoints[drawingPoints.length - 1];
-        const finalPos = shiftKey ? snapToAngle(lastPoint, snappedPos) : snappedPos;
+        let finalPos = shiftKey ? snapToAngle(lastPoint, snappedPos) : snappedPos;
+
+        // Apply locked distance/angle constraints
+        if (lockedDistance !== null || lockedAngle !== null) {
+          finalPos = applyLockedConstraints(lastPoint, finalPos, lockedDistance, lockedAngle);
+        }
+
         const dx = Math.abs(finalPos.x - lastPoint.x);
         const dy = Math.abs(finalPos.y - lastPoint.y);
 
         if (dx > 1 || dy > 1) {
           createLine(lastPoint, finalPos);
-          addDrawingPoint(finalPos);
+          // Clear locked values after use
+          if (lockedDistance !== null) setLockedDistance(null);
+          if (lockedAngle !== null) setLockedAngle(null);
+
+          if (chainMode) {
+            // Chain mode: continue from endpoint
+            addDrawingPoint(finalPos);
+          } else {
+            // Single segment mode: reset
+            clearDrawingPoints();
+            setDrawingPreview(null);
+            addDrawingPoint(snappedPos); // Start fresh with new first point
+          }
         }
       }
     },
-    [drawingPoints, addDrawingPoint, createLine]
+    [drawingPoints, addDrawingPoint, createLine, chainMode, lockedDistance, lockedAngle, setLockedDistance, setLockedAngle, clearDrawingPoints, setDrawingPreview]
   );
 
   /**
@@ -375,6 +504,11 @@ export function useShapeDrawing() {
         case 'center-radius':
         case 'center-diameter': {
           if (drawingPoints.length === 0) {
+            // If radius is locked, single-click placement
+            if (lockedRadius !== null && lockedRadius > 0) {
+              createCircle(snappedPos, lockedRadius);
+              return;
+            }
             addDrawingPoint(snappedPos);
           } else {
             const center = drawingPoints[0];
@@ -384,6 +518,12 @@ export function useShapeDrawing() {
 
             if (circleMode === 'center-diameter') {
               radius = radius / 2;
+            }
+
+            // Apply locked distance as radius
+            if (lockedDistance !== null) {
+              radius = lockedDistance;
+              setLockedDistance(null);
             }
 
             if (radius > 1) {
@@ -438,7 +578,7 @@ export function useShapeDrawing() {
         }
       }
     },
-    [circleMode, drawingPoints, addDrawingPoint, clearDrawingPoints, setDrawingPreview, createCircle]
+    [circleMode, drawingPoints, addDrawingPoint, clearDrawingPoints, setDrawingPreview, createCircle, lockedRadius, lockedDistance, setLockedDistance]
   );
 
   /**
@@ -446,15 +586,22 @@ export function useShapeDrawing() {
    */
   const handlePolylineClick = useCallback(
     (snappedPos: Point, shiftKey: boolean) => {
+      let finalPos = snappedPos;
       if (shiftKey && drawingPoints.length > 0) {
         const lastPoint = drawingPoints[drawingPoints.length - 1];
-        const finalPos = snapToAngle(lastPoint, snappedPos);
-        addDrawingPoint(finalPos);
-      } else {
-        addDrawingPoint(snappedPos);
+        finalPos = snapToAngle(lastPoint, snappedPos);
       }
+
+      // If we have at least one point, record the bulge for the segment we're completing
+      if (drawingPoints.length > 0) {
+        // In arc mode, use a default bulge of 0.4142 (quarter-circle arc, ~45 degree sweep)
+        // The user can later adjust; this provides a visible arc
+        addDrawingBulge(polylineArcMode ? 0.4142 : 0);
+      }
+
+      addDrawingPoint(finalPos);
     },
-    [drawingPoints, addDrawingPoint]
+    [drawingPoints, addDrawingPoint, addDrawingBulge, polylineArcMode]
   );
 
   /**
@@ -506,31 +653,114 @@ export function useShapeDrawing() {
         case 'center-start-end': {
           // Center-start-end: center, start (defines radius), end (defines end angle)
           if (drawingPoints.length === 0) {
-            // First click: center point
             addDrawingPoint(snappedPos);
           } else if (drawingPoints.length === 1) {
-            // Second click: start point (defines radius and start angle)
             const center = drawingPoints[0];
             const dx = snappedPos.x - center.x;
             const dy = snappedPos.y - center.y;
             const radius = Math.sqrt(dx * dx + dy * dy);
-
             if (radius > 1) {
               addDrawingPoint(snappedPos);
             }
           } else {
-            // Third click: end point (defines end angle)
             const center = drawingPoints[0];
             const startPoint = drawingPoints[1];
             const dx = startPoint.x - center.x;
             const dy = startPoint.y - center.y;
             const radius = Math.sqrt(dx * dx + dy * dy);
-
             const startAngle = angleFromCenter(center, startPoint);
             const endAngle = angleFromCenter(center, snappedPos);
-
             if (radius > 1) {
               createArc(center, radius, startAngle, endAngle);
+            }
+            clearDrawingPoints();
+            setDrawingPreview(null);
+          }
+          break;
+        }
+
+        case 'start-end-radius': {
+          // Start-End-Radius: click start, click end, drag to set curvature
+          if (drawingPoints.length === 0) {
+            addDrawingPoint(snappedPos);
+          } else if (drawingPoints.length === 1) {
+            const dist = Math.sqrt(
+              (snappedPos.x - drawingPoints[0].x) ** 2 +
+              (snappedPos.y - drawingPoints[0].y) ** 2
+            );
+            if (dist > 1) {
+              addDrawingPoint(snappedPos);
+            }
+          } else {
+            // Third click determines curvature (distance from chord midpoint)
+            const start = drawingPoints[0];
+            const end = drawingPoints[1];
+            const chordMid = { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 };
+            const chordLen = Math.sqrt((end.x - start.x) ** 2 + (end.y - start.y) ** 2);
+
+            // Sagitta: perpendicular distance from chord midpoint to click point
+            const chordAngle = Math.atan2(end.y - start.y, end.x - start.x);
+            const perpAngle = chordAngle + Math.PI / 2;
+            const toClick = { x: snappedPos.x - chordMid.x, y: snappedPos.y - chordMid.y };
+            const sagitta = toClick.x * Math.cos(perpAngle) + toClick.y * Math.sin(perpAngle);
+
+            if (Math.abs(sagitta) > 0.1) {
+              // Calculate radius from chord length and sagitta: r = (h/2) + (c^2)/(8h)
+              const h = Math.abs(sagitta);
+              const radius = h / 2 + (chordLen * chordLen) / (8 * h);
+
+              // Center is on the perpendicular bisector of the chord
+              const centerDist = radius - h;
+              const sign = sagitta > 0 ? -1 : 1;
+              const center = {
+                x: chordMid.x + sign * centerDist * Math.cos(perpAngle),
+                y: chordMid.y + sign * centerDist * Math.sin(perpAngle),
+              };
+
+              const startAngle = angleFromCenter(center, start);
+              const endAngle = angleFromCenter(center, end);
+
+              // Determine correct arc direction based on sagitta sign
+              if (sagitta > 0) {
+                createArc(center, radius, startAngle, endAngle);
+              } else {
+                createArc(center, radius, endAngle, startAngle);
+              }
+            }
+            clearDrawingPoints();
+            setDrawingPreview(null);
+          }
+          break;
+        }
+
+        case 'fillet': {
+          // Fillet: placeholder - requires selecting two existing lines
+          // For now, just add points and show status
+          if (drawingPoints.length < 2) {
+            addDrawingPoint(snappedPos);
+          } else {
+            clearDrawingPoints();
+            setDrawingPreview(null);
+          }
+          break;
+        }
+
+        case 'tangent': {
+          // Tangent arc: placeholder - requires detecting existing endpoint
+          if (drawingPoints.length === 0) {
+            addDrawingPoint(snappedPos);
+          } else {
+            // Simple tangent: draw arc from last point to clicked endpoint
+            // For now, use 3-point arc logic with a midpoint
+            const start = drawingPoints[0];
+            const end = snappedPos;
+            const mid = {
+              x: (start.x + end.x) / 2 + (end.y - start.y) * 0.2,
+              y: (start.y + end.y) / 2 - (end.x - start.x) * 0.2,
+            };
+            const arc = calculateArcFrom3Points(start, mid, end);
+            if (arc && arc.radius > 1) {
+              createArc(arc.center, arc.radius, arc.startAngle, arc.endAngle);
             }
             clearDrawingPoints();
             setDrawingPreview(null);
@@ -596,22 +826,62 @@ export function useShapeDrawing() {
         }
 
         case 'corner': {
-          // Corner mode: define bounding box, ellipse fits inside
           if (drawingPoints.length === 0) {
             addDrawingPoint(snappedPos);
           } else {
             const p1 = drawingPoints[0];
             const p2 = snappedPos;
-
-            const center = {
-              x: (p1.x + p2.x) / 2,
-              y: (p1.y + p2.y) / 2,
-            };
+            const center = { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 };
             const radiusX = Math.abs(p2.x - p1.x) / 2;
             const radiusY = Math.abs(p2.y - p1.y) / 2;
-
             if (radiusX > 1 && radiusY > 1) {
               createEllipse(center, radiusX, radiusY, 0);
+            }
+            clearDrawingPoints();
+            setDrawingPreview(null);
+          }
+          break;
+        }
+
+        case 'partial': {
+          // Partial ellipse: center, major axis, minor axis, start angle, end angle (5 clicks)
+          if (drawingPoints.length === 0) {
+            // Click 1: center
+            addDrawingPoint(snappedPos);
+          } else if (drawingPoints.length === 1) {
+            // Click 2: major axis point
+            const center = drawingPoints[0];
+            const dist = Math.sqrt((snappedPos.x - center.x) ** 2 + (snappedPos.y - center.y) ** 2);
+            if (dist > 1) {
+              addDrawingPoint(snappedPos);
+            }
+          } else if (drawingPoints.length === 2) {
+            // Click 3: minor axis point
+            addDrawingPoint(snappedPos);
+          } else if (drawingPoints.length === 3) {
+            // Click 4: start angle
+            addDrawingPoint(snappedPos);
+          } else {
+            // Click 5: end angle - create partial ellipse
+            const center = drawingPoints[0];
+            const majorPt = drawingPoints[1];
+            const dx1 = majorPt.x - center.x;
+            const dy1 = majorPt.y - center.y;
+            const radiusX = Math.sqrt(dx1 * dx1 + dy1 * dy1);
+            const rotation = Math.atan2(dy1, dx1);
+
+            const minorPt = drawingPoints[2];
+            const dx2 = minorPt.x - center.x;
+            const dy2 = minorPt.y - center.y;
+            const perpAngle = rotation + Math.PI / 2;
+            const radiusY = Math.abs(dx2 * Math.cos(perpAngle) + dy2 * Math.sin(perpAngle));
+
+            const startAnglePt = drawingPoints[3];
+            const startAngle = Math.atan2(startAnglePt.y - center.y, startAnglePt.x - center.x) - rotation;
+            const endAngle = Math.atan2(snappedPos.y - center.y, snappedPos.x - center.x) - rotation;
+
+            if (radiusX > 1 && radiusY > 1) {
+              createEllipse(center, radiusX, radiusY, rotation, startAngle, endAngle);
             }
             clearDrawingPoints();
             setDrawingPreview(null);
@@ -624,10 +894,81 @@ export function useShapeDrawing() {
   );
 
   /**
+   * Handle pick-lines mode: click on existing shape to create offset copy
+   */
+  const handlePickLinesClick = useCallback(
+    (worldPos: Point): boolean => {
+      const { shapes, pickLinesOffset } = useAppStore.getState();
+
+      // Find shape at point
+      let foundShape: Shape | null = null;
+      for (let i = shapes.length - 1; i >= 0; i--) {
+        if (isPointNearShape(worldPos, shapes[i])) {
+          foundShape = shapes[i];
+          break;
+        }
+      }
+
+      if (!foundShape) return false;
+
+      const offset = pickLinesOffset;
+
+      switch (foundShape.type) {
+        case 'line': {
+          // Create parallel line at offset distance
+          const dx = foundShape.end.x - foundShape.start.x;
+          const dy = foundShape.end.y - foundShape.start.y;
+          const len = Math.sqrt(dx * dx + dy * dy);
+          if (len < 0.01) return false;
+          // Perpendicular direction (determine side based on click position)
+          const perpX = -dy / len;
+          const perpY = dx / len;
+          // Determine which side of the line the click is on
+          const cross = (worldPos.x - foundShape.start.x) * perpY - (worldPos.y - foundShape.start.y) * perpX;
+          const sign = cross > 0 ? 1 : -1;
+          const newStart = { x: foundShape.start.x + sign * offset * perpX, y: foundShape.start.y + sign * offset * perpY };
+          const newEnd = { x: foundShape.end.x + sign * offset * perpX, y: foundShape.end.y + sign * offset * perpY };
+          createLine(newStart, newEnd);
+          return true;
+        }
+        case 'circle': {
+          // Create concentric circle
+          const distToCenter = Math.sqrt((worldPos.x - foundShape.center.x) ** 2 + (worldPos.y - foundShape.center.y) ** 2);
+          const newRadius = distToCenter > foundShape.radius
+            ? foundShape.radius + offset
+            : Math.max(foundShape.radius - offset, 1);
+          createCircle(foundShape.center, newRadius);
+          return true;
+        }
+        case 'arc': {
+          // Create concentric arc
+          const distToCenter = Math.sqrt((worldPos.x - foundShape.center.x) ** 2 + (worldPos.y - foundShape.center.y) ** 2);
+          const newRadius = distToCenter > foundShape.radius
+            ? foundShape.radius + offset
+            : Math.max(foundShape.radius - offset, 1);
+          createArc(foundShape.center, newRadius, foundShape.startAngle, foundShape.endAngle);
+          return true;
+        }
+        default:
+          return false;
+      }
+    },
+    [createLine, createCircle, createArc]
+  );
+
+  /**
    * Handle shape drawing click (dispatch to appropriate handler)
    */
   const handleDrawingClick = useCallback(
     (snappedPos: Point, shiftKey: boolean, snapInfo?: SnapPoint): boolean => {
+      // Check pick-lines mode first
+      const { pickLinesMode } = useAppStore.getState();
+      if (pickLinesMode && (activeTool === 'line' || activeTool === 'circle' || activeTool === 'arc')) {
+        if (handlePickLinesClick(snappedPos)) {
+          return true;
+        }
+      }
+
       switch (activeTool) {
         case 'line':
           handleLineClick(snappedPos, shiftKey);
@@ -650,6 +991,9 @@ export function useShapeDrawing() {
         case 'ellipse':
           handleEllipseClick(snappedPos);
           return true;
+        case 'hatch':
+          handleHatchClick(snappedPos, shiftKey);
+          return true;
         case 'dimension':
           dimensionDrawing.handleDimensionClick(snappedPos, snapInfo);
           return true;
@@ -657,7 +1001,7 @@ export function useShapeDrawing() {
           return false;
       }
     },
-    [activeTool, handleLineClick, handleRectangleClick, handleCircleClick, handleArcClick, handlePolylineClick, handleSplineClick, handleEllipseClick, dimensionDrawing]
+    [activeTool, handleLineClick, handleRectangleClick, handleCircleClick, handleArcClick, handlePolylineClick, handleSplineClick, handleEllipseClick, handleHatchClick, dimensionDrawing, handlePickLinesClick]
   );
 
   /**
@@ -667,14 +1011,20 @@ export function useShapeDrawing() {
     (snappedPos: Point, shiftKey: boolean) => {
       if (drawingPoints.length === 0) return;
       const lastPoint = drawingPoints[drawingPoints.length - 1];
-      const previewPos = shiftKey ? snapToAngle(lastPoint, snappedPos) : snappedPos;
+      let previewPos = shiftKey ? snapToAngle(lastPoint, snappedPos) : snappedPos;
+
+      // Apply locked constraints to preview
+      if (lockedDistance !== null || lockedAngle !== null) {
+        previewPos = applyLockedConstraints(lastPoint, previewPos, lockedDistance, lockedAngle);
+      }
+
       setDrawingPreview({
         type: 'line',
         start: lastPoint,
         end: previewPos,
       });
     },
-    [drawingPoints, setDrawingPreview]
+    [drawingPoints, setDrawingPreview, lockedDistance, lockedAngle]
   );
 
   /**
@@ -683,6 +1033,8 @@ export function useShapeDrawing() {
   const updateRectanglePreview = useCallback(
     (snappedPos: Point) => {
       if (drawingPoints.length === 0) return;
+      const { cornerRadius } = useAppStore.getState();
+      const cr = cornerRadius > 0 ? cornerRadius : undefined;
 
       switch (rectangleMode) {
         case 'corner': {
@@ -690,6 +1042,7 @@ export function useShapeDrawing() {
             type: 'rectangle',
             start: drawingPoints[0],
             end: snappedPos,
+            cornerRadius: cr,
           });
           break;
         }
@@ -702,6 +1055,7 @@ export function useShapeDrawing() {
             type: 'rectangle',
             start: { x: center.x - dx, y: center.y - dy },
             end: { x: center.x + dx, y: center.y + dy },
+            cornerRadius: cr,
           });
           break;
         }
@@ -761,7 +1115,8 @@ export function useShapeDrawing() {
         case 'center-radius': {
           const dx = snappedPos.x - drawingPoints[0].x;
           const dy = snappedPos.y - drawingPoints[0].y;
-          const radius = Math.sqrt(dx * dx + dy * dy);
+          let radius = Math.sqrt(dx * dx + dy * dy);
+          if (lockedDistance !== null) radius = lockedDistance;
           setDrawingPreview({
             type: 'circle',
             center: drawingPoints[0],
@@ -773,7 +1128,8 @@ export function useShapeDrawing() {
         case 'center-diameter': {
           const dx = snappedPos.x - drawingPoints[0].x;
           const dy = snappedPos.y - drawingPoints[0].y;
-          const radius = Math.sqrt(dx * dx + dy * dy) / 2;
+          let radius = Math.sqrt(dx * dx + dy * dy) / 2;
+          if (lockedDistance !== null) radius = lockedDistance;
           setDrawingPreview({
             type: 'circle',
             center: drawingPoints[0],
@@ -825,7 +1181,7 @@ export function useShapeDrawing() {
         }
       }
     },
-    [circleMode, drawingPoints, setDrawingPreview]
+    [circleMode, drawingPoints, setDrawingPreview, lockedDistance]
   );
 
   /**
@@ -835,14 +1191,22 @@ export function useShapeDrawing() {
     (snappedPos: Point, shiftKey: boolean) => {
       if (drawingPoints.length === 0) return;
       const lastPoint = drawingPoints[drawingPoints.length - 1];
-      const previewPos = shiftKey ? snapToAngle(lastPoint, snappedPos) : snappedPos;
+      let previewPos = shiftKey ? snapToAngle(lastPoint, snappedPos) : snappedPos;
+
+      if (lockedDistance !== null || lockedAngle !== null) {
+        previewPos = applyLockedConstraints(lastPoint, previewPos, lockedDistance, lockedAngle);
+      }
+
+      const bulges = useAppStore.getState().drawingBulges;
       setDrawingPreview({
         type: 'polyline',
         points: drawingPoints,
         currentPoint: previewPos,
+        bulges: bulges.length > 0 ? [...bulges] : undefined,
+        currentBulge: polylineArcMode ? 0.4142 : 0,
       });
     },
-    [drawingPoints, setDrawingPreview]
+    [drawingPoints, setDrawingPreview, lockedDistance, lockedAngle, polylineArcMode]
   );
 
   /**
@@ -900,35 +1264,83 @@ export function useShapeDrawing() {
 
         case 'center-start-end': {
           if (drawingPoints.length === 1) {
-            // Show radius line from center to cursor
             const center = drawingPoints[0];
             const dx = snappedPos.x - center.x;
             const dy = snappedPos.y - center.y;
             const radius = Math.sqrt(dx * dx + dy * dy);
-
-            // Show a full circle preview to indicate the radius
             setDrawingPreview({
               type: 'circle',
               center,
               radius,
             });
           } else if (drawingPoints.length === 2) {
-            // Show arc preview from start to cursor
             const center = drawingPoints[0];
             const startPoint = drawingPoints[1];
             const dx = startPoint.x - center.x;
             const dy = startPoint.y - center.y;
             const radius = Math.sqrt(dx * dx + dy * dy);
-
             const startAngle = angleFromCenter(center, startPoint);
             const endAngle = angleFromCenter(center, snappedPos);
-
             setDrawingPreview({
               type: 'arc',
               center,
               radius,
               startAngle,
               endAngle,
+            });
+          }
+          break;
+        }
+
+        case 'start-end-radius': {
+          if (drawingPoints.length === 1) {
+            // Show line from start to cursor
+            setDrawingPreview({
+              type: 'line',
+              start: drawingPoints[0],
+              end: snappedPos,
+            });
+          } else if (drawingPoints.length === 2) {
+            // Show arc preview based on curvature
+            const start = drawingPoints[0];
+            const end = drawingPoints[1];
+            const chordMid = { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 };
+            const chordLen = Math.sqrt((end.x - start.x) ** 2 + (end.y - start.y) ** 2);
+            const chordAngle = Math.atan2(end.y - start.y, end.x - start.x);
+            const perpAngle = chordAngle + Math.PI / 2;
+            const toClick = { x: snappedPos.x - chordMid.x, y: snappedPos.y - chordMid.y };
+            const sagitta = toClick.x * Math.cos(perpAngle) + toClick.y * Math.sin(perpAngle);
+
+            if (Math.abs(sagitta) > 0.1) {
+              const h = Math.abs(sagitta);
+              const radius = h / 2 + (chordLen * chordLen) / (8 * h);
+              const centerDist = radius - h;
+              const sign = sagitta > 0 ? -1 : 1;
+              const center = {
+                x: chordMid.x + sign * centerDist * Math.cos(perpAngle),
+                y: chordMid.y + sign * centerDist * Math.sin(perpAngle),
+              };
+              const startAngle = angleFromCenter(center, start);
+              const endAngle = angleFromCenter(center, end);
+              if (sagitta > 0) {
+                setDrawingPreview({ type: 'arc', center, radius, startAngle, endAngle });
+              } else {
+                setDrawingPreview({ type: 'arc', center, radius, startAngle: endAngle, endAngle: startAngle });
+              }
+            } else {
+              setDrawingPreview({ type: 'line', start, end });
+            }
+          }
+          break;
+        }
+
+        case 'fillet':
+        case 'tangent': {
+          if (drawingPoints.length === 1) {
+            setDrawingPreview({
+              type: 'line',
+              start: drawingPoints[0],
+              end: snappedPos,
             });
           }
           break;
@@ -995,7 +1407,6 @@ export function useShapeDrawing() {
           };
           const radiusX = Math.abs(snappedPos.x - p1.x) / 2;
           const radiusY = Math.abs(snappedPos.y - p1.y) / 2;
-
           setDrawingPreview({
             type: 'ellipse',
             center,
@@ -1003,6 +1414,43 @@ export function useShapeDrawing() {
             radiusY: Math.max(radiusY, 1),
             rotation: 0,
           });
+          break;
+        }
+
+        case 'partial': {
+          const center = drawingPoints[0];
+          if (drawingPoints.length === 1) {
+            // Show circle for first radius
+            const dx = snappedPos.x - center.x;
+            const dy = snappedPos.y - center.y;
+            const r = Math.sqrt(dx * dx + dy * dy);
+            setDrawingPreview({ type: 'ellipse', center, radiusX: r, radiusY: r, rotation: Math.atan2(dy, dx) });
+          } else if (drawingPoints.length === 2) {
+            // Show full ellipse as minor axis is being defined
+            const majorPt = drawingPoints[1];
+            const dx1 = majorPt.x - center.x;
+            const dy1 = majorPt.y - center.y;
+            const radiusX = Math.sqrt(dx1 * dx1 + dy1 * dy1);
+            const rotation = Math.atan2(dy1, dx1);
+            const dx2 = snappedPos.x - center.x;
+            const dy2 = snappedPos.y - center.y;
+            const perpAngle = rotation + Math.PI / 2;
+            const radiusY = Math.abs(dx2 * Math.cos(perpAngle) + dy2 * Math.sin(perpAngle));
+            setDrawingPreview({ type: 'ellipse', center, radiusX, radiusY: Math.max(radiusY, 1), rotation });
+          } else if (drawingPoints.length >= 3) {
+            // Show full ellipse while picking start/end angle
+            const majorPt = drawingPoints[1];
+            const dx1 = majorPt.x - center.x;
+            const dy1 = majorPt.y - center.y;
+            const radiusX = Math.sqrt(dx1 * dx1 + dy1 * dy1);
+            const rotation = Math.atan2(dy1, dx1);
+            const minorPt = drawingPoints[2];
+            const dx2 = minorPt.x - center.x;
+            const dy2 = minorPt.y - center.y;
+            const perpAngle = rotation + Math.PI / 2;
+            const radiusY = Math.abs(dx2 * Math.cos(perpAngle) + dy2 * Math.sin(perpAngle));
+            setDrawingPreview({ type: 'ellipse', center, radiusX, radiusY: Math.max(radiusY, 1), rotation });
+          }
           break;
         }
       }
@@ -1039,12 +1487,15 @@ export function useShapeDrawing() {
         case 'ellipse':
           updateEllipsePreview(snappedPos);
           break;
+        case 'hatch':
+          updateHatchPreview(snappedPos, shiftKey);
+          break;
         case 'dimension':
           dimensionDrawing.updateDimensionPreview(snappedPos);
           break;
       }
     },
-    [activeTool, drawingPoints, updateLinePreview, updateRectanglePreview, updateCirclePreview, updateArcPreview, updatePolylinePreview, updateSplinePreview, updateEllipsePreview, dimensionDrawing]
+    [activeTool, drawingPoints, updateLinePreview, updateRectanglePreview, updateCirclePreview, updateArcPreview, updatePolylinePreview, updateSplinePreview, updateEllipsePreview, updateHatchPreview, dimensionDrawing]
   );
 
   /**
@@ -1053,7 +1504,9 @@ export function useShapeDrawing() {
   const finishDrawing = useCallback(() => {
     if (drawingPoints.length > 0) {
       if (activeTool === 'polyline' && drawingPoints.length >= 2) {
-        createPolyline(drawingPoints, false);
+        createPolyline(drawingPoints, false, drawingBulges);
+      } else if (activeTool === 'hatch' && drawingPoints.length >= 3) {
+        createHatch(drawingPoints);
       } else if (activeTool === 'spline' && drawingPoints.length >= 2) {
         createSpline(drawingPoints, false);
       } else if (activeTool === 'dimension') {
@@ -1063,7 +1516,7 @@ export function useShapeDrawing() {
       clearDrawingPoints();
       setDrawingPreview(null);
     }
-  }, [drawingPoints, activeTool, createPolyline, createSpline, clearDrawingPoints, setDrawingPreview, dimensionDrawing]);
+  }, [drawingPoints, drawingBulges, activeTool, createPolyline, createHatch, createSpline, clearDrawingPoints, setDrawingPreview, dimensionDrawing]);
 
   /**
    * Check if currently drawing
@@ -1076,6 +1529,66 @@ export function useShapeDrawing() {
   const getLastDrawingPoint = useCallback((): Point | undefined => {
     return drawingPoints.length > 0 ? drawingPoints[drawingPoints.length - 1] : undefined;
   }, [drawingPoints]);
+
+  /**
+   * Get status message for current drawing state (guides the user)
+   */
+  const getDrawingStatus = useCallback((): string => {
+    const pts = drawingPoints.length;
+
+    switch (activeTool) {
+      case 'line':
+        if (pts === 0) return 'Select first point';
+        return 'Select next point (or right-click to finish)';
+      case 'rectangle':
+        if (rectangleMode === '3point') {
+          if (pts === 0) return 'Select first corner';
+          if (pts === 1) return 'Select second corner (width direction)';
+          return 'Select height';
+        }
+        if (pts === 0) return rectangleMode === 'center' ? 'Select center point' : 'Select first corner';
+        return 'Select opposite corner';
+      case 'circle':
+        if (circleMode === '3point') {
+          if (pts === 0) return 'Select first point on circle';
+          if (pts === 1) return 'Select second point on circle';
+          return 'Select third point on circle';
+        }
+        if (circleMode === '2point') {
+          if (pts === 0) return 'Select first diameter endpoint';
+          return 'Select second diameter endpoint';
+        }
+        if (pts === 0) return 'Select center point';
+        return 'Select radius point';
+      case 'arc':
+        return dimensionDrawing.getDimensionStatus() || (pts === 0 ? 'Select first point' : 'Select next point');
+      case 'polyline':
+        if (pts === 0) return 'Select first point';
+        return `Select next point (A=Arc, L=Line, C=Close)${polylineArcMode ? ' [Arc mode]' : ''}`;
+      case 'spline':
+        if (pts === 0) return 'Select first point';
+        return 'Select next point (C=Close, right-click to finish)';
+      case 'ellipse':
+        if (pts === 0) return 'Select center point';
+        if (pts === 1) return 'Select major axis point';
+        if (ellipseMode === 'partial') {
+          if (pts === 2) return 'Select minor axis point';
+          if (pts === 3) return 'Select start angle';
+          return 'Select end angle';
+        }
+        return 'Select minor axis point';
+      case 'hatch':
+        if (pts === 0) return 'Click first boundary point';
+        if (pts === 1) return 'Click next point';
+        return 'Next point (C=Close, right-click to finish)';
+      case 'text':
+        return 'Click to place text';
+      case 'dimension':
+        return dimensionDrawing.getDimensionStatus();
+      default:
+        return '';
+    }
+  }, [activeTool, drawingPoints, rectangleMode, circleMode, ellipseMode, polylineArcMode, dimensionDrawing]);
 
   return {
     handleDrawingClick,
@@ -1090,6 +1603,8 @@ export function useShapeDrawing() {
     createPolyline,
     createSpline,
     createEllipse,
+    createHatch,
     getDimensionStatus: dimensionDrawing.getDimensionStatus,
+    getDrawingStatus,
   };
 }

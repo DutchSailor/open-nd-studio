@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, memo } from 'react';
+import { useState, useRef, useEffect, memo, useCallback } from 'react';
 import {
   MousePointer2,
   Hand,
@@ -19,8 +19,6 @@ import {
   Settings,
   ClipboardPaste,
   ChevronDown,
-  Keyboard,
-  Info,
   CheckSquare,
   XSquare,
   Sun,
@@ -40,6 +38,17 @@ import {
   ExtendIcon,
   ScaleIcon,
   OffsetIcon,
+  HatchIcon,
+  CloudIcon,
+  LeaderIcon,
+  TableIcon,
+  DivideIcon,
+  StretchIcon,
+  BreakIcon,
+  JoinIcon,
+  PinIcon,
+  LengthenIcon,
+  ExplodeIcon,
   FilledRegionIcon,
   DetailComponentIcon,
   InsulationIcon,
@@ -52,7 +61,65 @@ import {
 } from '../shared/CadIcons';
 import './Ribbon.css';
 
-type RibbonTab = 'home' | 'modify' | 'structural' | 'view' | 'tools' | 'help';
+/**
+ * Custom tooltip component - renders below the hovered element
+ */
+function RibbonTooltip({ label, shortcut, parentRef }: { label: string; shortcut?: string; parentRef: React.RefObject<HTMLElement> }) {
+  const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
+
+  useEffect(() => {
+    if (parentRef.current) {
+      const rect = parentRef.current.getBoundingClientRect();
+      setPos({ x: rect.left + rect.width / 2, y: rect.bottom + 4 });
+    }
+  }, [parentRef]);
+
+  if (!pos) return null;
+
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        left: pos.x,
+        top: pos.y,
+        transform: 'translateX(-50%)',
+        zIndex: 9999,
+        pointerEvents: 'none',
+      }}
+    >
+      <div className="ribbon-tooltip">
+        <span className="ribbon-tooltip-label">{label}</span>
+        {shortcut && <span className="ribbon-tooltip-shortcut">{shortcut}</span>}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Hook for tooltip show/hide with delay
+ */
+function useTooltip(delay = 400) {
+  const [show, setShow] = useState(false);
+  const ref = useRef<HTMLButtonElement>(null);
+  const timerRef = useRef<ReturnType<typeof setTimeout>>();
+
+  const onEnter = useCallback(() => {
+    timerRef.current = setTimeout(() => setShow(true), delay);
+  }, [delay]);
+
+  const onLeave = useCallback(() => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    setShow(false);
+  }, []);
+
+  useEffect(() => {
+    return () => { if (timerRef.current) clearTimeout(timerRef.current); };
+  }, []);
+
+  return { show, ref, onEnter, onLeave };
+}
+
+type RibbonTab = 'home' | 'modify' | 'structural' | 'view' | 'tools';
 
 interface RibbonButtonProps {
   icon: React.ReactNode;
@@ -60,19 +127,26 @@ interface RibbonButtonProps {
   onClick: () => void;
   active?: boolean;
   disabled?: boolean;
+  shortcut?: string;
 }
 
-function RibbonButton({ icon, label, onClick, active, disabled }: RibbonButtonProps) {
+function RibbonButton({ icon, label, onClick, active, disabled, shortcut }: RibbonButtonProps) {
+  const tt = useTooltip();
   return (
-    <button
-      className={`ribbon-btn ${active ? 'active' : ''} ${disabled ? 'disabled' : ''}`}
-      onClick={onClick}
-      disabled={disabled}
-      title={label}
-    >
-      <span className="ribbon-btn-icon">{icon}</span>
-      <span className="ribbon-btn-label">{label}</span>
-    </button>
+    <>
+      <button
+        ref={tt.ref}
+        className={`ribbon-btn ${active ? 'active' : ''} ${disabled ? 'disabled' : ''}`}
+        onClick={onClick}
+        disabled={disabled}
+        onMouseEnter={tt.onEnter}
+        onMouseLeave={tt.onLeave}
+      >
+        <span className="ribbon-btn-icon">{icon}</span>
+        <span className="ribbon-btn-label">{label}</span>
+      </button>
+      {tt.show && <RibbonTooltip label={label} shortcut={shortcut} parentRef={tt.ref as React.RefObject<HTMLElement>} />}
+    </>
   );
 }
 
@@ -89,6 +163,7 @@ interface RibbonDropdownButtonProps {
   options: DropdownOption[];
   selectedOption: string;
   onOptionSelect: (optionId: string) => void;
+  shortcut?: string;
 }
 
 function RibbonDropdownButton({
@@ -99,6 +174,7 @@ function RibbonDropdownButton({
   options,
   selectedOption,
   onOptionSelect,
+  shortcut,
 }: RibbonDropdownButtonProps) {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -117,13 +193,16 @@ function RibbonDropdownButton({
   }, [isOpen]);
 
   const selectedOptionLabel = options.find(o => o.id === selectedOption)?.label || '';
+  const tt = useTooltip();
 
   return (
     <div className="ribbon-dropdown-container" ref={dropdownRef}>
       <button
+        ref={tt.ref}
         className={`ribbon-btn has-dropdown ${active ? 'active' : ''}`}
         onClick={onClick}
-        title={`${label} (${selectedOptionLabel})`}
+        onMouseEnter={tt.onEnter}
+        onMouseLeave={tt.onLeave}
       >
         <span className="ribbon-btn-icon">{icon}</span>
         <span className="ribbon-btn-label">{label}</span>
@@ -154,6 +233,7 @@ function RibbonDropdownButton({
           ))}
         </div>
       )}
+      {tt.show && !isOpen && <RibbonTooltip label={`${label} (${selectedOptionLabel})`} shortcut={shortcut} parentRef={tt.ref as React.RefObject<HTMLElement>} />}
     </div>
   );
 }
@@ -164,19 +244,26 @@ interface RibbonSmallButtonProps {
   onClick: () => void;
   active?: boolean;
   disabled?: boolean;
+  shortcut?: string;
 }
 
-function RibbonSmallButton({ icon, label, onClick, active, disabled }: RibbonSmallButtonProps) {
+function RibbonSmallButton({ icon, label, onClick, active, disabled, shortcut }: RibbonSmallButtonProps) {
+  const tt = useTooltip();
   return (
-    <button
-      className={`ribbon-btn small ${active ? 'active' : ''} ${disabled ? 'disabled' : ''}`}
-      onClick={onClick}
-      disabled={disabled}
-      title={label}
-    >
-      <span className="ribbon-btn-icon">{icon}</span>
-      <span className="ribbon-btn-label">{label}</span>
-    </button>
+    <>
+      <button
+        ref={tt.ref}
+        className={`ribbon-btn small ${active ? 'active' : ''} ${disabled ? 'disabled' : ''}`}
+        onClick={onClick}
+        disabled={disabled}
+        onMouseEnter={tt.onEnter}
+        onMouseLeave={tt.onLeave}
+      >
+        <span className="ribbon-btn-icon">{icon}</span>
+        <span className="ribbon-btn-label">{label}</span>
+      </button>
+      {tt.show && <RibbonTooltip label={label} shortcut={shortcut} parentRef={tt.ref as React.RefObject<HTMLElement>} />}
+    </>
   );
 }
 
@@ -193,7 +280,11 @@ function RibbonButtonStack({ children }: { children: React.ReactNode }) {
   return <div className="ribbon-btn-stack">{children}</div>;
 }
 
-export const Ribbon = memo(function Ribbon() {
+interface RibbonProps {
+  onOpenBackstage: () => void;
+}
+
+export const Ribbon = memo(function Ribbon({ onOpenBackstage }: RibbonProps) {
   const [activeTab, setActiveTab] = useState<RibbonTab>('home');
 
   const {
@@ -204,8 +295,6 @@ export const Ribbon = memo(function Ribbon() {
     setCircleMode,
     rectangleMode,
     setRectangleMode,
-    arcMode,
-    setArcMode,
     dimensionMode,
     setDimensionMode,
     gridVisible,
@@ -219,11 +308,9 @@ export const Ribbon = memo(function Ribbon() {
     selectedShapeIds,
     setPrintDialogOpen,
     setSnapSettingsOpen,
-    setAboutDialogOpen,
+
     selectAll,
     deselectAll,
-    activeCommandName,
-    setPendingCommand,
   } = useAppStore();
 
   const circleOptions: DropdownOption[] = [
@@ -239,24 +326,24 @@ export const Ribbon = memo(function Ribbon() {
     { id: '3point', label: '3-Point' },
   ];
 
-  const arcOptions: DropdownOption[] = [
-    { id: '3point', label: '3-Point (Start, Arc, End)' },
-    { id: 'center-start-end', label: 'Center, Start, End' },
-  ];
-
   const tabs: { id: RibbonTab; label: string }[] = [
     { id: 'home', label: 'Home' },
     { id: 'modify', label: 'Modify' },
     { id: 'structural', label: 'Structural' },
     { id: 'view', label: 'View' },
     { id: 'tools', label: 'Tools' },
-    { id: 'help', label: 'Help' },
   ];
 
   return (
     <div className="ribbon-container">
       {/* Ribbon Tabs */}
       <div className="ribbon-tabs">
+        <button
+          className="ribbon-tab file"
+          onClick={onOpenBackstage}
+        >
+          File
+        </button>
         {tabs.map((tab) => (
           <button
             key={tab.id}
@@ -306,13 +393,14 @@ export const Ribbon = memo(function Ribbon() {
                 icon={<MousePointer2 size={24} />}
                 label="Select"
                 onClick={() => switchToolAndCancelCommand('select')}
-                active={activeTool === 'select' && !activeCommandName}
+                active={activeTool === 'select'}
+                shortcut="MD"
               />
               <RibbonButton
                 icon={<Hand size={24} />}
                 label="Pan"
                 onClick={() => switchToolAndCancelCommand('pan')}
-                active={activeTool === 'pan' && !activeCommandName}
+                active={activeTool === 'pan'}
               />
               <RibbonButtonStack>
                 <RibbonSmallButton
@@ -334,60 +422,79 @@ export const Ribbon = memo(function Ribbon() {
                 icon={<LineIcon size={24} />}
                 label="Line"
                 onClick={() => switchToDrawingTool('line')}
-                active={activeTool === 'line' && !activeCommandName}
+                active={activeTool === 'line'}
+                shortcut="LI"
               />
               <RibbonDropdownButton
                 icon={<Square size={24} />}
                 label="Rectangle"
                 onClick={() => switchToDrawingTool('rectangle')}
-                active={activeTool === 'rectangle' && !activeCommandName}
+                active={activeTool === 'rectangle'}
                 options={rectangleOptions}
                 selectedOption={rectangleMode}
                 onOptionSelect={(mode) => setRectangleMode(mode as 'corner' | 'center' | '3point')}
+                shortcut="RC"
               />
               <RibbonDropdownButton
                 icon={<Circle size={24} />}
                 label="Circle"
                 onClick={() => switchToDrawingTool('circle')}
-                active={activeTool === 'circle' && !activeCommandName}
+                active={activeTool === 'circle'}
                 options={circleOptions}
                 selectedOption={circleMode}
                 onOptionSelect={(mode) => setCircleMode(mode as 'center-radius' | 'center-diameter' | '2point' | '3point')}
-              />
-              <RibbonDropdownButton
-                icon={<ArcIcon size={24} />}
-                label="Arc"
-                onClick={() => switchToDrawingTool('arc')}
-                active={activeTool === 'arc' && !activeCommandName}
-                options={arcOptions}
-                selectedOption={arcMode}
-                onOptionSelect={(mode) => setArcMode(mode as '3point' | 'center-start-end')}
+                shortcut="CI"
               />
               <RibbonButtonStack>
+                <RibbonSmallButton
+                  icon={<ArcIcon size={14} />}
+                  label="Arc"
+                  onClick={() => switchToDrawingTool('arc')}
+                  active={activeTool === 'arc'}
+                  shortcut="AR"
+                />
                 <RibbonSmallButton
                   icon={<PolylineIcon size={14} />}
                   label="Polyline"
                   onClick={() => switchToDrawingTool('polyline')}
-                  active={activeTool === 'polyline' && !activeCommandName}
+                  active={activeTool === 'polyline'}
+                  shortcut="PL"
                 />
                 <RibbonSmallButton
                   icon={<EllipseIcon size={14} />}
                   label="Ellipse"
                   onClick={() => switchToDrawingTool('ellipse')}
-                  active={activeTool === 'ellipse' && !activeCommandName}
+                  active={activeTool === 'ellipse'}
+                  shortcut="EL"
                 />
+              </RibbonButtonStack>
+              <RibbonButtonStack>
                 <RibbonSmallButton
                   icon={<SplineIcon size={14} />}
                   label="Spline"
                   onClick={() => switchToDrawingTool('spline')}
-                  active={activeTool === 'spline' && !activeCommandName}
+                  active={activeTool === 'spline'}
+                  shortcut="SP"
+                />
+                <RibbonSmallButton
+                  icon={<HatchIcon size={14} />}
+                  label="Hatch"
+                  onClick={() => switchToDrawingTool('hatch')}
+                  active={activeTool === 'hatch'}
+                />
+                <RibbonSmallButton
+                  icon={<DivideIcon size={14} />}
+                  label="Divide"
+                  onClick={() => {}}
+                  disabled={true}
                 />
               </RibbonButtonStack>
               <RibbonButton
                 icon={<Type size={24} />}
                 label="Text"
                 onClick={() => switchToDrawingTool('text')}
-                active={activeTool === 'text' && !activeCommandName}
+                active={activeTool === 'text'}
+                shortcut="TX"
               />
             </RibbonGroup>
 
@@ -400,7 +507,8 @@ export const Ribbon = memo(function Ribbon() {
                   setDimensionMode('aligned');
                   switchToDrawingTool('dimension');
                 }}
-                active={activeTool === 'dimension' && dimensionMode === 'aligned' && !activeCommandName}
+                active={activeTool === 'dimension' && dimensionMode === 'aligned'}
+                shortcut="DI"
               />
               <RibbonButtonStack>
                 <RibbonSmallButton
@@ -410,7 +518,8 @@ export const Ribbon = memo(function Ribbon() {
                     setDimensionMode('linear');
                     switchToDrawingTool('dimension');
                   }}
-                  active={activeTool === 'dimension' && dimensionMode === 'linear' && !activeCommandName}
+                  active={activeTool === 'dimension' && dimensionMode === 'linear'}
+                  shortcut="DL"
                 />
                 <RibbonSmallButton
                   icon={<AngularDimensionIcon size={14} />}
@@ -419,7 +528,8 @@ export const Ribbon = memo(function Ribbon() {
                     setDimensionMode('angular');
                     switchToDrawingTool('dimension');
                   }}
-                  active={activeTool === 'dimension' && dimensionMode === 'angular' && !activeCommandName}
+                  active={activeTool === 'dimension' && dimensionMode === 'angular'}
+                  shortcut="DA"
                 />
               </RibbonButtonStack>
               <RibbonButtonStack>
@@ -430,7 +540,8 @@ export const Ribbon = memo(function Ribbon() {
                     setDimensionMode('radius');
                     switchToDrawingTool('dimension');
                   }}
-                  active={activeTool === 'dimension' && dimensionMode === 'radius' && !activeCommandName}
+                  active={activeTool === 'dimension' && dimensionMode === 'radius'}
+                  shortcut="DR"
                 />
                 <RibbonSmallButton
                   icon={<DiameterDimensionIcon size={14} />}
@@ -439,7 +550,28 @@ export const Ribbon = memo(function Ribbon() {
                     setDimensionMode('diameter');
                     switchToDrawingTool('dimension');
                   }}
-                  active={activeTool === 'dimension' && dimensionMode === 'diameter' && !activeCommandName}
+                  active={activeTool === 'dimension' && dimensionMode === 'diameter'}
+                  shortcut="DD"
+                />
+              </RibbonButtonStack>
+              <RibbonButtonStack>
+                <RibbonSmallButton
+                  icon={<LeaderIcon size={14} />}
+                  label="Leader"
+                  onClick={() => {}}
+                  disabled={true}
+                />
+                <RibbonSmallButton
+                  icon={<TableIcon size={14} />}
+                  label="Table"
+                  onClick={() => {}}
+                  disabled={true}
+                />
+                <RibbonSmallButton
+                  icon={<CloudIcon size={14} />}
+                  label="Cloud"
+                  onClick={() => {}}
+                  disabled={true}
                 />
               </RibbonButtonStack>
             </RibbonGroup>
@@ -450,42 +582,45 @@ export const Ribbon = memo(function Ribbon() {
                 <RibbonSmallButton
                   icon={<ArrowRight size={14} />}
                   label="Move"
-                  onClick={() => setPendingCommand('MOVE')}
-                  active={activeCommandName === 'MOVE'}
+                  onClick={() => switchToolAndCancelCommand('move')}
+                  active={activeTool === 'move'}
+                  shortcut="MV"
                 />
                 <RibbonSmallButton
                   icon={<Copy size={14} />}
                   label="Copy"
-                  onClick={() => setPendingCommand('COPY')}
-                  active={activeCommandName === 'COPY'}
+                  onClick={() => switchToolAndCancelCommand('copy')}
+                  active={activeTool === 'copy'}
+                  shortcut="CO"
                 />
                 <RibbonSmallButton
                   icon={<RotateCw size={14} />}
                   label="Rotate"
-                  onClick={() => setPendingCommand('ROTATE')}
-                  active={activeCommandName === 'ROTATE'}
+                  onClick={() => switchToolAndCancelCommand('rotate')}
+                  active={activeTool === 'rotate'}
+                  shortcut="RO"
                 />
               </RibbonButtonStack>
               <RibbonButtonStack>
                 <RibbonSmallButton
                   icon={<FlipHorizontal size={14} />}
                   label="Mirror"
-                  onClick={() => setPendingCommand('MIRROR')}
-                  active={activeCommandName === 'MIRROR'}
+                  onClick={() => switchToolAndCancelCommand('mirror')}
+                  active={activeTool === 'mirror'}
+                  shortcut="MM"
                 />
                 <RibbonSmallButton
                   icon={<ArrayIcon size={14} />}
                   label="Array"
-                  onClick={() => setPendingCommand('ARRAY')}
-                  active={activeCommandName === 'ARRAY'}
-                  disabled={true}
+                  onClick={() => switchToolAndCancelCommand('array')}
+                  active={activeTool === 'array'}
                 />
                 <RibbonSmallButton
                   icon={<ScaleIcon size={14} />}
                   label="Scale"
-                  onClick={() => setPendingCommand('SCALE')}
-                  active={activeCommandName === 'SCALE'}
-                  disabled={true}
+                  onClick={() => switchToolAndCancelCommand('scale')}
+                  active={activeTool === 'scale'}
+                  shortcut="RE"
                 />
               </RibbonButtonStack>
             </RibbonGroup>
@@ -494,55 +629,88 @@ export const Ribbon = memo(function Ribbon() {
             <RibbonGroup label="Edit">
               <RibbonButtonStack>
                 <RibbonSmallButton
-                  icon={<OffsetIcon size={14} />}
-                  label="Offset"
-                  onClick={() => setPendingCommand('OFFSET')}
-                  active={activeCommandName === 'OFFSET'}
-                  disabled={true}
-                />
-                <RibbonSmallButton
                   icon={<Scissors size={14} />}
                   label="Trim"
-                  onClick={() => setPendingCommand('TRIM')}
-                  active={activeCommandName === 'TRIM'}
+                  onClick={() => {}}
                   disabled={true}
                 />
                 <RibbonSmallButton
                   icon={<ExtendIcon size={14} />}
                   label="Extend"
-                  onClick={() => setPendingCommand('EXTEND')}
-                  active={activeCommandName === 'EXTEND'}
+                  onClick={() => {}}
+                  disabled={true}
+                />
+                <RibbonSmallButton
+                  icon={<OffsetIcon size={14} />}
+                  label="Offset"
+                  onClick={() => {}}
                   disabled={true}
                 />
               </RibbonButtonStack>
               <RibbonButtonStack>
                 <RibbonSmallButton
-                  icon={<SplitIcon size={14} />}
-                  label="Split"
-                  onClick={() => setPendingCommand('SPLIT')}
-                  active={activeCommandName === 'SPLIT'}
-                  disabled={true}
-                />
-                <RibbonSmallButton
                   icon={<FilletIcon size={14} />}
                   label="Fillet"
-                  onClick={() => setPendingCommand('FILLET')}
-                  active={activeCommandName === 'FILLET'}
+                  onClick={() => {}}
                   disabled={true}
                 />
                 <RibbonSmallButton
                   icon={<ChamferIcon size={14} />}
                   label="Chamfer"
-                  onClick={() => setPendingCommand('CHAMFER')}
-                  active={activeCommandName === 'CHAMFER'}
+                  onClick={() => switchToolAndCancelCommand('chamfer')}
+                  active={activeTool === 'chamfer'}
+                />
+                <RibbonSmallButton
+                  icon={<SplitIcon size={14} />}
+                  label="Split"
+                  onClick={() => {}}
+                  disabled={true}
+                />
+              </RibbonButtonStack>
+              <RibbonButtonStack>
+                <RibbonSmallButton
+                  icon={<BreakIcon size={14} />}
+                  label="Break"
+                  onClick={() => {}}
+                  disabled={true}
+                />
+                <RibbonSmallButton
+                  icon={<JoinIcon size={14} />}
+                  label="Join"
+                  onClick={() => {}}
+                  disabled={true}
+                />
+                <RibbonSmallButton
+                  icon={<ExplodeIcon size={14} />}
+                  label="Explode"
+                  onClick={() => {}}
+                  disabled={true}
+                />
+              </RibbonButtonStack>
+              <RibbonButtonStack>
+                <RibbonSmallButton
+                  icon={<StretchIcon size={14} />}
+                  label="Stretch"
+                  onClick={() => {}}
+                  disabled={true}
+                />
+                <RibbonSmallButton
+                  icon={<LengthenIcon size={14} />}
+                  label="Lengthen"
+                  onClick={() => {}}
+                  disabled={true}
+                />
+                <RibbonSmallButton
+                  icon={<AlignIcon size={14} />}
+                  label="Align"
+                  onClick={() => {}}
                   disabled={true}
                 />
               </RibbonButtonStack>
               <RibbonSmallButton
-                icon={<AlignIcon size={14} />}
-                label="Align"
-                onClick={() => setPendingCommand('ALIGN')}
-                active={activeCommandName === 'ALIGN'}
+                icon={<PinIcon size={14} />}
+                label="Pin"
+                onClick={() => {}}
                 disabled={true}
               />
             </RibbonGroup>
@@ -556,8 +724,9 @@ export const Ribbon = memo(function Ribbon() {
               <RibbonButton
                 icon={<FilledRegionIcon size={24} />}
                 label="Filled Region"
-                onClick={() => {}}
-                disabled={true}
+                onClick={() => switchToolAndCancelCommand('hatch')}
+                disabled={false}
+                active={activeTool === 'hatch'}
               />
               <RibbonButton
                 icon={<InsulationIcon size={24} />}
@@ -606,7 +775,7 @@ export const Ribbon = memo(function Ribbon() {
                 icon={<Hand size={24} />}
                 label="Pan"
                 onClick={() => switchToolAndCancelCommand('pan')}
-                active={activeTool === 'pan' && !activeCommandName}
+                active={activeTool === 'pan'}
               />
             </RibbonGroup>
 
@@ -666,23 +835,6 @@ export const Ribbon = memo(function Ribbon() {
           </div>
         </div>
 
-        {/* Help Tab */}
-        <div className={`ribbon-content ${activeTab === 'help' ? 'active' : ''}`}>
-          <div className="ribbon-groups">
-            <RibbonGroup label="Information">
-              <RibbonButton
-                icon={<Keyboard size={24} />}
-                label="Keyboard Shortcuts"
-                onClick={() => console.log('Shortcuts')}
-              />
-              <RibbonButton
-                icon={<Info size={24} />}
-                label="About"
-                onClick={() => setAboutDialogOpen(true)}
-              />
-            </RibbonGroup>
-          </div>
-        </div>
       </div>
     </div>
   );

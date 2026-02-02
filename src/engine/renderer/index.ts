@@ -33,7 +33,7 @@ export { ViewportRenderer } from './sheet/ViewportRenderer';
 export { TitleBlockRenderer } from './sheet/TitleBlockRenderer';
 
 // Mode renderers (main orchestrators)
-export { DraftRenderer } from './modes/DraftRenderer';
-export type { DraftRenderOptions } from './modes/DraftRenderer';
+export { DraftRenderer } from './modes/DrawingRenderer';
+export type { DraftRenderOptions } from './modes/DrawingRenderer';
 export { SheetRenderer } from './modes/SheetRenderer';
 export type { SheetRenderOptions } from './modes/SheetRenderer';

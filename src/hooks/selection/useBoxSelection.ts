@@ -5,8 +5,8 @@
 import { useCallback, useRef } from 'react';
 import { useAppStore, type SelectionBox } from '../../state/appStore';
 import type { Point, Shape } from '../../types/geometry';
-import { getShapeBounds } from '../../utils/geometryUtils';
-import { screenToWorld } from '../../utils/geometryUtils';
+import { getShapeBounds } from '../../engine/geometry/GeometryUtils';
+import { screenToWorld } from '../../engine/geometry/GeometryUtils';
 
 /**
  * Test if a line segment intersects an axis-aligned rectangle.
@@ -57,19 +57,15 @@ function getShapeEdges(shape: Shape): Edge[] {
       return [{ x1: shape.start.x, y1: shape.start.y, x2: shape.end.x, y2: shape.end.y }];
 
     case 'rectangle': {
-      const { topLeft, width, height, rotation } = shape;
-      const cx = topLeft.x + width / 2;
-      const cy = topLeft.y + height / 2;
+      const { topLeft: tl, width, height, rotation } = shape;
       const cos = Math.cos(rotation);
       const sin = Math.sin(rotation);
-      const hw = width / 2;
-      const hh = height / 2;
-      // 4 corners relative to center, rotated
+      // 4 corners rotated around topLeft
       const corners = [
-        { x: cx + (-hw) * cos - (-hh) * sin, y: cy + (-hw) * sin + (-hh) * cos },
-        { x: cx + ( hw) * cos - (-hh) * sin, y: cy + ( hw) * sin + (-hh) * cos },
-        { x: cx + ( hw) * cos - ( hh) * sin, y: cy + ( hw) * sin + ( hh) * cos },
-        { x: cx + (-hw) * cos - ( hh) * sin, y: cy + (-hw) * sin + ( hh) * cos },
+        { x: tl.x, y: tl.y },
+        { x: tl.x + width * cos, y: tl.y + width * sin },
+        { x: tl.x + width * cos - height * sin, y: tl.y + width * sin + height * cos },
+        { x: tl.x - height * sin, y: tl.y + height * cos },
       ];
       return [
         { x1: corners[0].x, y1: corners[0].y, x2: corners[1].x, y2: corners[1].y },
@@ -212,9 +208,6 @@ export function useBoxSelection() {
     activeTool,
     selectShapes,
     setSelectionBox,
-    hasActiveModifyCommand,
-    commandIsSelecting,
-    setPendingCommandSelection,
     editorMode,
     activeDrawingId,
   } = useAppStore();
@@ -240,9 +233,9 @@ export function useBoxSelection() {
     (hasShapeAtPoint: boolean): boolean => {
       if (editorMode !== 'drawing') return false;
       if (hasShapeAtPoint) return false;
-      return activeTool === 'select' || (hasActiveModifyCommand && commandIsSelecting);
+      return activeTool === 'select';
     },
-    [editorMode, activeTool, hasActiveModifyCommand, commandIsSelecting]
+    [editorMode, activeTool]
   );
 
   /**
@@ -288,13 +281,24 @@ export function useBoxSelection() {
         if (!bounds) continue;
 
         if (box.mode === 'window') {
-          // Window selection: shape must be completely inside
-          if (
-            bounds.minX >= minX &&
-            bounds.maxX <= maxX &&
-            bounds.minY >= minY &&
-            bounds.maxY <= maxY
-          ) {
+          // Window selection: all geometry must be inside the box
+          // Use edge decomposition for precise check on rotated shapes
+          const edges = getShapeEdges(shape);
+          let allInside = true;
+          if (edges.length > 0) {
+            for (const edge of edges) {
+              if (edge.x1 < minX || edge.x1 > maxX || edge.y1 < minY || edge.y1 > maxY ||
+                  edge.x2 < minX || edge.x2 > maxX || edge.y2 < minY || edge.y2 > maxY) {
+                allInside = false;
+                break;
+              }
+            }
+          } else {
+            // Fallback to bounding box
+            allInside = bounds.minX >= minX && bounds.maxX <= maxX &&
+                        bounds.minY >= minY && bounds.maxY <= maxY;
+          }
+          if (allInside) {
             selectedIds.push(shape.id);
           }
         } else {
@@ -336,12 +340,7 @@ export function useBoxSelection() {
 
         const selectedIds = getShapesInSelectionBox(box);
 
-        // If in command selection phase, send selection to command system
-        if (hasActiveModifyCommand && commandIsSelecting) {
-          if (selectedIds.length > 0) {
-            setPendingCommandSelection(selectedIds);
-          }
-        } else if (shiftKey) {
+        if (shiftKey) {
           // Add to current selection
           const currentSelection = useAppStore.getState().selectedShapeIds;
           const newSelection = [...new Set([...currentSelection, ...selectedIds])];
@@ -361,7 +360,7 @@ export function useBoxSelection() {
 
       return wasBoxSelection;
     },
-    [getShapesInSelectionBox, selectShapes, setSelectionBox, hasActiveModifyCommand, commandIsSelecting, setPendingCommandSelection]
+    [getShapesInSelectionBox, selectShapes, setSelectionBox]
   );
 
   /**

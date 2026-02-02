@@ -18,7 +18,7 @@ import {
   formatDimensionValue,
   distance,
   angleBetweenPoints,
-} from '../../utils/dimensionUtils';
+} from '../../engine/geometry/DimensionUtils';
 import { findShapeAtPoint } from '../../services/selectionService';
 import type { Shape } from '../../types/geometry';
 
@@ -361,6 +361,54 @@ export function useDimensionDrawing() {
   /**
    * Handle dimension drawing click (dispatch to appropriate handler)
    */
+  /**
+   * Handle click for arc-length dimension (2 clicks)
+   * Click 1: Click on an arc shape
+   * Click 2: Position the dimension line
+   */
+  const handleArcLengthClick = useCallback(
+    (snappedPos: Point, _snapInfo?: SnapPoint) => {
+      if (drawingPoints.length === 0) {
+        // Click 1: detect arc at click point
+        const shape = findShapeAtPoint(snappedPos, shapes);
+        if (shape && shape.type === 'arc') {
+          const arcShape = shape as { center: Point; radius: number; startAngle: number; endAngle: number };
+          detectedCircleRef.current = { center: arcShape.center, radius: arcShape.radius };
+          addDrawingPoint(arcShape.center);
+          referencesRef.current = [{
+            shapeId: shape.id,
+            snapType: 'nearest',
+          }];
+          // We'll store arcLength info in a ref or compute it again later
+        }
+      } else {
+        // Click 2: position the dimension
+        const circleData = detectedCircleRef.current;
+        if (circleData) {
+          const { center, radius } = circleData;
+          const angle = Math.atan2(snappedPos.y - center.y, snappedPos.x - center.x);
+          const edgePoint: Point = {
+            x: center.x + radius * Math.cos(angle),
+            y: center.y + radius * Math.sin(angle),
+          };
+
+          createDimension(
+            'arc-length',
+            [center, edgePoint],
+            0,
+            referencesRef.current
+          );
+        }
+
+        clearDrawingPoints();
+        setDrawingPreview(null);
+        referencesRef.current = [];
+        detectedCircleRef.current = null;
+      }
+    },
+    [drawingPoints, addDrawingPoint, clearDrawingPoints, setDrawingPreview, createDimension, shapes]
+  );
+
   const handleDimensionClick = useCallback(
     (snappedPos: Point, snapInfo?: SnapPoint): boolean => {
       switch (dimensionMode) {
@@ -375,11 +423,14 @@ export function useDimensionDrawing() {
         case 'diameter':
           handleRadiusClick(snappedPos, snapInfo);
           return true;
+        case 'arc-length':
+          handleArcLengthClick(snappedPos, snapInfo);
+          return true;
         default:
           return false;
       }
     },
-    [dimensionMode, handleAlignedClick, handleAngularClick, handleRadiusClick]
+    [dimensionMode, handleAlignedClick, handleAngularClick, handleRadiusClick, handleArcLengthClick]
   );
 
   /**
@@ -513,6 +564,7 @@ export function useDimensionDrawing() {
           break;
         case 'radius':
         case 'diameter':
+        case 'arc-length':
           updateRadiusPreview(snappedPos);
           break;
       }
@@ -556,6 +608,10 @@ export function useDimensionDrawing() {
       case 'diameter':
         if (pointCount === 0) return 'Click on a circle or arc';
         if (pointCount === 1) return 'Click to position diameter line';
+        break;
+      case 'arc-length':
+        if (pointCount === 0) return 'Click on an arc';
+        if (pointCount === 1) return 'Click to position arc length dimension';
         break;
     }
     return '';

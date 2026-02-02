@@ -55,15 +55,20 @@ import type { DimensionType } from '../../types/dimension';
 // Preview shape while drawing (before mouse up)
 export type DrawingPreview =
   | { type: 'line'; start: Point; end: Point }
-  | { type: 'rectangle'; start: Point; end: Point }
+  | { type: 'rectangle'; start: Point; end: Point; cornerRadius?: number }
   | { type: 'rotatedRectangle'; corners: [Point, Point, Point, Point] }
   | { type: 'circle'; center: Point; radius: number }
   | { type: 'ellipse'; center: Point; radiusX: number; radiusY: number; rotation: number }
   | { type: 'arc'; center: Point; radius: number; startAngle: number; endAngle: number }
-  | { type: 'polyline'; points: Point[]; currentPoint: Point }
+  | { type: 'polyline'; points: Point[]; currentPoint: Point; bulges?: number[]; currentBulge?: number }
   | { type: 'spline'; points: Point[]; currentPoint: Point }
   | { type: 'text'; position: Point }
   | { type: 'dimension'; dimensionType: DimensionType; points: Point[]; dimensionLineOffset: number; linearDirection?: 'horizontal' | 'vertical'; value: string }
+  | { type: 'hatch'; points: Point[]; currentPoint: Point }
+  | { type: 'modifyPreview'; shapes: Shape[] }
+  | { type: 'mirrorAxis'; start: Point; end: Point; shapes: Shape[] }
+  | { type: 'rotateGuide'; center: Point; startRay?: Point; endRay: Point; angle?: number; shapes: Shape[] }
+  | { type: 'scaleGuide'; origin: Point; refPoint?: Point; currentPoint: Point; factor?: number; shapes: Shape[] }
   | null;
 
 // Default text style for new text shapes
@@ -258,6 +263,17 @@ export const getShapeBounds = (shape: Shape): { minX: number; minY: number; maxX
         maxX: shape.position.x,
         maxY: shape.position.y,
       };
+    case 'hatch': {
+      if (shape.points.length === 0) return null;
+      const hxs = shape.points.map(p => p.x);
+      const hys = shape.points.map(p => p.y);
+      return {
+        minX: Math.min(...hxs),
+        minY: Math.min(...hys),
+        maxX: Math.max(...hxs),
+        maxY: Math.max(...hys),
+      };
+    }
     case 'dimension':
       if (shape.points.length === 0) return null;
       const dimXs = shape.points.map(p => p.x);

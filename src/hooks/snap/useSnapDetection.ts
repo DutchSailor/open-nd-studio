@@ -5,8 +5,8 @@
 import { useCallback } from 'react';
 import { useAppStore } from '../../state/appStore';
 import type { Point, SnapPoint } from '../../types/geometry';
-import { findNearestSnapPoint } from '../../utils/snapUtils';
-import { applyTracking, type TrackingSettings } from '../../core/geometry/Tracking';
+import { findNearestSnapPoint } from '../../engine/geometry/SnapUtils';
+import { applyTracking, type TrackingSettings } from '../../engine/geometry/Tracking';
 
 export interface SnapResult {
   point: Point;

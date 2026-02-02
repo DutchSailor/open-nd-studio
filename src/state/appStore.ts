@@ -5,7 +5,7 @@
  * continue to work. Per-document state is delegated to the active document store
  * via the documentStore registry. Components can also use useDocStore() directly.
  *
- * Global state: tool modes, snap settings, command state, dialogs, document management
+ * Global state: tool modes, snap settings, dialogs, document management
  * Per-doc state (via facade): shapes, layers, drawings, sheets, selection, viewport,
  *   history, boundary, viewport editing, annotations, drawing placement, file info
  */
@@ -29,8 +29,6 @@ import {
   type SnapActions,
   type SelectionState,
   type SelectionActions,
-  type CommandState,
-  type CommandActions,
   type HistoryState,
   type HistoryActions,
   type UIState,
@@ -50,7 +48,6 @@ import {
   initialToolState,
   initialSnapState,
   initialSelectionState,
-  initialCommandState,
   initialHistoryState,
   initialUIState,
   initialBoundaryState,
@@ -64,7 +61,6 @@ import {
   createToolSlice,
   createSnapSlice,
   createSelectionSlice,
-  createCommandSlice,
   createHistorySlice,
   createUISlice,
   createBoundarySlice,
@@ -260,7 +256,6 @@ export type AppState =
   & ToolState
   & SnapState
   & SelectionState
-  & CommandState
   & HistoryState
   & UIState
   & BoundaryState
@@ -272,7 +267,6 @@ export type AppState =
   & ToolActions
   & SnapActions
   & SelectionActions
-  & CommandActions
   & HistoryActions
   & UIActions
   & BoundaryActions
@@ -293,7 +287,6 @@ const initialState = {
   ...initialToolState,
   ...initialSnapState,
   ...initialSelectionState,
-  ...initialCommandState,
   ...initialHistoryState,
   ...initialUIState,
   ...initialBoundaryState,
@@ -331,7 +324,6 @@ export const useAppStore = create<AppState>()(
       ...createToolSlice(set as any, get as any),
       ...createSnapSlice(set as any, get as any),
       ...createSelectionSlice(set as any, get as any),
-      ...createCommandSlice(set as any, get as any),
       ...createHistorySlice(set as any, get as any),
       ...createUISlice(set as any, get as any),
       ...createBoundarySlice(set as any, get as any),
@@ -344,19 +336,11 @@ export const useAppStore = create<AppState>()(
       // ========================================================================
 
       switchToDrawingTool: (tool: ToolState['activeTool']) => {
-        const state = get();
-        if (state.hasActiveModifyCommand) {
-          state.requestCommandCancel();
-        }
-        state.setActiveTool(tool);
+        get().setActiveTool(tool);
       },
 
       switchToolAndCancelCommand: (tool: ToolState['activeTool']) => {
-        const state = get();
-        if (state.hasActiveModifyCommand) {
-          state.requestCommandCancel();
-        }
-        state.setActiveTool(tool);
+        get().setActiveTool(tool);
       },
 
       // ========================================================================
@@ -377,8 +361,7 @@ export const useAppStore = create<AppState>()(
           if (untitledCount > 0) name = `Untitled ${untitledCount + 1}`;
         }
 
-        // Cancel any active drawing/command
-        if (appState.hasActiveModifyCommand) appState.requestCommandCancel();
+        // Cancel any active drawing
         appState.clearDrawingPoints();
 
         // Save current document state before switching
@@ -467,7 +450,6 @@ export const useAppStore = create<AppState>()(
         if (!appState.documentOrder.includes(id)) return;
         if (id === appState.activeDocumentId) return;
 
-        if (appState.hasActiveModifyCommand) appState.requestCommandCancel();
         appState.clearDrawingPoints();
 
         // Save current document state

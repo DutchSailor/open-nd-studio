@@ -50,15 +50,6 @@ export {
   createSelectionSlice,
 } from './selectionSlice';
 
-// Command Slice
-export {
-  type CommandState,
-  type CommandActions,
-  type CommandSlice,
-  initialCommandState,
-  createCommandSlice,
-} from './commandSlice';
-
 // History Slice
 export {
   type HistoryEntry,

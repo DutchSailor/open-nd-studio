@@ -13,7 +13,6 @@ import { SelectionApi } from './selection';
 import { ViewportApi } from './viewport';
 import { DocumentApi } from './document';
 import { ApplicationApi } from './application';
-import { CommandsApi } from './commands';
 import { DimensionsApi } from './dimensions';
 import { SnapApi, GridApi } from './snap';
 import { StylesApi } from './styles';
@@ -30,7 +29,6 @@ export class CadApi {
   readonly viewport: ViewportApi;
   readonly document: DocumentApi;
   readonly app: ApplicationApi;
-  readonly commands: CommandsApi;
   readonly dimensions: DimensionsApi;
   readonly snap: SnapApi;
   readonly grid: GridApi;
@@ -57,7 +55,6 @@ export class CadApi {
     this.viewport = new ViewportApi(getState);
     this.document = new DocumentApi(getState, this.transactions, this.events);
     this.app = new ApplicationApi(getState, this.events);
-    this.commands = new CommandsApi(getState, this.events, this.transactions);
     this.dimensions = new DimensionsApi(getState, this.transactions, this.entities);
     this.snap = new SnapApi(getState);
     this.grid = new GridApi(getState);

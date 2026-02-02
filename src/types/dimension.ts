@@ -17,7 +17,7 @@ import type { Point, SnapType, BaseShape } from './geometry';
 /**
  * Types of dimensions supported
  */
-export type DimensionType = 'linear' | 'aligned' | 'angular' | 'radius' | 'diameter';
+export type DimensionType = 'linear' | 'aligned' | 'angular' | 'radius' | 'diameter' | 'arc-length';
 
 /**
  * Arrow/tick mark types for dimension terminators
@@ -138,6 +138,9 @@ export interface DimensionShape extends BaseShape {
 
   /** Dimension-specific styling */
   dimensionStyle: DimensionStyle;
+
+  /** Whether this dimension constrains the measured geometry */
+  dimensionLocked?: boolean;
 }
 
 // ============================================================================

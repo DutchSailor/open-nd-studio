@@ -70,7 +70,7 @@ export type SnapSlice = SnapState & SnapActions;
 
 export const initialSnapState: SnapState = {
   gridSize: 10,
-  gridVisible: true,
+  gridVisible: false,
   snapEnabled: true,
   activeSnaps: ['grid', 'endpoint', 'midpoint', 'center', 'intersection'],
   snapTolerance: 10,

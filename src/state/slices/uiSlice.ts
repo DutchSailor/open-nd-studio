@@ -10,6 +10,51 @@ import { generateId, DEFAULT_DRAWING_BOUNDARY } from './types';
 type Draft = Drawing;
 
 // ============================================================================
+// Print Settings Types
+// ============================================================================
+
+export type PrintRange = 'currentView' | 'visiblePortion' | 'selectedSheets';
+export type PrintAppearance = 'color' | 'grayscale' | 'blackLines';
+export type RasterQuality = 'draft' | 'normal' | 'high' | 'presentation';
+
+export interface PrintSettings {
+  paperSize: string;
+  orientation: 'portrait' | 'landscape';
+  plotArea: 'extents' | 'display' | 'window';
+  scale: string;
+  customScale?: number;
+  centerPlot: boolean;
+  offsetX: number;
+  offsetY: number;
+  margins: { top: number; right: number; bottom: number; left: number };
+  plotLineweights: boolean;
+  appearance: PrintAppearance;
+  rasterQuality: RasterQuality;
+  copies: number;
+  printRange: PrintRange;
+  selectedSheetIds: string[];
+  combineSheets: boolean;
+}
+
+export const DEFAULT_PRINT_SETTINGS: PrintSettings = {
+  paperSize: 'A4',
+  orientation: 'landscape',
+  plotArea: 'extents',
+  scale: 'Fit',
+  centerPlot: true,
+  offsetX: 0,
+  offsetY: 0,
+  margins: { top: 10, right: 10, bottom: 10, left: 10 },
+  plotLineweights: true,
+  appearance: 'color',
+  rasterQuality: 'normal',
+  copies: 1,
+  printRange: 'currentView',
+  selectedSheetIds: [],
+  combineSheets: true,
+};
+
+// ============================================================================
 // State Interface
 // ============================================================================
 
@@ -24,6 +69,10 @@ export interface UIState {
   currentFilePath: string | null;
   projectName: string;
   isModified: boolean;
+
+  // Print
+  printSettings: PrintSettings;
+  savedPrintPresets: Record<string, PrintSettings>;
 }
 
 // ============================================================================
@@ -38,6 +87,10 @@ export interface UIActions {
   setFilePath: (path: string | null) => void;
   setProjectName: (name: string) => void;
   setModified: (modified: boolean) => void;
+  setPrintSettings: (settings: Partial<PrintSettings>) => void;
+  savePrintPreset: (name: string) => void;
+  deletePrintPreset: (name: string) => void;
+  loadPrintPreset: (name: string) => void;
   newProject: () => void;
   loadProject: (data: {
     shapes: Shape[];
@@ -71,6 +124,8 @@ export const initialUIState: UIState = {
   currentFilePath: null,
   projectName: 'Untitled',
   isModified: false,
+  printSettings: { ...DEFAULT_PRINT_SETTINGS },
+  savedPrintPresets: {},
 };
 
 // ============================================================================
@@ -87,6 +142,8 @@ interface FullStore {
   currentFilePath: string | null;
   projectName: string;
   isModified: boolean;
+  printSettings: PrintSettings;
+  savedPrintPresets: Record<string, PrintSettings>;
 
   // Model state (needed for newProject/loadProject)
   drawings: Drawing[];
@@ -108,7 +165,6 @@ interface FullStore {
   // Tool state
   drawingPoints: any[];
   drawingPreview: any;
-  commandPreviewShapes: Shape[];
 
   // Snap state
   gridSize: number;
@@ -155,6 +211,29 @@ export const createUISlice = (
       state.isModified = modified;
     }),
 
+  setPrintSettings: (updates) =>
+    set((state) => {
+      Object.assign(state.printSettings, updates);
+    }),
+
+  savePrintPreset: (name) =>
+    set((state) => {
+      state.savedPrintPresets[name] = JSON.parse(JSON.stringify(state.printSettings));
+    }),
+
+  deletePrintPreset: (name) =>
+    set((state) => {
+      delete state.savedPrintPresets[name];
+    }),
+
+  loadPrintPreset: (name) =>
+    set((state) => {
+      const preset = state.savedPrintPresets[name];
+      if (preset) {
+        state.printSettings = JSON.parse(JSON.stringify(preset));
+      }
+    }),
+
   newProject: () =>
     set((state) => {
       // Create new default drawing
@@ -197,7 +276,6 @@ export const createUISlice = (
       state.isModified = false;
       state.drawingPoints = [];
       state.drawingPreview = null;
-      state.commandPreviewShapes = [];
     }),
 
   loadProject: (data, filePath, projectName) =>
@@ -286,6 +364,5 @@ export const createUISlice = (
       state.isModified = false;
       state.drawingPoints = [];
       state.drawingPreview = null;
-      state.commandPreviewShapes = [];
     }),
 });

@@ -5,8 +5,8 @@
  */
 
 import type { Point, Shape } from '../../types/geometry';
-import type { ShapeBounds } from '../../utils/geometryUtils';
-import { getShapeBounds } from '../../utils/geometryUtils';
+import type { ShapeBounds } from '../geometry/GeometryUtils';
+import { getShapeBounds } from '../geometry/GeometryUtils';
 
 export interface QuadTreeEntry {
   id: string;
