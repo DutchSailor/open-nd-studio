@@ -81,7 +81,7 @@ function getNearestPointOnLine(shape: LineShape, cursor: Point): SnapPoint[] {
 // Get perpendicular snap point from basePoint to line
 // This finds the point on the line where a perpendicular from basePoint would land
 // Only returns if such a point exists on the line segment
-function getPerpendicularToLine(shape: LineShape, cursor: Point, basePoint?: Point): SnapPoint[] {
+function getPerpendicularToLine(shape: LineShape, _cursor: Point, basePoint?: Point): SnapPoint[] {
   // Perpendicular snap only works when we have a base point (during drawing)
   if (!basePoint) return [];
 

@@ -854,12 +854,6 @@ export function parseDXF(
     return [code, value];
   };
 
-  const peek = (): [number, string] => {
-    const code = parseInt(lines[i]?.trim() ?? '0', 10);
-    const value = lines[i + 1]?.trim() ?? '';
-    return [code, value];
-  };
-
   // Advance to ENTITIES section
   while (i < lines.length) {
     const line = lines[i]?.trim();

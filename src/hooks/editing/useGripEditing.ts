@@ -9,7 +9,7 @@
 
 import { useCallback, useRef } from 'react';
 import { useAppStore } from '../../state/appStore';
-import type { Point, Shape, EllipseShape, TextShape, BeamShape, LineShape, PolylineShape } from '../../types/geometry';
+import type { Point, Shape, EllipseShape, TextShape, BeamShape, LineShape } from '../../types/geometry';
 import type { DimensionShape } from '../../types/dimension';
 import type { ParametricShape } from '../../types/parametric';
 import { updateParametricPosition } from '../../services/parametric/parametricService';

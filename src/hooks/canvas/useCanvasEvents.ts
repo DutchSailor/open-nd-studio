@@ -62,7 +62,6 @@ export function useCanvasEvents(canvasRef: React.RefObject<HTMLCanvasElement>) {
     insertProfile,
     setSectionPlacementPreview,
     pendingBeam,
-    clearPendingBeam,
     explodeParametricShapes,
     addShapes,
     selectedShapeIds,

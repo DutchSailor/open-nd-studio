@@ -23,7 +23,7 @@ interface SearchResult {
 export function FindReplaceDialog({ isOpen, onClose }: FindReplaceDialogProps) {
   const shapes = useAppStore(s => s.shapes);
   const updateShape = useAppStore(s => s.updateShape);
-  const setSelectedShapeIds = useAppStore(s => s.setSelectedShapeIds);
+  const selectShapes = useAppStore(s => s.selectShapes);
 
   const [findText, setFindText] = useState('');
   const [replaceText, setReplaceText] = useState('');
@@ -104,9 +104,9 @@ export function FindReplaceDialog({ isOpen, onClose }: FindReplaceDialogProps) {
 
     // Select first result
     if (newResults.length > 0) {
-      setSelectedShapeIds([newResults[0].shapeId]);
+      selectShapes([newResults[0].shapeId]);
     }
-  }, [findText, buildPattern, textShapes, setSelectedShapeIds]);
+  }, [findText, buildPattern, textShapes, selectShapes]);
 
   // Navigate to next/previous result
   const goToResult = useCallback((index: number) => {
@@ -114,9 +114,9 @@ export function FindReplaceDialog({ isOpen, onClose }: FindReplaceDialogProps) {
 
     const newIndex = ((index % results.length) + results.length) % results.length;
     setCurrentResultIndex(newIndex);
-    setSelectedShapeIds([results[newIndex].shapeId]);
+    selectShapes([results[newIndex].shapeId]);
     setMessage(`${newIndex + 1} of ${results.length}`);
-  }, [results, setSelectedShapeIds]);
+  }, [results, selectShapes]);
 
   // Replace current match
   const replaceCurrent = useCallback(() => {

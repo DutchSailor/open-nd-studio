@@ -1,6 +1,6 @@
 import { memo, useState, useRef, useEffect } from 'react';
 import { useAppStore } from '../../state/appStore';
-import type { LineStyle, Shape, TextAlignment, TextVerticalAlignment, HatchPatternType, BeamShape, BeamMaterial, BeamJustification, TextStyle, LeaderArrowType, LeaderAttachment, LeaderConfig, TextCase } from '../../types/geometry';
+import type { LineStyle, Shape, TextAlignment, TextVerticalAlignment, HatchPatternType, BeamShape, BeamMaterial, BeamJustification, LeaderArrowType, LeaderAttachment, LeaderConfig, TextCase } from '../../types/geometry';
 import type { ParametricShape, ProfileParametricShape } from '../../types/parametric';
 import type { DimensionShape, DimensionArrowType, DimensionTextPlacement } from '../../types/dimension';
 import { PROFILE_TEMPLATES } from '../../services/parametric/profileTemplates';
@@ -13,8 +13,7 @@ const inputClass = 'w-full bg-cad-bg border border-cad-border rounded px-2 py-1 
 const labelClass = 'block text-xs text-cad-text-dim mb-1';
 
 // Text Style Selector Component
-function TextStyleSelector({ shapeId, currentStyleId, onApplyStyle }: {
-  shapeId: string;
+function TextStyleSelector({ currentStyleId, onApplyStyle }: {
   currentStyleId?: string;
   onApplyStyle: (styleId: string) => void;
 }) {
@@ -588,7 +587,6 @@ function ShapeProperties({ shape, updateShape }: { shape: Shape; updateShape: (i
         <>
           {/* Text Style Selector */}
           <TextStyleSelector
-            shapeId={shape.id}
             currentStyleId={shape.textStyleId}
             onApplyStyle={(styleId) => applyTextStyleToShape(shape.id, styleId)}
           />
