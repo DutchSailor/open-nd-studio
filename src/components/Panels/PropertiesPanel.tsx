@@ -1,7 +1,8 @@
 import { memo, useState, useRef, useEffect } from 'react';
 import { useAppStore } from '../../state/appStore';
-import type { LineStyle, Shape, TextAlignment, TextVerticalAlignment, HatchPatternType } from '../../types/geometry';
+import type { LineStyle, Shape, TextAlignment, TextVerticalAlignment, HatchPatternType, BeamShape, BeamMaterial, BeamJustification, TextStyle, LeaderArrowType, LeaderAttachment, LeaderConfig, TextCase } from '../../types/geometry';
 import type { ParametricShape, ProfileParametricShape } from '../../types/parametric';
+import type { DimensionShape, DimensionArrowType, DimensionTextPlacement } from '../../types/dimension';
 import { PROFILE_TEMPLATES } from '../../services/parametric/profileTemplates';
 import { DrawingPropertiesPanel } from './DrawingPropertiesPanel';
 
@@ -10,6 +11,61 @@ const DEG2RAD = Math.PI / 180;
 
 const inputClass = 'w-full bg-cad-bg border border-cad-border rounded px-2 py-1 text-xs text-cad-text';
 const labelClass = 'block text-xs text-cad-text-dim mb-1';
+
+// Text Style Selector Component
+function TextStyleSelector({ shapeId, currentStyleId, onApplyStyle }: {
+  shapeId: string;
+  currentStyleId?: string;
+  onApplyStyle: (styleId: string) => void;
+}) {
+  const textStyles = useAppStore(s => s.textStyles) || [];
+
+  // Don't render if no styles available
+  if (textStyles.length === 0) {
+    return null;
+  }
+
+  const annotationStyles = textStyles.filter(s => !s.isModelText);
+  const modelStyles = textStyles.filter(s => s.isModelText);
+
+  return (
+    <div className="mb-3 p-2 bg-cad-bg rounded border border-cad-border">
+      <label className={labelClass}>Text Style</label>
+      <select
+        value={currentStyleId || ''}
+        onChange={(e) => {
+          if (e.target.value) {
+            onApplyStyle(e.target.value);
+          }
+        }}
+        className={inputClass}
+      >
+        <option value="">-- Custom --</option>
+        {annotationStyles.length > 0 && (
+          <optgroup label="Annotation Text">
+            {annotationStyles.map(style => (
+              <option key={style.id} value={style.id}>
+                {style.name} {style.isBuiltIn ? '' : '(Custom)'}
+              </option>
+            ))}
+          </optgroup>
+        )}
+        {modelStyles.length > 0 && (
+          <optgroup label="Model Text">
+            {modelStyles.map(style => (
+              <option key={style.id} value={style.id}>
+                {style.name} {style.isBuiltIn ? '' : '(Custom)'}
+              </option>
+            ))}
+          </optgroup>
+        )}
+      </select>
+      <div className="text-xs text-cad-text-dim mt-1">
+        Select a style to apply its formatting
+      </div>
+    </div>
+  );
+}
 
 function NumberField({ label, value, onChange, step = 1, min, max, readOnly }: {
   label: string; value: number; onChange: (v: number) => void;
@@ -258,6 +314,10 @@ function MultiSelectShapeProperties({
       const commonColor = getCommonValue(s => (s as typeof textShapes[0]).color);
       const commonAlignment = getCommonValue(s => (s as typeof textShapes[0]).alignment);
       const commonVerticalAlignment = getCommonValue(s => (s as typeof textShapes[0]).verticalAlignment);
+      const commonIsModelText = getCommonValue(s => (s as typeof textShapes[0]).isModelText ?? false);
+      const commonBackgroundMask = getCommonValue(s => (s as typeof textShapes[0]).backgroundMask ?? false);
+      const commonBackgroundColor = getCommonValue(s => (s as typeof textShapes[0]).backgroundColor);
+      const commonBackgroundPadding = getCommonValue(s => (s as typeof textShapes[0]).backgroundPadding);
 
       return (
         <>
@@ -322,6 +382,42 @@ function MultiSelectShapeProperties({
             ] as { value: TextVerticalAlignment; label: string }[]}
             onChange={(v) => updateAll({ verticalAlignment: v })}
           />
+
+          {/* Text Type Section */}
+          <div className="border-t border-cad-border mt-3 pt-3 mb-2">
+            <span className="text-xs text-cad-text font-medium">Text Type</span>
+          </div>
+          <CheckboxField
+            label="Model Text"
+            value={commonIsModelText ?? false}
+            onChange={(v) => updateAll({ isModelText: v })}
+          />
+
+          {/* Background Masking Section */}
+          <div className="border-t border-cad-border mt-3 pt-3 mb-2">
+            <span className="text-xs text-cad-text font-medium">Background</span>
+          </div>
+          <CheckboxField
+            label="Background Mask"
+            value={commonBackgroundMask ?? false}
+            onChange={(v) => updateAll({ backgroundMask: v })}
+          />
+          {commonBackgroundMask && (
+            <>
+              <ColorPalette
+                label="Background Color"
+                value={commonBackgroundColor ?? '#1a1a2e'}
+                onChange={(v) => updateAll({ backgroundColor: v })}
+              />
+              <NumberField
+                label="Padding"
+                value={commonBackgroundPadding ?? 0.5}
+                onChange={(v) => updateAll({ backgroundPadding: v })}
+                step={0.1}
+                min={0}
+              />
+            </>
+          )}
         </>
       );
     }
@@ -423,6 +519,59 @@ function MultiSelectShapeProperties({
       );
     }
 
+    case 'beam': {
+      const beamShapes = shapes as BeamShape[];
+      const commonMaterial = getCommonValue(s => (s as BeamShape).material);
+      const commonJustification = getCommonValue(s => (s as BeamShape).justification);
+      const commonFlangeWidth = getCommonValue(s => (s as BeamShape).flangeWidth);
+      const commonShowCenterline = getCommonValue(s => (s as BeamShape).showCenterline);
+      const commonShowLabel = getCommonValue(s => (s as BeamShape).showLabel);
+
+      return (
+        <>
+          <NumberField
+            label="Flange Width (mm)"
+            value={commonFlangeWidth ?? beamShapes[0].flangeWidth}
+            onChange={(v) => updateAll({ flangeWidth: v })}
+            step={1}
+            min={1}
+          />
+          <SelectField<BeamMaterial>
+            label="Material"
+            value={commonMaterial ?? 'steel'}
+            options={[
+              { value: 'steel', label: 'Steel' },
+              { value: 'concrete', label: 'Concrete' },
+              { value: 'timber', label: 'Timber' },
+            ]}
+            onChange={(v) => updateAll({ material: v })}
+          />
+          <SelectField<BeamJustification>
+            label="Justification"
+            value={commonJustification ?? 'center'}
+            options={[
+              { value: 'center', label: 'Center' },
+              { value: 'top', label: 'Top' },
+              { value: 'bottom', label: 'Bottom' },
+              { value: 'left', label: 'Left' },
+              { value: 'right', label: 'Right' },
+            ]}
+            onChange={(v) => updateAll({ justification: v })}
+          />
+          <CheckboxField
+            label="Show Centerline"
+            value={commonShowCenterline ?? true}
+            onChange={(v) => updateAll({ showCenterline: v })}
+          />
+          <CheckboxField
+            label="Show Label"
+            value={commonShowLabel ?? true}
+            onChange={(v) => updateAll({ showLabel: v })}
+          />
+        </>
+      );
+    }
+
     // For other shape types, no additional common properties to edit
     default:
       return null;
@@ -433,9 +582,17 @@ function ShapeProperties({ shape, updateShape }: { shape: Shape; updateShape: (i
   const update = (updates: Record<string, unknown>) => updateShape(shape.id, updates as Partial<Shape>);
 
   switch (shape.type) {
-    case 'text':
+    case 'text': {
+      const applyTextStyleToShape = useAppStore.getState().applyTextStyleToShape;
       return (
         <>
+          {/* Text Style Selector */}
+          <TextStyleSelector
+            shapeId={shape.id}
+            currentStyleId={shape.textStyleId}
+            onApplyStyle={(styleId) => applyTextStyleToShape(shape.id, styleId)}
+          />
+
           <div className="mb-2">
             <label className={labelClass}>Text</label>
             <textarea value={shape.text} rows={3}
@@ -449,6 +606,61 @@ function ShapeProperties({ shape, updateShape }: { shape: Shape; updateShape: (i
             <CheckboxField label="Bold" value={shape.bold} onChange={(v) => update({ bold: v })} />
             <CheckboxField label="Italic" value={shape.italic} onChange={(v) => update({ italic: v })} />
             <CheckboxField label="Underline" value={shape.underline} onChange={(v) => update({ underline: v })} />
+          </div>
+          <div className="mb-2 flex items-center gap-3">
+            <CheckboxField label="Strikethrough" value={shape.strikethrough ?? false} onChange={(v) => update({ strikethrough: v })} />
+          </div>
+
+          {/* Advanced Formatting Section */}
+          <div className="border-t border-cad-border mt-3 pt-3 mb-2">
+            <span className="text-xs text-cad-text font-medium">Advanced Formatting</span>
+          </div>
+          <SelectField<TextCase>
+            label="Text Case"
+            value={shape.textCase ?? 'none'}
+            options={[
+              { value: 'none', label: 'Normal' },
+              { value: 'uppercase', label: 'UPPERCASE' },
+              { value: 'lowercase', label: 'lowercase' },
+              { value: 'capitalize', label: 'Capitalize Each Word' },
+            ]}
+            onChange={(v) => update({ textCase: v })}
+          />
+          <NumberField
+            label="Letter Spacing"
+            value={shape.letterSpacing ?? 1}
+            onChange={(v) => update({ letterSpacing: v })}
+            step={0.05}
+            min={0.5}
+            max={3}
+          />
+          <NumberField
+            label="Width Factor"
+            value={shape.widthFactor ?? 1}
+            onChange={(v) => update({ widthFactor: v })}
+            step={0.1}
+            min={0.25}
+            max={4}
+          />
+          <NumberField
+            label="Oblique Angle (deg)"
+            value={shape.obliqueAngle ?? 0}
+            onChange={(v) => update({ obliqueAngle: v })}
+            step={1}
+            min={-45}
+            max={45}
+          />
+          <NumberField
+            label="Paragraph Spacing"
+            value={shape.paragraphSpacing ?? 1}
+            onChange={(v) => update({ paragraphSpacing: v })}
+            step={0.1}
+            min={0}
+            max={5}
+          />
+
+          <div className="border-t border-cad-border mt-3 pt-3 mb-2">
+            <span className="text-xs text-cad-text font-medium">Color</span>
           </div>
           <div className="mb-2">
             <label className={labelClass}>Text Color</label>
@@ -470,8 +682,123 @@ function ShapeProperties({ shape, updateShape }: { shape: Shape; updateShape: (i
           <NumberField label="Rotation (deg)" value={shape.rotation * RAD2DEG} onChange={(v) => update({ rotation: v * DEG2RAD })} step={1} />
           <NumberField label="Position X" value={shape.position.x} onChange={(v) => update({ position: { ...shape.position, x: v } })} step={0.1} />
           <NumberField label="Position Y" value={shape.position.y} onChange={(v) => update({ position: { ...shape.position, y: v } })} step={0.1} />
+
+          {/* Text Type Section */}
+          <div className="border-t border-cad-border mt-3 pt-3 mb-2">
+            <span className="text-xs text-cad-text font-medium">Text Type</span>
+          </div>
+          <CheckboxField
+            label="Model Text"
+            value={shape.isModelText ?? false}
+            onChange={(v) => update({ isModelText: v })}
+          />
+          <div className="text-xs text-cad-text-dim mb-2 -mt-1">
+            {shape.isModelText
+              ? 'Scales with geometry (like real-world objects)'
+              : 'Maintains paper size (annotation)'}
+          </div>
+
+          {/* Background Masking Section */}
+          <div className="border-t border-cad-border mt-3 pt-3 mb-2">
+            <span className="text-xs text-cad-text font-medium">Background</span>
+          </div>
+          <CheckboxField
+            label="Background Mask"
+            value={shape.backgroundMask ?? false}
+            onChange={(v) => update({ backgroundMask: v })}
+          />
+          {shape.backgroundMask && (
+            <>
+              <ColorPalette
+                label="Background Color"
+                value={shape.backgroundColor ?? '#1a1a2e'}
+                onChange={(v) => update({ backgroundColor: v })}
+              />
+              <NumberField
+                label="Padding"
+                value={shape.backgroundPadding ?? 0.5}
+                onChange={(v) => update({ backgroundPadding: v })}
+                step={0.1}
+                min={0}
+              />
+            </>
+          )}
+
+          {/* Leader Configuration Section */}
+          {shape.leaderPoints && shape.leaderPoints.length > 0 && (
+            <>
+              <div className="border-t border-cad-border mt-3 pt-3 mb-2">
+                <span className="text-xs text-cad-text font-medium">Leader Settings</span>
+              </div>
+              <SelectField<LeaderArrowType>
+                label="Arrow Type"
+                value={shape.leaderConfig?.arrowType ?? 'arrow'}
+                options={[
+                  { value: 'arrow', label: 'Open Arrow' },
+                  { value: 'filled-arrow', label: 'Filled Arrow' },
+                  { value: 'dot', label: 'Dot' },
+                  { value: 'slash', label: 'Slash' },
+                  { value: 'none', label: 'None' },
+                ]}
+                onChange={(v) => update({
+                  leaderConfig: { ...shape.leaderConfig, arrowType: v } as LeaderConfig
+                })}
+              />
+              <NumberField
+                label="Arrow Size"
+                value={shape.leaderConfig?.arrowSize ?? 3}
+                onChange={(v) => update({
+                  leaderConfig: { ...shape.leaderConfig, arrowSize: v } as LeaderConfig
+                })}
+                step={0.5}
+                min={1}
+              />
+              <SelectField<LeaderAttachment>
+                label="Attachment"
+                value={shape.leaderConfig?.attachment ?? 'middle-left'}
+                options={[
+                  { value: 'top-left', label: 'Top Left' },
+                  { value: 'top-center', label: 'Top Center' },
+                  { value: 'top-right', label: 'Top Right' },
+                  { value: 'middle-left', label: 'Middle Left' },
+                  { value: 'middle-right', label: 'Middle Right' },
+                  { value: 'bottom-left', label: 'Bottom Left' },
+                  { value: 'bottom-center', label: 'Bottom Center' },
+                  { value: 'bottom-right', label: 'Bottom Right' },
+                ]}
+                onChange={(v) => update({
+                  leaderConfig: { ...shape.leaderConfig, attachment: v } as LeaderConfig
+                })}
+              />
+              <CheckboxField
+                label="Show Landing (Shoulder)"
+                value={shape.leaderConfig?.hasLanding ?? true}
+                onChange={(v) => update({
+                  leaderConfig: { ...shape.leaderConfig, hasLanding: v } as LeaderConfig
+                })}
+              />
+              {(shape.leaderConfig?.hasLanding ?? true) && (
+                <NumberField
+                  label="Landing Length"
+                  value={shape.leaderConfig?.landingLength ?? 5}
+                  onChange={(v) => update({
+                    leaderConfig: { ...shape.leaderConfig, landingLength: v } as LeaderConfig
+                  })}
+                  step={0.5}
+                  min={0}
+                />
+              )}
+              <NumberField
+                label="Leader Point Count"
+                value={shape.leaderPoints.length}
+                onChange={() => {}}
+                readOnly
+              />
+            </>
+          )}
         </>
       );
+    }
 
     case 'line':
       return (
@@ -586,6 +913,289 @@ function ShapeProperties({ shape, updateShape }: { shape: Shape; updateShape: (i
             </button>
           )}
           <NumberField label="Boundary Points" value={shape.points.length} onChange={() => {}} readOnly />
+        </>
+      );
+    }
+
+    case 'dimension': {
+      const dim = shape as DimensionShape;
+      const updateDimStyle = (styleUpdates: Partial<typeof dim.dimensionStyle>) => {
+        update({ dimensionStyle: { ...dim.dimensionStyle, ...styleUpdates } });
+      };
+
+      return (
+        <>
+          <div className="text-xs text-cad-text-dim mb-2">
+            Type: {dim.dimensionType.charAt(0).toUpperCase() + dim.dimensionType.slice(1)}
+          </div>
+          <TextField label="Value" value={dim.value} onChange={(v) => update({ value: v, valueOverridden: true })} />
+          <div className="mb-2 flex items-center gap-2">
+            <CheckboxField label="Override Value" value={dim.valueOverridden} onChange={(v) => update({ valueOverridden: v })} />
+          </div>
+          <TextField label="Prefix" value={dim.prefix || ''} onChange={(v) => update({ prefix: v || undefined })} />
+          <TextField label="Suffix" value={dim.suffix || ''} onChange={(v) => update({ suffix: v || undefined })} />
+          <NumberField label="Offset Distance" value={dim.dimensionLineOffset} onChange={(v) => update({ dimensionLineOffset: v })} step={1} />
+
+          <div className="border-t border-cad-border mt-3 pt-3 mb-2">
+            <span className="text-xs text-cad-text font-medium">Style</span>
+          </div>
+
+          <SelectField<DimensionArrowType>
+            label="Arrow Type"
+            value={dim.dimensionStyle.arrowType}
+            options={[
+              { value: 'tick', label: 'Tick Mark' },
+              { value: 'filled', label: 'Filled Arrow' },
+              { value: 'open', label: 'Open Arrow' },
+              { value: 'dot', label: 'Dot' },
+              { value: 'none', label: 'None' },
+            ]}
+            onChange={(v) => updateDimStyle({ arrowType: v })}
+          />
+          <NumberField label="Arrow Size" value={dim.dimensionStyle.arrowSize} onChange={(v) => updateDimStyle({ arrowSize: v })} step={0.5} min={0.5} />
+          <NumberField label="Text Height" value={dim.dimensionStyle.textHeight} onChange={(v) => updateDimStyle({ textHeight: v })} step={0.5} min={1} />
+
+          <SelectField<DimensionTextPlacement>
+            label="Text Placement"
+            value={dim.dimensionStyle.textPlacement}
+            options={[
+              { value: 'centered', label: 'Centered (break line)' },
+              { value: 'above', label: 'Above Line' },
+              { value: 'below', label: 'Below Line' },
+            ]}
+            onChange={(v) => updateDimStyle({ textPlacement: v })}
+          />
+
+          <NumberField label="Precision" value={dim.dimensionStyle.precision} onChange={(v) => updateDimStyle({ precision: Math.round(v) })} step={1} min={0} max={6} />
+          <NumberField label="Extension Gap" value={dim.dimensionStyle.extensionLineGap} onChange={(v) => updateDimStyle({ extensionLineGap: v })} step={0.5} min={0} />
+          <NumberField label="Extension Overshoot" value={dim.dimensionStyle.extensionLineOvershoot} onChange={(v) => updateDimStyle({ extensionLineOvershoot: v })} step={0.5} min={0} />
+
+          <div className="mb-2">
+            <label className={labelClass}>Line Color</label>
+            <div className="flex items-center gap-2">
+              <input type="color" value={dim.dimensionStyle.lineColor}
+                onChange={(e) => updateDimStyle({ lineColor: e.target.value })}
+                className="w-8 h-8 rounded border border-cad-border cursor-pointer" />
+              <input type="text" value={dim.dimensionStyle.lineColor}
+                onChange={(e) => updateDimStyle({ lineColor: e.target.value })}
+                className="flex-1 bg-cad-bg border border-cad-border rounded px-2 py-1 text-xs text-cad-text font-mono" />
+            </div>
+          </div>
+
+          <div className="mb-2">
+            <label className={labelClass}>Text Color</label>
+            <div className="flex items-center gap-2">
+              <input type="color" value={dim.dimensionStyle.textColor}
+                onChange={(e) => updateDimStyle({ textColor: e.target.value })}
+                className="w-8 h-8 rounded border border-cad-border cursor-pointer" />
+              <input type="text" value={dim.dimensionStyle.textColor}
+                onChange={(e) => updateDimStyle({ textColor: e.target.value })}
+                className="flex-1 bg-cad-bg border border-cad-border rounded px-2 py-1 text-xs text-cad-text font-mono" />
+            </div>
+          </div>
+
+          {dim.textOffset && (
+            <button
+              onClick={() => update({ textOffset: undefined })}
+              className="text-xs text-cad-accent hover:underline mb-2">
+              Reset Text Position
+            </button>
+          )}
+        </>
+      );
+    }
+
+    case 'beam': {
+      const beam = shape as BeamShape;
+      // Calculate beam length
+      const dx = beam.end.x - beam.start.x;
+      const dy = beam.end.y - beam.start.y;
+      const length = Math.sqrt(dx * dx + dy * dy);
+      // Calculate angle in degrees
+      const angle = Math.atan2(dy, dx) * RAD2DEG;
+
+      return (
+        <>
+          {/* Profile Information */}
+          <div className="mb-3 p-2 bg-cad-bg rounded border border-cad-border">
+            <div className="text-xs font-semibold text-cad-accent mb-1">
+              {beam.presetName || beam.profileType}
+            </div>
+            {beam.presetId && (
+              <div className="text-xs text-cad-text-dim">
+                Profile: {beam.presetId}
+              </div>
+            )}
+            <div className="text-xs text-cad-text-dim">
+              Type: {beam.profileType}
+            </div>
+          </div>
+
+          {/* Geometry - Read-only info */}
+          <div className="mb-3 p-2 bg-cad-bg rounded border border-cad-border">
+            <label className="block text-xs font-semibold text-cad-text mb-2">Geometry</label>
+            <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+              <div className="text-cad-text-dim">Length:</div>
+              <div className="text-cad-text">{length.toFixed(2)} mm</div>
+              <div className="text-cad-text-dim">Angle:</div>
+              <div className="text-cad-text">{angle.toFixed(1)}°</div>
+              <div className="text-cad-text-dim">Flange Width:</div>
+              <div className="text-cad-text">{beam.flangeWidth} mm</div>
+            </div>
+          </div>
+
+          {/* Position - Start Point */}
+          <div className="mb-3">
+            <label className="block text-xs font-semibold text-cad-text mb-2">Start Point</label>
+            <div className="grid grid-cols-2 gap-2">
+              <NumberField
+                label="X"
+                value={beam.start.x}
+                onChange={(v) => update({ start: { ...beam.start, x: v } })}
+                step={1}
+              />
+              <NumberField
+                label="Y"
+                value={beam.start.y}
+                onChange={(v) => update({ start: { ...beam.start, y: v } })}
+                step={1}
+              />
+            </div>
+          </div>
+
+          {/* Position - End Point */}
+          <div className="mb-3">
+            <label className="block text-xs font-semibold text-cad-text mb-2">End Point</label>
+            <div className="grid grid-cols-2 gap-2">
+              <NumberField
+                label="X"
+                value={beam.end.x}
+                onChange={(v) => update({ end: { ...beam.end, x: v } })}
+                step={1}
+              />
+              <NumberField
+                label="Y"
+                value={beam.end.y}
+                onChange={(v) => update({ end: { ...beam.end, y: v } })}
+                step={1}
+              />
+            </div>
+          </div>
+
+          {/* Beam Properties */}
+          <div className="border-t border-cad-border mt-3 pt-3 mb-2">
+            <span className="text-xs text-cad-text font-medium">Beam Properties</span>
+          </div>
+
+          <NumberField
+            label="Flange Width (mm)"
+            value={beam.flangeWidth}
+            onChange={(v) => update({ flangeWidth: v })}
+            step={1}
+            min={1}
+          />
+
+          <SelectField<BeamMaterial>
+            label="Material"
+            value={beam.material}
+            options={[
+              { value: 'steel', label: 'Steel' },
+              { value: 'concrete', label: 'Concrete' },
+              { value: 'timber', label: 'Timber' },
+            ]}
+            onChange={(v) => update({ material: v })}
+          />
+
+          <SelectField<BeamJustification>
+            label="Justification"
+            value={beam.justification}
+            options={[
+              { value: 'center', label: 'Center' },
+              { value: 'top', label: 'Top' },
+              { value: 'bottom', label: 'Bottom' },
+              { value: 'left', label: 'Left' },
+              { value: 'right', label: 'Right' },
+            ]}
+            onChange={(v) => update({ justification: v })}
+          />
+
+          <NumberField
+            label="Rotation (deg)"
+            value={beam.rotation * RAD2DEG}
+            onChange={(v) => update({ rotation: v * DEG2RAD })}
+            step={1}
+          />
+
+          {/* Display Options */}
+          <div className="border-t border-cad-border mt-3 pt-3 mb-2">
+            <span className="text-xs text-cad-text font-medium">Display Options</span>
+          </div>
+
+          <CheckboxField
+            label="Show Centerline"
+            value={beam.showCenterline}
+            onChange={(v) => update({ showCenterline: v })}
+          />
+
+          <CheckboxField
+            label="Show Label"
+            value={beam.showLabel}
+            onChange={(v) => update({ showLabel: v })}
+          />
+
+          {beam.showLabel && (
+            <TextField
+              label="Label Text"
+              value={beam.labelText || ''}
+              onChange={(v) => update({ labelText: v || undefined })}
+            />
+          )}
+
+          {/* Profile Parameters */}
+          {Object.keys(beam.profileParameters).length > 0 && (
+            <>
+              <div className="border-t border-cad-border mt-3 pt-3 mb-2">
+                <span className="text-xs text-cad-text font-medium">Profile Parameters</span>
+              </div>
+              {Object.entries(beam.profileParameters).map(([key, value]) => {
+                if (typeof value === 'number') {
+                  return (
+                    <NumberField
+                      key={key}
+                      label={key.charAt(0).toUpperCase() + key.slice(1).replace(/([A-Z])/g, ' $1')}
+                      value={value}
+                      onChange={(v) => update({
+                        profileParameters: { ...beam.profileParameters, [key]: v }
+                      })}
+                      step={1}
+                    />
+                  );
+                } else if (typeof value === 'boolean') {
+                  return (
+                    <CheckboxField
+                      key={key}
+                      label={key.charAt(0).toUpperCase() + key.slice(1).replace(/([A-Z])/g, ' $1')}
+                      value={value}
+                      onChange={(v) => update({
+                        profileParameters: { ...beam.profileParameters, [key]: v }
+                      })}
+                    />
+                  );
+                } else {
+                  return (
+                    <TextField
+                      key={key}
+                      label={key.charAt(0).toUpperCase() + key.slice(1).replace(/([A-Z])/g, ' $1')}
+                      value={String(value)}
+                      onChange={(v) => update({
+                        profileParameters: { ...beam.profileParameters, [key]: v }
+                      })}
+                    />
+                  );
+                }
+              })}
+            </>
+          )}
         </>
       );
     }

@@ -3,7 +3,7 @@
  */
 
 import type { Shape, DrawingPreview, CurrentStyle, Viewport } from '../types';
-import type { HatchShape } from '../../../types/geometry';
+import type { HatchShape, BeamShape } from '../../../types/geometry';
 import type { CustomHatchPattern, LineFamily, SvgHatchPattern } from '../../../types/hatch';
 import { BUILTIN_PATTERNS, isSvgHatchPattern } from '../../../types/hatch';
 import { BaseRenderer } from './BaseRenderer';
@@ -156,12 +156,16 @@ export class ShapeRenderer extends BaseRenderer {
       case 'hatch':
         this.drawHatch(shape as HatchShape, invertColors);
         break;
+      case 'beam':
+        this.drawBeam(shape as BeamShape, invertColors);
+        break;
       default:
         break;
     }
 
     // Draw selection handles (hidden during modify tool operations)
-    if (isSelected && !hideHandles) {
+    // Skip for text and dimension shapes - they have their own selection box rendering
+    if (isSelected && !hideHandles && shape.type !== 'text' && shape.type !== 'dimension') {
       this.drawSelectionHandles(shape);
     }
 
@@ -220,6 +224,9 @@ export class ShapeRenderer extends BaseRenderer {
         break;
       case 'hatch':
         this.drawHatch(shape as HatchShape, invertColors);
+        break;
+      case 'beam':
+        this.drawBeam(shape as BeamShape, invertColors);
         break;
     }
 
@@ -406,6 +413,45 @@ export class ShapeRenderer extends BaseRenderer {
           }
         }
         break;
+
+      case 'beam': {
+        // Draw beam preview in plan view
+        const { start, end, flangeWidth, showCenterline } = preview;
+        const beamAngle = Math.atan2(end.y - start.y, end.x - start.x);
+        const halfWidth = flangeWidth / 2;
+        const perpX = Math.sin(beamAngle) * halfWidth;
+        const perpY = Math.cos(beamAngle) * halfWidth;
+
+        // Draw beam outline (rectangle in plan view)
+        ctx.beginPath();
+        ctx.moveTo(start.x + perpX, start.y - perpY);
+        ctx.lineTo(end.x + perpX, end.y - perpY);
+        ctx.lineTo(end.x - perpX, end.y + perpY);
+        ctx.lineTo(start.x - perpX, start.y + perpY);
+        ctx.closePath();
+        ctx.stroke();
+
+        // Draw centerline (dashed)
+        if (showCenterline) {
+          ctx.save();
+          ctx.setLineDash([8, 4]);
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+          ctx.beginPath();
+          ctx.moveTo(start.x, start.y);
+          ctx.lineTo(end.x, end.y);
+          ctx.stroke();
+          ctx.restore();
+        }
+
+        // Draw end lines (perpendicular at start and end)
+        ctx.beginPath();
+        ctx.moveTo(start.x + perpX, start.y - perpY);
+        ctx.lineTo(start.x - perpX, start.y + perpY);
+        ctx.moveTo(end.x + perpX, end.y - perpY);
+        ctx.lineTo(end.x - perpX, end.y + perpY);
+        ctx.stroke();
+        break;
+      }
 
       case 'modifyPreview':
         ctx.save();
@@ -771,9 +817,19 @@ export class ShapeRenderer extends BaseRenderer {
       bold,
       italic,
       underline,
+      strikethrough = false,
       color,
       lineHeight = 1.2,
       isModelText = false,
+      backgroundMask = false,
+      backgroundColor = '#1a1a2e',
+      backgroundPadding = 0.5,
+      // Advanced formatting
+      letterSpacing = 1,
+      widthFactor = 1,
+      obliqueAngle = 0,
+      textCase = 'none',
+      paragraphSpacing = 0,
     } = shape;
 
     ctx.save();
@@ -809,28 +865,259 @@ export class ShapeRenderer extends BaseRenderer {
     ctx.textBaseline = verticalAlignment === 'middle' ? 'middle' :
                        verticalAlignment === 'bottom' ? 'bottom' : 'top';
 
-    // Handle multi-line text
-    const lines = text.split('\n');
+    // Handle multi-line text with optional word wrapping
     const actualLineHeight = effectiveFontSize * lineHeight;
+    // Calculate extra spacing for paragraph breaks
+    const paragraphExtra = paragraphSpacing * actualLineHeight;
+
+    // If fixedWidth is set, wrap text to fit within that width
+    const fixedWidth = shape.fixedWidth;
+    let lines: string[];
+
+    if (fixedWidth && fixedWidth > 0) {
+      // Word wrap text to fit within fixedWidth
+      lines = [];
+      const paragraphs = text.split('\n');
+      for (const paragraph of paragraphs) {
+        if (paragraph === '') {
+          lines.push('');
+          continue;
+        }
+
+        const words = paragraph.split(' ');
+        let currentLine = '';
+
+        for (const word of words) {
+          // Check if the word itself is too long and needs character-level breaking
+          const wordMetrics = ctx.measureText(word);
+          if (wordMetrics.width > fixedWidth) {
+            // Push current line if it has content
+            if (currentLine) {
+              lines.push(currentLine);
+              currentLine = '';
+            }
+            // Break the word character by character
+            let charLine = '';
+            for (const char of word) {
+              const testCharLine = charLine + char;
+              const charMetrics = ctx.measureText(testCharLine);
+              if (charMetrics.width > fixedWidth && charLine) {
+                lines.push(charLine);
+                charLine = char;
+              } else {
+                charLine = testCharLine;
+              }
+            }
+            currentLine = charLine;
+          } else {
+            const testLine = currentLine ? `${currentLine} ${word}` : word;
+            const metrics = ctx.measureText(testLine);
+
+            if (metrics.width > fixedWidth && currentLine) {
+              lines.push(currentLine);
+              currentLine = word;
+            } else {
+              currentLine = testLine;
+            }
+          }
+        }
+
+        if (currentLine) {
+          lines.push(currentLine);
+        }
+      }
+    } else {
+      lines = text.split('\n');
+    }
+
+    // Draw background mask if enabled
+    if (backgroundMask && lines.length > 0) {
+      // Apply text case transformation for measuring
+      const transformTextForMeasure = (t: string): string => {
+        switch (textCase) {
+          case 'uppercase': return t.toUpperCase();
+          case 'lowercase': return t.toLowerCase();
+          case 'capitalize': return t.replace(/\b\w/g, c => c.toUpperCase());
+          default: return t;
+        }
+      };
+
+      // Calculate text bounds (considering width factor and letter spacing)
+      let maxWidth = 0;
+      for (const line of lines) {
+        const displayLine = transformTextForMeasure(line);
+        let lineWidth: number;
+        if (letterSpacing !== 1) {
+          let totalWidth = 0;
+          for (const char of displayLine.split('')) {
+            totalWidth += ctx.measureText(char).width * letterSpacing;
+          }
+          if (displayLine.length > 0) {
+            totalWidth -= ctx.measureText(displayLine[displayLine.length - 1]).width * (letterSpacing - 1);
+          }
+          lineWidth = totalWidth;
+        } else {
+          lineWidth = ctx.measureText(displayLine).width;
+        }
+        lineWidth *= widthFactor;
+        if (lineWidth > maxWidth) maxWidth = lineWidth;
+      }
+
+      // Calculate total height including paragraph spacing
+      let totalHeight = 0;
+      for (let i = 0; i < lines.length; i++) {
+        totalHeight += actualLineHeight;
+        if (i > 0 && lines[i - 1] === '') {
+          totalHeight += paragraphExtra;
+        }
+      }
+      const padding = backgroundPadding * (isModelText ? 1 : (ShapeRenderer.REFERENCE_SCALE / this.drawingScale));
+
+      // Calculate background rectangle position based on alignment
+      let bgX = position.x - padding;
+      if (alignment === 'center') bgX = position.x - maxWidth / 2 - padding;
+      else if (alignment === 'right') bgX = position.x - maxWidth - padding;
+
+      let bgY = position.y - padding;
+      if (verticalAlignment === 'middle') bgY = position.y - actualLineHeight / 2 - padding;
+      else if (verticalAlignment === 'bottom') bgY = position.y - actualLineHeight - padding;
+
+      const bgWidth = maxWidth + padding * 2;
+      const bgHeight = totalHeight + padding * 2;
+
+      // Draw background
+      let bgColor = backgroundColor;
+      if (invertColors && bgColor === '#1a1a2e') {
+        bgColor = '#ffffff';
+      }
+      ctx.fillStyle = bgColor;
+      ctx.fillRect(bgX, bgY, bgWidth, bgHeight);
+
+      // Reset fill style for text
+      ctx.fillStyle = textColor;
+    }
+
+    // Apply text case transformation
+    const transformText = (t: string): string => {
+      switch (textCase) {
+        case 'uppercase': return t.toUpperCase();
+        case 'lowercase': return t.toLowerCase();
+        case 'capitalize': return t.replace(/\b\w/g, c => c.toUpperCase());
+        default: return t;
+      }
+    };
+
+    // Calculate cumulative Y offset with paragraph spacing
+    let cumulativeY = 0;
 
     // Draw text lines
     for (let i = 0; i < lines.length; i++) {
-      const y = position.y + i * actualLineHeight;
-      ctx.fillText(lines[i], position.x, y);
+      const originalLine = lines[i];
+      const displayLine = transformText(originalLine);
+      const y = position.y + cumulativeY;
+
+      // Check if this is a paragraph break (empty line or following empty line)
+      const isParagraphBreak = i > 0 && lines[i - 1] === '';
+
+      ctx.save();
+
+      // Apply width factor and oblique angle transforms
+      if (widthFactor !== 1 || obliqueAngle !== 0) {
+        // Calculate transform origin based on alignment
+        let transformOriginX = position.x;
+        if (alignment === 'center') {
+          const metrics = ctx.measureText(displayLine);
+          transformOriginX = position.x - metrics.width / 2;
+        } else if (alignment === 'right') {
+          const metrics = ctx.measureText(displayLine);
+          transformOriginX = position.x - metrics.width;
+        }
+
+        ctx.translate(transformOriginX, y);
+        // Apply skew (oblique angle) - convert from degrees to radians
+        const skewAngle = (obliqueAngle * Math.PI) / 180;
+        // Apply width factor and oblique transforms
+        // Matrix: [widthFactor, 0, tan(skew), 1, 0, 0]
+        ctx.transform(widthFactor, 0, Math.tan(skewAngle), 1, 0, 0);
+        ctx.translate(-transformOriginX, -y);
+      }
+
+      // Draw text with letter spacing
+      if (letterSpacing !== 1 && displayLine.length > 0) {
+        // Manual character-by-character rendering for letter spacing
+        const chars = displayLine.split('');
+        let currentX = position.x;
+
+        // Adjust starting position for alignment
+        if (alignment === 'center' || alignment === 'right') {
+          let totalWidth = 0;
+          for (const char of chars) {
+            totalWidth += ctx.measureText(char).width * letterSpacing;
+          }
+          // Remove extra spacing at the end
+          totalWidth -= ctx.measureText(chars[chars.length - 1]).width * (letterSpacing - 1);
+          if (alignment === 'center') currentX -= totalWidth / 2;
+          else if (alignment === 'right') currentX -= totalWidth;
+        }
+
+        for (let c = 0; c < chars.length; c++) {
+          ctx.fillText(chars[c], currentX, y);
+          const charWidth = ctx.measureText(chars[c]).width;
+          currentX += charWidth * letterSpacing;
+        }
+      } else {
+        ctx.fillText(displayLine, position.x, y);
+      }
+
+      ctx.restore();
+
+      // Calculate line width for underline/strikethrough
+      const metrics = ctx.measureText(displayLine);
+      let lineWidth = metrics.width * widthFactor;
+      if (letterSpacing !== 1) {
+        // Recalculate width with letter spacing
+        let totalWidth = 0;
+        for (const char of displayLine.split('')) {
+          totalWidth += ctx.measureText(char).width * letterSpacing;
+        }
+        if (displayLine.length > 0) {
+          totalWidth -= ctx.measureText(displayLine[displayLine.length - 1]).width * (letterSpacing - 1);
+        }
+        lineWidth = totalWidth * widthFactor;
+      }
+
+      // Calculate starting X for decorations
+      let startX = position.x;
+      if (alignment === 'center') startX -= lineWidth / 2;
+      else if (alignment === 'right') startX -= lineWidth;
 
       // Draw underline if enabled
-      if (underline && lines[i].length > 0) {
-        const metrics = ctx.measureText(lines[i]);
-        let startX = position.x;
-        if (alignment === 'center') startX -= metrics.width / 2;
-        else if (alignment === 'right') startX -= metrics.width;
-
+      if (underline && displayLine.length > 0) {
         ctx.strokeStyle = textColor;
-        ctx.lineWidth = 1;
+        ctx.lineWidth = Math.max(1, effectiveFontSize * 0.05);
         ctx.beginPath();
         ctx.moveTo(startX, y + effectiveFontSize + 2);
-        ctx.lineTo(startX + metrics.width, y + effectiveFontSize + 2);
+        ctx.lineTo(startX + lineWidth, y + effectiveFontSize + 2);
         ctx.stroke();
+      }
+
+      // Draw strikethrough if enabled
+      if (strikethrough && displayLine.length > 0) {
+        ctx.strokeStyle = textColor;
+        ctx.lineWidth = Math.max(1, effectiveFontSize * 0.05);
+        ctx.beginPath();
+        // Position strikethrough at roughly middle of the text
+        const strikethroughY = y + effectiveFontSize * 0.35;
+        ctx.moveTo(startX, strikethroughY);
+        ctx.lineTo(startX + lineWidth, strikethroughY);
+        ctx.stroke();
+      }
+
+      // Update cumulative Y position
+      cumulativeY += actualLineHeight;
+      // Add extra spacing after paragraph breaks
+      if (isParagraphBreak) {
+        cumulativeY += paragraphExtra;
       }
     }
 
@@ -839,40 +1126,114 @@ export class ShapeRenderer extends BaseRenderer {
     // Draw leader lines if present
     if (shape.leaderPoints && shape.leaderPoints.length > 0) {
       ctx.save();
-      let leaderColor = color || shape.style.strokeColor;
+      const leaderConfig = shape.leaderConfig;
+      let leaderColor = leaderConfig?.color || color || shape.style.strokeColor;
       if (invertColors && leaderColor === '#ffffff') {
         leaderColor = '#000000';
       }
       ctx.strokeStyle = leaderColor;
-      ctx.lineWidth = 1;
+      ctx.fillStyle = leaderColor;
+      ctx.lineWidth = leaderConfig?.lineWeight ?? 1;
       ctx.setLineDash([]);
+
+      // Draw landing line (shoulder) if enabled
+      const hasLanding = leaderConfig?.hasLanding ?? true;
+      const landingLength = leaderConfig?.landingLength ?? 5;
+      let leaderStartX = position.x;
+      let leaderStartY = position.y;
+
+      if (hasLanding && landingLength > 0) {
+        // Determine landing direction based on first leader point
+        const firstPt = shape.leaderPoints[0];
+        const landingDir = firstPt.x > position.x ? 1 : -1;
+        const landingEndX = position.x + landingDir * landingLength;
+
+        ctx.beginPath();
+        ctx.moveTo(position.x, position.y);
+        ctx.lineTo(landingEndX, position.y);
+        ctx.stroke();
+
+        leaderStartX = landingEndX;
+      }
+
+      // Draw main leader line
       ctx.beginPath();
-      ctx.moveTo(position.x, position.y);
+      ctx.moveTo(leaderStartX, leaderStartY);
       for (const pt of shape.leaderPoints) {
         ctx.lineTo(pt.x, pt.y);
       }
       ctx.stroke();
 
-      // Draw arrowhead at the last leader point
+      // Draw arrow/terminator at the last leader point
       if (shape.leaderPoints.length >= 1) {
         const lastPt = shape.leaderPoints[shape.leaderPoints.length - 1];
         const prevPt = shape.leaderPoints.length > 1
           ? shape.leaderPoints[shape.leaderPoints.length - 2]
-          : position;
+          : { x: leaderStartX, y: leaderStartY };
         const arrowAngle = Math.atan2(lastPt.y - prevPt.y, lastPt.x - prevPt.x);
-        const arrowLen = 6;
-        ctx.beginPath();
-        ctx.moveTo(lastPt.x, lastPt.y);
-        ctx.lineTo(
-          lastPt.x - arrowLen * Math.cos(arrowAngle - 0.4),
-          lastPt.y - arrowLen * Math.sin(arrowAngle - 0.4)
-        );
-        ctx.moveTo(lastPt.x, lastPt.y);
-        ctx.lineTo(
-          lastPt.x - arrowLen * Math.cos(arrowAngle + 0.4),
-          lastPt.y - arrowLen * Math.sin(arrowAngle + 0.4)
-        );
-        ctx.stroke();
+        const arrowType = leaderConfig?.arrowType ?? 'arrow';
+        const arrowSize = leaderConfig?.arrowSize ?? 6;
+
+        switch (arrowType) {
+          case 'arrow':
+            // Open arrow
+            ctx.beginPath();
+            ctx.moveTo(lastPt.x, lastPt.y);
+            ctx.lineTo(
+              lastPt.x - arrowSize * Math.cos(arrowAngle - 0.4),
+              lastPt.y - arrowSize * Math.sin(arrowAngle - 0.4)
+            );
+            ctx.moveTo(lastPt.x, lastPt.y);
+            ctx.lineTo(
+              lastPt.x - arrowSize * Math.cos(arrowAngle + 0.4),
+              lastPt.y - arrowSize * Math.sin(arrowAngle + 0.4)
+            );
+            ctx.stroke();
+            break;
+
+          case 'filled-arrow':
+            // Filled arrow triangle
+            ctx.beginPath();
+            ctx.moveTo(lastPt.x, lastPt.y);
+            ctx.lineTo(
+              lastPt.x - arrowSize * Math.cos(arrowAngle - 0.35),
+              lastPt.y - arrowSize * Math.sin(arrowAngle - 0.35)
+            );
+            ctx.lineTo(
+              lastPt.x - arrowSize * Math.cos(arrowAngle + 0.35),
+              lastPt.y - arrowSize * Math.sin(arrowAngle + 0.35)
+            );
+            ctx.closePath();
+            ctx.fill();
+            break;
+
+          case 'dot':
+            // Filled dot
+            ctx.beginPath();
+            ctx.arc(lastPt.x, lastPt.y, arrowSize / 2, 0, Math.PI * 2);
+            ctx.fill();
+            break;
+
+          case 'slash':
+            // Diagonal slash mark
+            const slashLen = arrowSize / 1.5;
+            const perpAngle = arrowAngle + Math.PI / 2;
+            ctx.beginPath();
+            ctx.moveTo(
+              lastPt.x + slashLen * Math.cos(perpAngle),
+              lastPt.y + slashLen * Math.sin(perpAngle)
+            );
+            ctx.lineTo(
+              lastPt.x - slashLen * Math.cos(perpAngle),
+              lastPt.y - slashLen * Math.sin(perpAngle)
+            );
+            ctx.stroke();
+            break;
+
+          case 'none':
+            // No terminator
+            break;
+        }
       }
       ctx.restore();
     }
@@ -887,7 +1248,19 @@ export class ShapeRenderer extends BaseRenderer {
     if (shape.type !== 'text') return;
     const ctx = this.ctx;
 
-    const { position, text, fontSize, fontFamily, alignment, verticalAlignment, bold, italic, lineHeight = 1.2, isModelText = false } = shape;
+    const { position, text, fontSize, fontFamily, rotation, alignment, verticalAlignment, bold, italic, lineHeight = 1.2, isModelText = false, fixedWidth } = shape;
+
+    // Get zoom BEFORE applying rotation (rotation affects getTransform().a)
+    const zoom = ctx.getTransform().a / this.dpr;
+
+    ctx.save();
+
+    // Apply rotation around position (same as drawText)
+    if (rotation !== 0) {
+      ctx.translate(position.x, position.y);
+      ctx.rotate(rotation);
+      ctx.translate(-position.x, -position.y);
+    }
 
     // Calculate effective font size (same as drawText)
     const effectiveFontSize = isModelText
@@ -900,16 +1273,69 @@ export class ShapeRenderer extends BaseRenderer {
     ctx.textBaseline = verticalAlignment === 'middle' ? 'middle' :
                        verticalAlignment === 'bottom' ? 'bottom' : 'top';
 
-    const lines = text.split('\n');
     const actualLineHeight = effectiveFontSize * lineHeight;
 
+    // Calculate wrapped lines if fixedWidth is set (same logic as drawText)
+    let lines: string[];
+    if (fixedWidth && fixedWidth > 0) {
+      lines = [];
+      const paragraphs = text.split('\n');
+      for (const paragraph of paragraphs) {
+        if (paragraph === '') {
+          lines.push('');
+          continue;
+        }
+
+        const words = paragraph.split(' ');
+        let currentLine = '';
+
+        for (const word of words) {
+          // Check if the word itself is too long and needs character-level breaking
+          const wordMetrics = ctx.measureText(word);
+          if (wordMetrics.width > fixedWidth) {
+            // Push current line if it has content
+            if (currentLine) {
+              lines.push(currentLine);
+              currentLine = '';
+            }
+            // Break the word character by character
+            let charLine = '';
+            for (const char of word) {
+              const testCharLine = charLine + char;
+              const charMetrics = ctx.measureText(testCharLine);
+              if (charMetrics.width > fixedWidth && charLine) {
+                lines.push(charLine);
+                charLine = char;
+              } else {
+                charLine = testCharLine;
+              }
+            }
+            currentLine = charLine;
+          } else {
+            const testLine = currentLine ? `${currentLine} ${word}` : word;
+            const metrics = ctx.measureText(testLine);
+            if (metrics.width > fixedWidth && currentLine) {
+              lines.push(currentLine);
+              currentLine = word;
+            } else {
+              currentLine = testLine;
+            }
+          }
+        }
+
+        if (currentLine) lines.push(currentLine);
+      }
+    } else {
+      lines = text.split('\n');
+    }
+
     // Use actual font metrics for accurate bounds
-    let maxWidth = 0;
+    let maxWidth = fixedWidth || 0;
     let maxAscent = 0;
     let maxDescent = 0;
     for (const line of lines) {
       const metrics = ctx.measureText(line);
-      if (metrics.width > maxWidth) maxWidth = metrics.width;
+      if (!fixedWidth && metrics.width > maxWidth) maxWidth = metrics.width;
       if (metrics.actualBoundingBoxAscent > maxAscent) maxAscent = metrics.actualBoundingBoxAscent;
       if (metrics.actualBoundingBoxDescent > maxDescent) maxDescent = metrics.actualBoundingBoxDescent;
     }
@@ -917,6 +1343,7 @@ export class ShapeRenderer extends BaseRenderer {
     // First line top/bottom from actual metrics, remaining lines offset by lineHeight
     const topY = position.y - maxAscent;
     const bottomY = position.y + maxDescent + (lines.length - 1) * actualLineHeight;
+    const boxHeight = bottomY - topY;
 
     // Calculate bounding box based on alignment
     let minX = position.x;
@@ -927,8 +1354,80 @@ export class ShapeRenderer extends BaseRenderer {
     ctx.strokeStyle = COLORS.selection;
     ctx.lineWidth = 1;
     ctx.setLineDash([4, 4]);
-    ctx.strokeRect(minX - 2, topY - 2, maxWidth + 4, (bottomY - topY) + 4);
+    ctx.strokeRect(minX - 2, topY - 2, maxWidth + 4, boxHeight + 4);
     ctx.setLineDash([]);
+
+    // Draw resize handles on left and right edges
+    const handleSize = 6 / zoom;
+    const midY = topY + boxHeight / 2;
+
+    ctx.fillStyle = COLORS.selectionHandle;
+    ctx.strokeStyle = COLORS.selectionHandleStroke;
+    ctx.lineWidth = 1 / zoom;
+
+    // Left resize handle (horizontal bar style for width resize)
+    const leftHandleX = minX - 2;
+    ctx.fillRect(leftHandleX - handleSize / 2, midY - handleSize, handleSize, handleSize * 2);
+    ctx.strokeRect(leftHandleX - handleSize / 2, midY - handleSize, handleSize, handleSize * 2);
+    // Draw X-axis only arrow on left handle (pointing left to indicate resize direction)
+    this.drawXAxisArrow({ x: leftHandleX, y: midY }, zoom, 'left');
+
+    // Right resize handle
+    const rightHandleX = minX + maxWidth + 2;
+    ctx.fillRect(rightHandleX - handleSize / 2, midY - handleSize, handleSize, handleSize * 2);
+    ctx.strokeRect(rightHandleX - handleSize / 2, midY - handleSize, handleSize, handleSize * 2);
+    // Draw X-axis only arrow on right handle (pointing right to indicate resize direction)
+    this.drawXAxisArrow({ x: rightHandleX, y: midY }, zoom, 'right');
+
+    // Draw move handle at center of text box
+    const centerX = minX + maxWidth / 2;
+    ctx.fillRect(centerX - handleSize / 2, midY - handleSize / 2, handleSize, handleSize);
+    ctx.strokeRect(centerX - handleSize / 2, midY - handleSize / 2, handleSize, handleSize);
+
+    // Draw axis arrows on move handle
+    this.drawAxisArrows({ x: centerX, y: midY }, zoom);
+
+    // Draw rotation handle above the text box
+    const rotationHandleDistance = 25 / zoom; // Distance from top of box to rotation handle
+    const rotationHandleY = topY - 2 - rotationHandleDistance;
+    const rotationHandleRadius = handleSize * 0.6;
+
+    // Draw connecting line from top center to rotation handle
+    ctx.strokeStyle = COLORS.selection;
+    ctx.lineWidth = 1 / zoom;
+    ctx.beginPath();
+    ctx.moveTo(centerX, topY - 2);
+    ctx.lineTo(centerX, rotationHandleY);
+    ctx.stroke();
+
+    // Draw circular rotation handle
+    ctx.fillStyle = '#90EE90'; // Light green for rotation
+    ctx.strokeStyle = COLORS.selectionHandleStroke;
+    ctx.beginPath();
+    ctx.arc(centerX, rotationHandleY, rotationHandleRadius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+
+    // Draw rotation arrow icon inside the handle
+    ctx.strokeStyle = '#006400'; // Dark green
+    ctx.lineWidth = 1.5 / zoom;
+    const iconRadius = rotationHandleRadius * 0.6;
+    ctx.beginPath();
+    ctx.arc(centerX, rotationHandleY, iconRadius, -Math.PI * 0.7, Math.PI * 0.3);
+    ctx.stroke();
+    // Arrowhead
+    const arrowTipAngle = Math.PI * 0.3;
+    const arrowTipX = centerX + iconRadius * Math.cos(arrowTipAngle);
+    const arrowTipY = rotationHandleY + iconRadius * Math.sin(arrowTipAngle);
+    const arrowHeadSize = 3 / zoom;
+    ctx.beginPath();
+    ctx.moveTo(arrowTipX, arrowTipY);
+    ctx.lineTo(arrowTipX - arrowHeadSize, arrowTipY - arrowHeadSize);
+    ctx.moveTo(arrowTipX, arrowTipY);
+    ctx.lineTo(arrowTipX + arrowHeadSize * 0.5, arrowTipY - arrowHeadSize);
+    ctx.stroke();
+
+    ctx.restore();
   }
 
   private drawSelectionHandles(shape: Shape): void {
@@ -1003,6 +1502,53 @@ export class ShapeRenderer extends BaseRenderer {
     ctx.restore();
   }
 
+  /**
+   * Draw a single X-axis arrow for text resize handles.
+   * Direction can be 'left' or 'right' to indicate resize direction.
+   */
+  private drawXAxisArrow(point: { x: number; y: number }, zoom: number, direction: 'left' | 'right'): void {
+    const ctx = this.ctx;
+    const arrowLen = 15 / zoom;
+    const headLen = 4 / zoom;
+    const headWidth = 2.5 / zoom;
+
+    ctx.save();
+
+    ctx.strokeStyle = COLORS.axisX;
+    ctx.fillStyle = COLORS.axisX;
+    ctx.lineWidth = 1.5 / zoom;
+
+    if (direction === 'right') {
+      // Arrow pointing right
+      ctx.beginPath();
+      ctx.moveTo(point.x, point.y);
+      ctx.lineTo(point.x + arrowLen, point.y);
+      ctx.stroke();
+      // Arrowhead
+      ctx.beginPath();
+      ctx.moveTo(point.x + arrowLen, point.y);
+      ctx.lineTo(point.x + arrowLen - headLen, point.y - headWidth);
+      ctx.lineTo(point.x + arrowLen - headLen, point.y + headWidth);
+      ctx.closePath();
+      ctx.fill();
+    } else {
+      // Arrow pointing left
+      ctx.beginPath();
+      ctx.moveTo(point.x, point.y);
+      ctx.lineTo(point.x - arrowLen, point.y);
+      ctx.stroke();
+      // Arrowhead
+      ctx.beginPath();
+      ctx.moveTo(point.x - arrowLen, point.y);
+      ctx.lineTo(point.x - arrowLen + headLen, point.y - headWidth);
+      ctx.lineTo(point.x - arrowLen + headLen, point.y + headWidth);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    ctx.restore();
+  }
+
   private getShapeHandlePoints(shape: Shape): { x: number; y: number }[] {
     switch (shape.type) {
       case 'line':
@@ -1053,14 +1599,25 @@ export class ShapeRenderer extends BaseRenderer {
           { x: shape.center.x + shape.radius * Math.cos(midAngle), y: shape.center.y + shape.radius * Math.sin(midAngle) },
         ];
       }
-      case 'ellipse':
+      case 'ellipse': {
+        const rot = shape.rotation || 0;
+        const cos = Math.cos(rot);
+        const sin = Math.sin(rot);
+        const cx = shape.center.x;
+        const cy = shape.center.y;
+        // Transform local ellipse coordinates to world coordinates
+        const toWorld = (lx: number, ly: number) => ({
+          x: cx + lx * cos - ly * sin,
+          y: cy + lx * sin + ly * cos,
+        });
         return [
-          shape.center,
-          { x: shape.center.x + shape.radiusX, y: shape.center.y },
-          { x: shape.center.x - shape.radiusX, y: shape.center.y },
-          { x: shape.center.x, y: shape.center.y + shape.radiusY },
-          { x: shape.center.x, y: shape.center.y - shape.radiusY },
+          shape.center,                                    // Center grip
+          toWorld(shape.radiusX, 0),                       // Right grip
+          toWorld(-shape.radiusX, 0),                      // Left grip
+          toWorld(0, shape.radiusY),                       // Bottom grip
+          toWorld(0, -shape.radiusY),                      // Top grip
         ];
+      }
       case 'polyline': {
         const pts: { x: number; y: number }[] = [...shape.points];
         const segCount = shape.closed ? shape.points.length : shape.points.length - 1;
@@ -1105,6 +1662,13 @@ export class ShapeRenderer extends BaseRenderer {
         }
         return pts;
       }
+      case 'beam':
+        // Beam handles: start, end, and midpoint
+        return [
+          shape.start,
+          shape.end,
+          { x: (shape.start.x + shape.end.x) / 2, y: (shape.start.y + shape.end.y) / 2 },
+        ];
       default:
         return [];
     }
@@ -1231,6 +1795,100 @@ export class ShapeRenderer extends BaseRenderer {
     // Stroke boundary
     buildPath();
     ctx.stroke();
+  }
+
+  /**
+   * Draw a beam shape in plan view
+   * Shows beam as a rectangle with optional centerline and label
+   */
+  private drawBeam(shape: BeamShape, invertColors: boolean = false): void {
+    const ctx = this.ctx;
+    const { start, end, flangeWidth, showCenterline, showLabel, labelText, presetName, material } = shape;
+
+    const beamAngle = Math.atan2(end.y - start.y, end.x - start.x);
+    const halfWidth = flangeWidth / 2;
+    const perpX = Math.sin(beamAngle) * halfWidth;
+    const perpY = Math.cos(beamAngle) * halfWidth;
+
+    // Determine line style based on material
+    const originalLineWidth = ctx.lineWidth;
+    if (material === 'concrete') {
+      ctx.lineWidth = originalLineWidth * 1.5;
+    } else if (material === 'timber') {
+      ctx.lineWidth = originalLineWidth * 1.2;
+    }
+
+    // Draw beam outline (two parallel lines for flanges)
+    ctx.beginPath();
+    // Top flange edge
+    ctx.moveTo(start.x + perpX, start.y - perpY);
+    ctx.lineTo(end.x + perpX, end.y - perpY);
+    ctx.stroke();
+
+    // Bottom flange edge
+    ctx.beginPath();
+    ctx.moveTo(start.x - perpX, start.y + perpY);
+    ctx.lineTo(end.x - perpX, end.y + perpY);
+    ctx.stroke();
+
+    // Draw end lines (perpendicular caps at start and end)
+    ctx.beginPath();
+    ctx.moveTo(start.x + perpX, start.y - perpY);
+    ctx.lineTo(start.x - perpX, start.y + perpY);
+    ctx.moveTo(end.x + perpX, end.y - perpY);
+    ctx.lineTo(end.x - perpX, end.y + perpY);
+    ctx.stroke();
+
+    // Draw centerline (dashed)
+    if (showCenterline) {
+      ctx.save();
+      ctx.setLineDash([10, 5, 2, 5]); // Dash-dot pattern for centerline
+      let centerColor = 'rgba(255, 255, 255, 0.4)';
+      if (invertColors) {
+        centerColor = 'rgba(0, 0, 0, 0.4)';
+      }
+      ctx.strokeStyle = centerColor;
+      ctx.lineWidth = originalLineWidth * 0.5;
+      ctx.beginPath();
+      ctx.moveTo(start.x, start.y);
+      ctx.lineTo(end.x, end.y);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // Draw label
+    if (showLabel) {
+      const beamLabel = labelText || presetName || `${Math.round(flangeWidth)}mm`;
+      const midX = (start.x + end.x) / 2;
+      const midY = (start.y + end.y) / 2;
+      const zoom = ctx.getTransform().a / this.dpr;
+      const fontSize = Math.max(10 / zoom, flangeWidth * 0.3);
+
+      ctx.save();
+      ctx.translate(midX, midY);
+      // Rotate text to be readable (avoid upside-down text)
+      let textAngle = beamAngle;
+      if (textAngle > Math.PI / 2 || textAngle < -Math.PI / 2) {
+        textAngle += Math.PI;
+      }
+      ctx.rotate(textAngle);
+
+      let textColor = shape.style.strokeColor;
+      if (invertColors && textColor === '#ffffff') {
+        textColor = '#000000';
+      }
+      ctx.fillStyle = textColor;
+      ctx.font = `${fontSize}px Arial`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+
+      // Offset text above centerline
+      ctx.fillText(beamLabel, 0, -halfWidth - fontSize * 0.8);
+      ctx.restore();
+    }
+
+    // Restore original line width
+    ctx.lineWidth = originalLineWidth;
   }
 
   /**

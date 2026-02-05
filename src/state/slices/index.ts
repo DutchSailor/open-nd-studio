@@ -130,3 +130,12 @@ export {
   initialHatchState,
   createHatchSlice,
 } from './hatchSlice';
+
+// Clipboard Slice
+export {
+  type ClipboardState,
+  type ClipboardActions,
+  type ClipboardSlice,
+  initialClipboardState,
+  createClipboardSlice,
+} from './clipboardSlice';

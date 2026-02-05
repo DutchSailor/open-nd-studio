@@ -14,6 +14,7 @@ import type {
   EditorMode,
   PaperSize,
   PaperOrientation,
+  TextStyle,
 } from './types';
 
 import type {
@@ -29,6 +30,7 @@ import {
   createDefaultTitleBlock,
   getShapeBounds,
   PAPER_SIZES,
+  createDefaultTextStyles,
 } from './types';
 
 import { produceWithPatches, current } from 'immer';
@@ -154,6 +156,9 @@ export interface ModelState {
   // Shapes
   shapes: Shape[];
 
+  // Groups
+  groups: import('../../types/geometry').ShapeGroup[];
+
   // Layers
   layers: Layer[];
   activeLayerId: string;
@@ -163,6 +168,10 @@ export interface ModelState {
 
   // Sheet Templates (user-created, built-in are in service)
   customSheetTemplates: SheetTemplate[];
+
+  // Text Styles (reusable text formatting presets)
+  textStyles: TextStyle[];
+  activeTextStyleId: string | null;
 }
 
 // ============================================================================
@@ -178,6 +187,24 @@ export interface ModelActions {
   deleteShape: (id: string) => void;
   deleteShapes: (ids: string[]) => void;
   deleteSelectedShapes: () => void;
+
+  // Visibility actions
+  hideSelectedShapes: () => void;
+  showAllShapes: () => void;
+  isolateSelectedShapes: () => void;
+
+  // Locking actions
+  lockSelectedShapes: () => void;
+  unlockSelectedShapes: () => void;
+  unlockAllShapes: () => void;
+
+  // Z-order actions
+  bringToFront: () => void;
+  sendToBack: () => void;
+
+  // Group actions
+  groupSelectedShapes: () => void;
+  ungroupSelectedShapes: () => void;
 
   // Drawing actions
   addDrawing: (name?: string) => void;
@@ -231,6 +258,13 @@ export interface ModelActions {
   updateLayer: (id: string, updates: Partial<Layer>) => void;
   deleteLayer: (id: string) => void;
   setActiveLayer: (id: string) => void;
+
+  // Text Style actions
+  setActiveTextStyle: (id: string | null) => void;
+  addTextStyle: (style: TextStyle) => void;
+  updateTextStyle: (id: string, updates: Partial<TextStyle>) => void;
+  deleteTextStyle: (id: string) => void;
+  applyTextStyleToShape: (shapeId: string, styleId: string) => void;
 }
 
 export type ModelSlice = ModelState & ModelActions;
@@ -270,10 +304,13 @@ export const initialModelState: ModelState = {
   drawingViewports: { [defaultDrawingId]: { offsetX: 0, offsetY: 0, zoom: 1 } },
   sheetViewports: {},
   shapes: [],
+  groups: [],
   layers: [defaultLayer],
   activeLayerId: defaultLayer.id,
   customTitleBlockTemplates: [],
   customSheetTemplates: [],
+  textStyles: createDefaultTextStyles(),
+  activeTextStyleId: null,
 };
 
 // ============================================================================
@@ -407,6 +444,218 @@ export const createModelSlice = (
     if (parametricIds.length > 0) {
       store.deleteParametricShapes(parametricIds);
     }
+  },
+
+  // ============================================================================
+  // Visibility Actions
+  // ============================================================================
+
+  hideSelectedShapes: () => {
+    const store = get();
+    if (store.selectedShapeIds.length === 0) return;
+
+    set((state) => {
+      const selectedIds = new Set(store.selectedShapeIds);
+      withHistory(state, (draft) => {
+        for (const shape of draft) {
+          if (selectedIds.has(shape.id)) {
+            shape.visible = false;
+          }
+        }
+      });
+      // Deselect hidden shapes
+      state.selectedShapeIds = [];
+    });
+  },
+
+  showAllShapes: () =>
+    set((state) => {
+      withHistory(state, (draft) => {
+        for (const shape of draft) {
+          if (shape.drawingId === state.activeDrawingId) {
+            shape.visible = true;
+          }
+        }
+      });
+    }),
+
+  isolateSelectedShapes: () => {
+    const store = get();
+    if (store.selectedShapeIds.length === 0) return;
+
+    set((state) => {
+      const selectedIds = new Set(store.selectedShapeIds);
+      withHistory(state, (draft) => {
+        for (const shape of draft) {
+          if (shape.drawingId === state.activeDrawingId) {
+            // Show selected, hide others
+            shape.visible = selectedIds.has(shape.id);
+          }
+        }
+      });
+    });
+  },
+
+  // ============================================================================
+  // Locking Actions
+  // ============================================================================
+
+  lockSelectedShapes: () => {
+    const store = get();
+    if (store.selectedShapeIds.length === 0) return;
+
+    set((state) => {
+      const selectedIds = new Set(store.selectedShapeIds);
+      withHistory(state, (draft) => {
+        for (const shape of draft) {
+          if (selectedIds.has(shape.id)) {
+            shape.locked = true;
+          }
+        }
+      });
+      // Deselect locked shapes
+      state.selectedShapeIds = [];
+    });
+  },
+
+  unlockSelectedShapes: () => {
+    const store = get();
+    if (store.selectedShapeIds.length === 0) return;
+
+    set((state) => {
+      const selectedIds = new Set(store.selectedShapeIds);
+      withHistory(state, (draft) => {
+        for (const shape of draft) {
+          if (selectedIds.has(shape.id)) {
+            shape.locked = false;
+          }
+        }
+      });
+    });
+  },
+
+  unlockAllShapes: () =>
+    set((state) => {
+      withHistory(state, (draft) => {
+        for (const shape of draft) {
+          if (shape.drawingId === state.activeDrawingId) {
+            shape.locked = false;
+          }
+        }
+      });
+    }),
+
+  // ============================================================================
+  // Z-Order Actions
+  // ============================================================================
+
+  bringToFront: () => {
+    const store = get();
+    if (store.selectedShapeIds.length === 0) return;
+
+    set((state) => {
+      const selectedIds = new Set(store.selectedShapeIds);
+      withHistory(state, (draft) => {
+        // Extract selected shapes
+        const selectedShapes: Shape[] = [];
+        for (let i = draft.length - 1; i >= 0; i--) {
+          if (selectedIds.has(draft[i].id)) {
+            selectedShapes.unshift(draft.splice(i, 1)[0]);
+          }
+        }
+        // Add them at the end (front)
+        for (const shape of selectedShapes) {
+          draft.push(shape);
+        }
+      });
+      state.isModified = true;
+    });
+  },
+
+  sendToBack: () => {
+    const store = get();
+    if (store.selectedShapeIds.length === 0) return;
+
+    set((state) => {
+      const selectedIds = new Set(store.selectedShapeIds);
+      withHistory(state, (draft) => {
+        // Extract selected shapes
+        const selectedShapes: Shape[] = [];
+        for (let i = draft.length - 1; i >= 0; i--) {
+          if (selectedIds.has(draft[i].id)) {
+            selectedShapes.unshift(draft.splice(i, 1)[0]);
+          }
+        }
+        // Add them at the beginning (back)
+        for (let i = selectedShapes.length - 1; i >= 0; i--) {
+          draft.unshift(selectedShapes[i]);
+        }
+      });
+      state.isModified = true;
+    });
+  },
+
+  // ============================================================================
+  // Group Actions
+  // ============================================================================
+
+  groupSelectedShapes: () => {
+    const store = get();
+    if (store.selectedShapeIds.length < 2) return; // Need at least 2 shapes to group
+
+    const groupId = generateId();
+
+    set((state) => {
+      const selectedIds = new Set(store.selectedShapeIds);
+
+      // Create the group
+      state.groups.push({
+        id: groupId,
+        drawingId: state.activeDrawingId,
+      });
+
+      // Assign shapes to the group
+      withHistory(state, (draft) => {
+        for (const shape of draft) {
+          if (selectedIds.has(shape.id)) {
+            shape.groupId = groupId;
+          }
+        }
+      });
+      state.isModified = true;
+    });
+  },
+
+  ungroupSelectedShapes: () => {
+    const store = get();
+    if (store.selectedShapeIds.length === 0) return;
+
+    set((state) => {
+      // Find all unique group IDs from selected shapes
+      const selectedShapes = state.shapes.filter(s => store.selectedShapeIds.includes(s.id));
+      const groupIdsToRemove = new Set<string>();
+
+      for (const shape of selectedShapes) {
+        if (shape.groupId) {
+          groupIdsToRemove.add(shape.groupId);
+        }
+      }
+
+      if (groupIdsToRemove.size === 0) return;
+
+      // Remove groupId from all shapes in these groups
+      withHistory(state, (draft) => {
+        for (const shape of draft) {
+          if (shape.groupId && groupIdsToRemove.has(shape.groupId)) {
+            delete shape.groupId;
+          }
+        }
+      });
+
+      // Remove the groups
+      state.groups = state.groups.filter(g => !groupIdsToRemove.has(g.id));
+      state.isModified = true;
+    });
   },
 
   // ============================================================================
@@ -1305,5 +1554,67 @@ export const createModelSlice = (
   setActiveLayer: (id) =>
     set((state) => {
       state.activeLayerId = id;
+    }),
+
+  // ============================================================================
+  // Text Style Actions
+  // ============================================================================
+
+  setActiveTextStyle: (id) =>
+    set((state) => {
+      state.activeTextStyleId = id;
+    }),
+
+  addTextStyle: (style) =>
+    set((state) => {
+      state.textStyles.push(style);
+      state.isModified = true;
+    }),
+
+  updateTextStyle: (id, updates) =>
+    set((state) => {
+      const index = state.textStyles.findIndex((s) => s.id === id);
+      if (index !== -1) {
+        state.textStyles[index] = { ...state.textStyles[index], ...updates };
+        state.isModified = true;
+      }
+    }),
+
+  deleteTextStyle: (id) =>
+    set((state) => {
+      const style = state.textStyles.find((s) => s.id === id);
+      // Can't delete built-in styles
+      if (style?.isBuiltIn) return;
+      state.textStyles = state.textStyles.filter((s) => s.id !== id);
+      if (state.activeTextStyleId === id) {
+        state.activeTextStyleId = null;
+      }
+      state.isModified = true;
+    }),
+
+  applyTextStyleToShape: (shapeId, styleId) =>
+    set((state) => {
+      const shape = state.shapes.find((s) => s.id === shapeId);
+      const style = state.textStyles.find((s) => s.id === styleId);
+      if (!shape || shape.type !== 'text' || !style) return;
+
+      // Apply style properties to the shape
+      const textShape = shape as import('../../types/geometry').TextShape;
+      textShape.fontFamily = style.fontFamily;
+      textShape.fontSize = style.fontSize;
+      textShape.bold = style.bold;
+      textShape.italic = style.italic;
+      textShape.underline = style.underline;
+      textShape.color = style.color;
+      textShape.alignment = style.alignment;
+      textShape.verticalAlignment = style.verticalAlignment;
+      textShape.lineHeight = style.lineHeight;
+      textShape.isModelText = style.isModelText;
+      textShape.backgroundMask = style.backgroundMask;
+      textShape.backgroundColor = style.backgroundColor;
+      textShape.backgroundPadding = style.backgroundPadding;
+      textShape.textStyleId = styleId;
+
+      state.isModified = true;
     }),
 });

@@ -31,6 +31,8 @@ export interface TrackingSettings {
   perpendicularTrackingEnabled: boolean;
   polarAngleIncrement: number; // degrees (15, 30, 45, 90)
   trackingTolerance: number; // pixels
+  /** Source angle from snapped shape (for perpendicular/parallel tracking from snap point) */
+  sourceSnapAngle?: number;
 }
 
 export const defaultTrackingSettings: TrackingSettings = {
@@ -69,6 +71,54 @@ export function findPolarTrackingLines(
 }
 
 /**
+ * Find tracking lines from a snapped source angle (perpendicular and parallel to snapped edge)
+ * This is used when the user snaps to a beam/line edge and wants to draw perpendicular to it
+ */
+export function findSourceAngleTrackingLines(
+  basePoint: IPoint,
+  sourceAngle: number
+): TrackingLine[] {
+  const lines: TrackingLine[] = [];
+
+  // Parallel to source (same direction as snapped edge)
+  const parallelDir = { x: Math.cos(sourceAngle), y: Math.sin(sourceAngle) };
+  lines.push({
+    origin: basePoint,
+    direction: parallelDir,
+    angle: sourceAngle,
+    type: 'parallel',
+  });
+
+  // Opposite parallel direction
+  lines.push({
+    origin: basePoint,
+    direction: { x: -parallelDir.x, y: -parallelDir.y },
+    angle: sourceAngle + Math.PI,
+    type: 'parallel',
+  });
+
+  // Perpendicular to source (90 degrees from snapped edge)
+  const perpAngle = sourceAngle + Math.PI / 2;
+  const perpDir = { x: Math.cos(perpAngle), y: Math.sin(perpAngle) };
+  lines.push({
+    origin: basePoint,
+    direction: perpDir,
+    angle: perpAngle,
+    type: 'perpendicular',
+  });
+
+  // Opposite perpendicular direction
+  lines.push({
+    origin: basePoint,
+    direction: { x: -perpDir.x, y: -perpDir.y },
+    angle: perpAngle + Math.PI,
+    type: 'perpendicular',
+  });
+
+  return lines;
+}
+
+/**
  * Find tracking lines from existing shapes (parallel and perpendicular)
  */
 export function findObjectTrackingLines(
@@ -81,7 +131,8 @@ export function findObjectTrackingLines(
   const lines: TrackingLine[] = [];
 
   for (const shape of shapes) {
-    if (shape.type === 'line' && shape.start && shape.end) {
+    // Handle both lines and beams (beams have start/end centerline like lines)
+    if ((shape.type === 'line' || shape.type === 'beam') && shape.start && shape.end) {
       const line: ILine = { start: shape.start, end: shape.end };
       const dir = LineUtils.direction(line);
       const perpDir = LineUtils.perpendicularDirection(line);
@@ -274,6 +325,34 @@ export function applyTracking(
   if (settings.polarEnabled || settings.orthoEnabled) {
     const increment = settings.orthoEnabled ? 90 : settings.polarAngleIncrement;
     allTrackingLines.push(...findPolarTrackingLines(basePoint, increment));
+  }
+
+  // Add tracking lines from source snap angle (perpendicular/parallel to snapped edge)
+  // Check these FIRST with higher priority - if cursor is near perpendicular/parallel to
+  // the source edge, use those tracking lines immediately
+  // Only add if the respective tracking type is enabled
+  if (settings.sourceSnapAngle !== undefined &&
+      (settings.parallelTrackingEnabled || settings.perpendicularTrackingEnabled)) {
+    const allSourceAngleLines = findSourceAngleTrackingLines(basePoint, settings.sourceSnapAngle);
+
+    // Filter based on enabled tracking types
+    const sourceAngleLines = allSourceAngleLines.filter(line => {
+      if (line.type === 'parallel') return settings.parallelTrackingEnabled;
+      if (line.type === 'perpendicular') return settings.perpendicularTrackingEnabled;
+      return true;
+    });
+
+    if (sourceAngleLines.length > 0) {
+      // Check if cursor is close to any source angle tracking line with wider tolerance
+      const sourceAngleTolerance = settings.trackingTolerance * 1.5; // Slightly wider tolerance
+      const sourceResult = findTrackingPoint(cursor, sourceAngleLines, sourceAngleTolerance);
+      if (sourceResult) {
+        return sourceResult; // Perpendicular/parallel to source takes priority
+      }
+
+      // Also add to general tracking lines for intersection detection
+      allTrackingLines.push(...sourceAngleLines);
+    }
   }
 
   // Add object tracking lines (parallel/perpendicular to existing shapes)

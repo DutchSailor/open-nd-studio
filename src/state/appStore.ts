@@ -45,6 +45,8 @@ import {
   type ParametricActions,
   type HatchState,
   type HatchActions,
+  type ClipboardState,
+  type ClipboardActions,
 
   // Initial states
   initialModelState,
@@ -60,6 +62,7 @@ import {
   initialDrawingPlacementState,
   initialParametricState,
   initialHatchState,
+  initialClipboardState,
 
   // Slice creators
   createModelSlice,
@@ -75,6 +78,7 @@ import {
   createDrawingPlacementSlice,
   createParametricSlice,
   createHatchSlice,
+  createClipboardSlice,
 } from './slices';
 
 // Re-export types for backward compatibility
@@ -172,6 +176,9 @@ function extractPerDocState(s: any) {
     pendingSection: s.pendingSection,
     // Hatch patterns (project-level)
     projectPatterns: s.projectPatterns,
+    // Text styles
+    textStyles: s.textStyles,
+    activeTextStyleId: s.activeTextStyleId,
   };
 }
 
@@ -239,6 +246,9 @@ function restoreDocState(docId: string, set: any) {
     state.pendingSection = saved.pendingSection || null;
     // Hatch patterns (project-level)
     state.projectPatterns = saved.projectPatterns || [];
+    // Text styles
+    state.textStyles = saved.textStyles || [];
+    state.activeTextStyleId = saved.activeTextStyleId || null;
   });
 }
 
@@ -288,6 +298,7 @@ export type AppState =
   & DrawingPlacementState
   & ParametricState
   & HatchState
+  & ClipboardState
   & ModelActions
   & ViewActions
   & ToolActions
@@ -301,6 +312,7 @@ export type AppState =
   & DrawingPlacementActions
   & ParametricActions
   & HatchActions
+  & ClipboardActions
   & CoordinatingActions
   & DocumentManagementState
   & DocumentManagementActions;
@@ -323,6 +335,7 @@ const initialState = {
   ...initialDrawingPlacementState,
   ...initialParametricState,
   ...initialHatchState,
+  ...initialClipboardState,
 };
 
 // ============================================================================
@@ -362,6 +375,7 @@ export const useAppStore = create<AppState>()(
       ...createDrawingPlacementSlice(set as any, get as any),
       ...createParametricSlice(set as any, get as any),
       ...createHatchSlice(set as any, get as any),
+      ...createClipboardSlice(set as any, get as any),
 
       // ========================================================================
       // Coordinating Actions (cross-slice operations)

@@ -25,6 +25,7 @@ import {
   X,
   Check,
   Palette,
+  Search,
 } from 'lucide-react';
 import type { UITheme } from '../../../state/slices/snapSlice';
 import { UI_THEMES } from '../../../state/slices/snapSlice';
@@ -63,6 +64,7 @@ import {
   RadiusDimensionIcon,
   DiameterDimensionIcon,
   SteelSectionIcon,
+  BeamIcon,
 } from '../../shared/CadIcons';
 import './Ribbon.css';
 
@@ -429,11 +431,18 @@ export const Ribbon = memo(function Ribbon({ onOpenBackstage }: RibbonProps) {
     selectedShapeIds,
     setPrintDialogOpen,
     setSnapSettingsOpen,
+    // Clipboard
+    copySelectedShapes,
+    cutSelectedShapes,
+    pasteShapes,
+    hasClipboardContent,
 
     selectAll,
     deselectAll,
+    setFindReplaceDialogOpen,
     editorMode,
     openSectionDialog,
+    openBeamDialog,
     setPatternManagerOpen,
 
     // Filled Region mode
@@ -594,24 +603,31 @@ export const Ribbon = memo(function Ribbon({ onOpenBackstage }: RibbonProps) {
               <RibbonButton
                 icon={<ClipboardPaste size={24} />}
                 label="Paste"
-                onClick={() => console.log('Paste')}
+                onClick={() => pasteShapes()}
+                disabled={!hasClipboardContent()}
+                shortcut="Ctrl+V"
               />
               <RibbonButtonStack>
                 <RibbonSmallButton
                   icon={<Scissors size={14} />}
                   label="Cut"
-                  onClick={() => console.log('Cut')}
+                  onClick={cutSelectedShapes}
+                  disabled={selectedShapeIds.length === 0}
+                  shortcut="Ctrl+X"
                 />
                 <RibbonSmallButton
                   icon={<Copy size={14} />}
                   label="Copy"
-                  onClick={() => console.log('Copy')}
+                  onClick={copySelectedShapes}
+                  disabled={selectedShapeIds.length === 0}
+                  shortcut="Ctrl+C"
                 />
                 <RibbonSmallButton
                   icon={<Trash2 size={14} />}
                   label="Delete"
                   onClick={deleteSelectedShapes}
                   disabled={selectedShapeIds.length === 0}
+                  shortcut="Del"
                 />
               </RibbonButtonStack>
             </RibbonGroup>
@@ -641,6 +657,12 @@ export const Ribbon = memo(function Ribbon({ onOpenBackstage }: RibbonProps) {
                   icon={<XSquare size={14} />}
                   label="Deselect"
                   onClick={deselectAll}
+                />
+                <RibbonSmallButton
+                  icon={<Search size={14} />}
+                  label="Find/Replace"
+                  onClick={() => setFindReplaceDialogOpen(true)}
+                  shortcut="Ctrl+H"
                 />
               </RibbonButtonStack>
             </RibbonGroup>
@@ -998,6 +1020,17 @@ export const Ribbon = memo(function Ribbon({ onOpenBackstage }: RibbonProps) {
                 disabled={editorMode !== 'drawing'}
                 tooltip="Insert structural profile section"
                 shortcut="SE"
+              />
+            </RibbonGroup>
+
+            <RibbonGroup label="Framing">
+              <RibbonButton
+                icon={<BeamIcon size={24} />}
+                label="Beam"
+                onClick={openBeamDialog}
+                disabled={editorMode !== 'drawing'}
+                tooltip="Draw structural beam in plan view"
+                shortcut="BE"
               />
             </RibbonGroup>
           </div>

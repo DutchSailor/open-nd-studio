@@ -7,13 +7,13 @@ import { StatusBar } from './components/layout/StatusBar/StatusBar';
 import { FileTabBar } from './components/layout/FileTabBar/FileTabBar';
 
 // Canvas components
-import { Canvas } from './components/Canvas/Canvas';
-import { OptionsBar } from './components/Canvas/OptionsBar/OptionsBar';
+import { Canvas } from './components/canvas/Canvas';
+import { OptionsBar } from './components/canvas/OptionsBar/OptionsBar';
 
 // Panel components
-import { NavigationPanel } from './components/Panels/NavigationPanel';
-import { SheetPropertiesPanel } from './components/Panels/SheetPropertiesPanel';
-import { RightPanelLayout } from './components/Panels/RightPanelLayout';
+import { NavigationPanel } from './components/panels/NavigationPanel';
+import { SheetPropertiesPanel } from './components/panels/SheetPropertiesPanel';
+import { RightPanelLayout } from './components/panels/RightPanelLayout';
 
 // Dialog components
 import { PrintDialog } from './components/dialogs/PrintDialog/PrintDialog';
@@ -23,6 +23,8 @@ import { TitleBlockEditor } from './components/dialogs/TitleBlockEditor';
 import { TitleBlockImportDialog } from './components/dialogs/TitleBlockImportDialog';
 import { NewSheetDialog } from './components/dialogs/NewSheetDialog';
 import { SectionDialog } from './components/dialogs/SectionDialog';
+import { BeamDialog } from './components/dialogs/BeamDialog';
+import { FindReplaceDialog } from './components/dialogs/FindReplaceDialog';
 
 // Editor components
 import { PatternManagerDialog } from './components/editors/PatternManager';
@@ -169,8 +171,14 @@ function App() {
     sectionDialogOpen,
     closeSectionDialog,
     setPendingSection,
+    beamDialogOpen,
+    closeBeamDialog,
+    setPendingBeam,
+    setActiveTool,
     patternManagerOpen,
     setPatternManagerOpen,
+    findReplaceDialogOpen,
+    setFindReplaceDialogOpen,
   } = useAppStore();
 
   return (
@@ -286,10 +294,38 @@ function App() {
         }}
       />
 
+      {/* Beam Dialog - for drawing structural beams */}
+      <BeamDialog
+        isOpen={beamDialogOpen}
+        onClose={closeBeamDialog}
+        onDraw={(profileType, parameters, flangeWidth, options) => {
+          // Set pending beam - user will click start and end points on canvas
+          setPendingBeam({
+            profileType,
+            parameters,
+            flangeWidth,
+            presetId: options.presetId,
+            presetName: options.presetName,
+            material: options.material,
+            justification: options.justification,
+            showCenterline: options.showCenterline,
+            showLabel: options.showLabel,
+          });
+          setActiveTool('beam');
+          closeBeamDialog();
+        }}
+      />
+
       {/* Pattern Manager Dialog */}
       <PatternManagerDialog
         isOpen={patternManagerOpen}
         onClose={() => setPatternManagerOpen(false)}
+      />
+
+      {/* Find & Replace Dialog */}
+      <FindReplaceDialog
+        isOpen={findReplaceDialogOpen}
+        onClose={() => setFindReplaceDialogOpen(false)}
       />
     </div>
   );

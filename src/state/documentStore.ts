@@ -40,6 +40,7 @@ import type {
   DefaultTextStyle,
   TitleBlock,
   TitleBlockField,
+  TextStyle,
 } from './slices/types';
 
 import {
@@ -49,6 +50,7 @@ import {
   createDefaultTitleBlock,
   getShapeBounds,
   defaultStyle,
+  createDefaultTextStyles,
 } from './slices/types';
 
 import type { HistoryEntry } from './slices/historySlice';
@@ -211,6 +213,10 @@ export interface DocumentState {
   // Hatch patterns (per-document)
   hatchCustomPatternId: string | null;  // Selected custom pattern ID for hatch tool
   projectPatterns: import('../types/hatch').CustomHatchPattern[];  // Project-level custom patterns
+
+  // Text Styles (like Revit Text Types)
+  textStyles: TextStyle[];              // Available text styles (built-in + custom)
+  activeTextStyleId: string | null;     // Currently selected text style for new text
 }
 
 // ============================================================================
@@ -378,6 +384,13 @@ export interface DocumentActions {
   cancelPlacement: () => void;
   setPlacementScale: (scale: number) => void;
 
+  // Text Style actions
+  setActiveTextStyle: (styleId: string | null) => void;
+  addTextStyle: (style: Omit<TextStyle, 'id'>) => string;
+  updateTextStyle: (id: string, updates: Partial<TextStyle>) => void;
+  deleteTextStyle: (id: string) => void;
+  applyTextStyleToShape: (shapeId: string, styleId: string) => void;
+
   // File actions
   setFilePath: (path: string | null) => void;
   setProjectName: (name: string) => void;
@@ -504,6 +517,9 @@ export function createEmptyDocumentState(projectName = 'Untitled'): DocumentStat
     // Hatch patterns (per-document)
     hatchCustomPatternId: null,
     projectPatterns: [],
+    // Text Styles
+    textStyles: createDefaultTextStyles(),
+    activeTextStyleId: 'annotation-medium', // Default to 3.5mm annotation
   };
 }
 
@@ -2026,6 +2042,67 @@ export function createDocumentStoreInstance(initial?: Partial<DocumentState>): S
 
       setPlacementScale: (scale) =>
         set((state) => { state.placementScale = Math.max(0.001, Math.min(1, scale)); }),
+
+      // ======================================================================
+      // Text Style Actions
+      // ======================================================================
+
+      setActiveTextStyle: (styleId) =>
+        set((state) => { state.activeTextStyleId = styleId; }),
+
+      addTextStyle: (styleData) => {
+        const id = generateId();
+        set((state) => {
+          state.textStyles.push({ ...styleData, id });
+          state.isModified = true;
+        });
+        return id;
+      },
+
+      updateTextStyle: (id, updates) =>
+        set((state) => {
+          const style = state.textStyles.find(s => s.id === id);
+          if (style && !style.isBuiltIn) {
+            Object.assign(style, updates);
+            state.isModified = true;
+          }
+        }),
+
+      deleteTextStyle: (id) =>
+        set((state) => {
+          const style = state.textStyles.find(s => s.id === id);
+          if (style && !style.isBuiltIn) {
+            state.textStyles = state.textStyles.filter(s => s.id !== id);
+            // Reset active style if deleted
+            if (state.activeTextStyleId === id) {
+              state.activeTextStyleId = 'annotation-medium';
+            }
+            state.isModified = true;
+          }
+        }),
+
+      applyTextStyleToShape: (shapeId, styleId) =>
+        set((state) => {
+          const shape = state.shapes.find(s => s.id === shapeId);
+          const style = state.textStyles.find(s => s.id === styleId);
+          if (shape && shape.type === 'text' && style) {
+            shape.fontFamily = style.fontFamily;
+            shape.fontSize = style.fontSize;
+            shape.bold = style.bold;
+            shape.italic = style.italic;
+            shape.underline = style.underline;
+            shape.color = style.color;
+            shape.alignment = style.alignment;
+            shape.verticalAlignment = style.verticalAlignment;
+            shape.lineHeight = style.lineHeight;
+            shape.isModelText = style.isModelText;
+            shape.backgroundMask = style.backgroundMask;
+            shape.backgroundColor = style.backgroundColor;
+            shape.backgroundPadding = style.backgroundPadding;
+            shape.textStyleId = styleId;
+            state.isModified = true;
+          }
+        }),
 
       // ======================================================================
       // File Actions

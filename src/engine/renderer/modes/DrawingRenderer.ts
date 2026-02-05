@@ -210,8 +210,15 @@ export class DrawingRenderer extends BaseRenderer {
     }
 
     // Draw tracking label (in screen coordinates)
+    // Skip if snap label already shows the same type (avoid duplicate perpendicular/parallel labels)
     if (currentTrackingLines && currentTrackingLines.length > 0 && trackingPoint) {
-      this.trackingLayer.drawTrackingLabel(currentTrackingLines, trackingPoint, viewport);
+      const trackingType = currentTrackingLines[0].type;
+      const snapType = currentSnapPoint?.type;
+      const isDuplicateLabel = (trackingType === 'perpendicular' && snapType === 'perpendicular') ||
+                               (trackingType === 'parallel' && snapType === 'parallel');
+      if (!isDuplicateLabel) {
+        this.trackingLayer.drawTrackingLabel(currentTrackingLines, trackingPoint, viewport);
+      }
     }
   }
 

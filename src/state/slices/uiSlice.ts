@@ -64,6 +64,7 @@ export interface UIState {
   aboutDialogOpen: boolean;
   titleBlockEditorOpen: boolean;
   newSheetDialogOpen: boolean;
+  findReplaceDialogOpen: boolean;
 
   // Terminal
   terminalOpen: boolean;
@@ -88,6 +89,7 @@ export interface UIActions {
   setAboutDialogOpen: (open: boolean) => void;
   setTitleBlockEditorOpen: (open: boolean) => void;
   setNewSheetDialogOpen: (open: boolean) => void;
+  setFindReplaceDialogOpen: (open: boolean) => void;
   setTerminalOpen: (open: boolean) => void;
   toggleTerminal: () => void;
   setTerminalHeight: (height: number) => void;
@@ -129,6 +131,7 @@ export const initialUIState: UIState = {
   aboutDialogOpen: false,
   titleBlockEditorOpen: false,
   newSheetDialogOpen: false,
+  findReplaceDialogOpen: false,
   terminalOpen: false,
   terminalHeight: 200,
   currentFilePath: null,
@@ -149,6 +152,7 @@ interface FullStore {
   aboutDialogOpen: boolean;
   titleBlockEditorOpen: boolean;
   newSheetDialogOpen: boolean;
+  findReplaceDialogOpen: boolean;
   terminalOpen: boolean;
   terminalHeight: number;
   currentFilePath: string | null;
@@ -207,6 +211,11 @@ export const createUISlice = (
   setNewSheetDialogOpen: (open) =>
     set((state) => {
       state.newSheetDialogOpen = open;
+    }),
+
+  setFindReplaceDialogOpen: (open) =>
+    set((state) => {
+      state.findReplaceDialogOpen = open;
     }),
 
   setTerminalOpen: (open) =>

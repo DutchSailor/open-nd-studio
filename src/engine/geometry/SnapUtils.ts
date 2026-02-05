@@ -9,6 +9,7 @@ import type {
   ArcShape,
   EllipseShape,
   PolylineShape,
+  BeamShape,
 } from '../../types/geometry';
 import { bulgeArcMidpoint, bulgeToArc } from './GeometryUtils';
 
@@ -17,16 +18,25 @@ export function distance(p1: Point, p2: Point): number {
   return Math.sqrt((p2.x - p1.x) ** 2 + (p2.y - p1.y) ** 2);
 }
 
+// Calculate line angle (direction from start to end)
+function getLineAngle(shape: LineShape): number {
+  const dx = shape.end.x - shape.start.x;
+  const dy = shape.end.y - shape.start.y;
+  return Math.atan2(dy, dx);
+}
+
 // Get endpoint snap points from a line
 function getLineEndpoints(shape: LineShape): SnapPoint[] {
+  const angle = getLineAngle(shape);
   return [
-    { point: shape.start, type: 'endpoint', sourceShapeId: shape.id },
-    { point: shape.end, type: 'endpoint', sourceShapeId: shape.id },
+    { point: shape.start, type: 'endpoint', sourceShapeId: shape.id, sourceAngle: angle },
+    { point: shape.end, type: 'endpoint', sourceShapeId: shape.id, sourceAngle: angle },
   ];
 }
 
 // Get midpoint snap point from a line
 function getLineMidpoint(shape: LineShape): SnapPoint[] {
+  const angle = getLineAngle(shape);
   return [
     {
       point: {
@@ -35,6 +45,7 @@ function getLineMidpoint(shape: LineShape): SnapPoint[] {
       },
       type: 'midpoint',
       sourceShapeId: shape.id,
+      sourceAngle: angle,
     },
   ];
 }
@@ -45,9 +56,10 @@ function getNearestPointOnLine(shape: LineShape, cursor: Point): SnapPoint[] {
   const dx = end.x - start.x;
   const dy = end.y - start.y;
   const lengthSq = dx * dx + dy * dy;
+  const angle = getLineAngle(shape);
 
   if (lengthSq === 0) {
-    return [{ point: start, type: 'nearest', sourceShapeId: shape.id }];
+    return [{ point: start, type: 'nearest', sourceShapeId: shape.id, sourceAngle: angle }];
   }
 
   let t = ((cursor.x - start.x) * dx + (cursor.y - start.y) * dy) / lengthSq;
@@ -61,12 +73,18 @@ function getNearestPointOnLine(shape: LineShape, cursor: Point): SnapPoint[] {
       },
       type: 'nearest',
       sourceShapeId: shape.id,
+      sourceAngle: angle,
     },
   ];
 }
 
-// Get perpendicular snap point from cursor to line
-function getPerpendicularToLine(shape: LineShape, cursor: Point): SnapPoint[] {
+// Get perpendicular snap point from basePoint to line
+// This finds the point on the line where a perpendicular from basePoint would land
+// Only returns if such a point exists on the line segment
+function getPerpendicularToLine(shape: LineShape, cursor: Point, basePoint?: Point): SnapPoint[] {
+  // Perpendicular snap only works when we have a base point (during drawing)
+  if (!basePoint) return [];
+
   const { start, end } = shape;
   const dx = end.x - start.x;
   const dy = end.y - start.y;
@@ -74,10 +92,13 @@ function getPerpendicularToLine(shape: LineShape, cursor: Point): SnapPoint[] {
 
   if (lengthSq === 0) return [];
 
-  const t = ((cursor.x - start.x) * dx + (cursor.y - start.y) * dy) / lengthSq;
+  // Find perpendicular point from basePoint to the line
+  const t = ((basePoint.x - start.x) * dx + (basePoint.y - start.y) * dy) / lengthSq;
 
   // Only return if perpendicular point is on the line segment
   if (t < 0 || t > 1) return [];
+
+  const angle = getLineAngle(shape);
 
   return [
     {
@@ -87,6 +108,7 @@ function getPerpendicularToLine(shape: LineShape, cursor: Point): SnapPoint[] {
       },
       type: 'perpendicular',
       sourceShapeId: shape.id,
+      sourceAngle: angle,
     },
   ];
 }
@@ -378,6 +400,174 @@ function getPolylineMidpoints(shape: PolylineShape): SnapPoint[] {
   return midpoints;
 }
 
+// Calculate beam angle (direction from start to end)
+function getBeamAngle(shape: BeamShape): number {
+  const dx = shape.end.x - shape.start.x;
+  const dy = shape.end.y - shape.start.y;
+  return Math.atan2(dy, dx);
+}
+
+// Get beam endpoints (centerline endpoints)
+function getBeamEndpoints(shape: BeamShape): SnapPoint[] {
+  const angle = getBeamAngle(shape);
+  return [
+    { point: shape.start, type: 'endpoint', sourceShapeId: shape.id, sourceAngle: angle },
+    { point: shape.end, type: 'endpoint', sourceShapeId: shape.id, sourceAngle: angle },
+  ];
+}
+
+// Calculate beam corner points (four corners of the beam rectangle in plan view)
+function getBeamCorners(shape: BeamShape): Point[] {
+  const { start, end, flangeWidth } = shape;
+  const halfWidth = flangeWidth / 2;
+
+  // Calculate beam direction
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const length = Math.sqrt(dx * dx + dy * dy);
+
+  if (length === 0) {
+    return [start, start, start, start];
+  }
+
+  // Unit vector along beam and perpendicular
+  const ux = dx / length;
+  const uy = dy / length;
+  const px = -uy; // perpendicular x
+  const py = ux;  // perpendicular y
+
+  // Four corners: start-left, start-right, end-right, end-left
+  return [
+    { x: start.x + px * halfWidth, y: start.y + py * halfWidth },  // start-left
+    { x: start.x - px * halfWidth, y: start.y - py * halfWidth },  // start-right
+    { x: end.x - px * halfWidth, y: end.y - py * halfWidth },      // end-right
+    { x: end.x + px * halfWidth, y: end.y + py * halfWidth },      // end-left
+  ];
+}
+
+// Get beam corner snap points (four corners of beam rectangle)
+function getBeamCornerEndpoints(shape: BeamShape): SnapPoint[] {
+  const corners = getBeamCorners(shape);
+  const angle = getBeamAngle(shape);
+  return corners.map(corner => ({
+    point: corner,
+    type: 'endpoint' as SnapType,
+    sourceShapeId: shape.id,
+    sourceAngle: angle,
+  }));
+}
+
+// Get beam midpoint (centerline midpoint)
+function getBeamMidpoint(shape: BeamShape): SnapPoint[] {
+  const angle = getBeamAngle(shape);
+  return [
+    {
+      point: {
+        x: (shape.start.x + shape.end.x) / 2,
+        y: (shape.start.y + shape.end.y) / 2,
+      },
+      type: 'midpoint',
+      sourceShapeId: shape.id,
+      sourceAngle: angle,
+    },
+  ];
+}
+
+// Get beam flange edge midpoints (midpoint of each side line)
+function getBeamFlangeMidpoints(shape: BeamShape): SnapPoint[] {
+  const corners = getBeamCorners(shape);
+  const angle = getBeamAngle(shape);
+  // Left flange midpoint (between start-left and end-left)
+  const leftMid = {
+    x: (corners[0].x + corners[3].x) / 2,
+    y: (corners[0].y + corners[3].y) / 2,
+  };
+  // Right flange midpoint (between start-right and end-right)
+  const rightMid = {
+    x: (corners[1].x + corners[2].x) / 2,
+    y: (corners[1].y + corners[2].y) / 2,
+  };
+
+  return [
+    { point: leftMid, type: 'midpoint', sourceShapeId: shape.id, sourceAngle: angle },
+    { point: rightMid, type: 'midpoint', sourceShapeId: shape.id, sourceAngle: angle },
+  ];
+}
+
+// Get nearest point on beam (including flange lines, not just centerline)
+function getNearestPointOnBeam(shape: BeamShape, cursor: Point): SnapPoint[] {
+  const corners = getBeamCorners(shape);
+  const snapPoints: SnapPoint[] = [];
+
+  // Helper to get nearest point on a line segment
+  const nearestOnSegment = (p1: Point, p2: Point): Point => {
+    const dx = p2.x - p1.x;
+    const dy = p2.y - p1.y;
+    const lengthSq = dx * dx + dy * dy;
+
+    if (lengthSq === 0) return p1;
+
+    let t = ((cursor.x - p1.x) * dx + (cursor.y - p1.y) * dy) / lengthSq;
+    t = Math.max(0, Math.min(1, t));
+
+    return {
+      x: p1.x + t * dx,
+      y: p1.y + t * dy,
+    };
+  };
+
+  // Check all four edges of the beam rectangle
+  const edges = [
+    { start: corners[0], end: corners[3] }, // left flange
+    { start: corners[1], end: corners[2] }, // right flange
+    { start: corners[0], end: corners[1] }, // start cap
+    { start: corners[3], end: corners[2] }, // end cap
+  ];
+
+  let nearestPoint: Point | null = null;
+  let nearestDist = Infinity;
+
+  edges.forEach(edge => {
+    const nearest = nearestOnSegment(edge.start, edge.end);
+    const dist = distance(cursor, nearest);
+    if (dist < nearestDist) {
+      nearestDist = dist;
+      nearestPoint = nearest;
+    }
+  });
+
+  // Also check centerline
+  const { start, end } = shape;
+  const centerNearest = nearestOnSegment(start, end);
+  const centerDist = distance(cursor, centerNearest);
+  if (centerDist < nearestDist) {
+    nearestPoint = centerNearest;
+  }
+
+  if (nearestPoint) {
+    const angle = getBeamAngle(shape);
+    snapPoints.push({
+      point: nearestPoint,
+      type: 'nearest',
+      sourceShapeId: shape.id,
+      sourceAngle: angle,
+    });
+  }
+
+  return snapPoints;
+}
+
+// Get beam flange line segments (for intersection detection)
+function getBeamFlangeSegments(shape: BeamShape): { start: Point; end: Point }[] {
+  const corners = getBeamCorners(shape);
+  return [
+    { start: corners[0], end: corners[3] }, // left flange line
+    { start: corners[1], end: corners[2] }, // right flange line
+    { start: corners[0], end: corners[1] }, // start cap
+    { start: corners[3], end: corners[2] }, // end cap
+  ];
+}
+
 // Calculate line-line intersection
 function lineLineIntersection(
   p1: Point,
@@ -475,6 +665,9 @@ function getShapeSegments(shape: Shape): { start: Point; end: Point }[] {
       }
       return segments;
     }
+    case 'beam':
+      // Use beam flange lines for intersection detection (all four edges)
+      return getBeamFlangeSegments(shape);
     default:
       return [];
   }
@@ -526,7 +719,8 @@ export function getIntersectionPoints(shapes: Shape[]): SnapPoint[] {
 export function getShapeSnapPoints(
   shape: Shape,
   activeSnaps: SnapType[],
-  cursor?: Point
+  cursor?: Point,
+  basePoint?: Point
 ): SnapPoint[] {
   if (!shape.visible) return [];
 
@@ -543,8 +737,8 @@ export function getShapeSnapPoints(
       if (activeSnaps.includes('nearest') && cursor) {
         snapPoints.push(...getNearestPointOnLine(shape, cursor));
       }
-      if (activeSnaps.includes('perpendicular') && cursor) {
-        snapPoints.push(...getPerpendicularToLine(shape, cursor));
+      if (activeSnaps.includes('perpendicular') && cursor && basePoint) {
+        snapPoints.push(...getPerpendicularToLine(shape, cursor, basePoint));
       }
       break;
 
@@ -636,6 +830,25 @@ export function getShapeSnapPoints(
         }
       }
       break;
+
+    case 'beam':
+      if (activeSnaps.includes('endpoint')) {
+        // Centerline endpoints
+        snapPoints.push(...getBeamEndpoints(shape));
+        // Four corner points of beam rectangle (flange corners)
+        snapPoints.push(...getBeamCornerEndpoints(shape));
+      }
+      if (activeSnaps.includes('midpoint')) {
+        // Centerline midpoint
+        snapPoints.push(...getBeamMidpoint(shape));
+        // Flange edge midpoints (left and right side lines)
+        snapPoints.push(...getBeamFlangeMidpoints(shape));
+      }
+      if (activeSnaps.includes('nearest') && cursor) {
+        // Nearest point on beam edges (flanges, caps, and centerline)
+        snapPoints.push(...getNearestPointOnBeam(shape, cursor));
+      }
+      break;
   }
 
   return snapPoints;
@@ -647,7 +860,8 @@ export function findNearestSnapPoint(
   shapes: Shape[],
   activeSnaps: SnapType[],
   tolerance: number,
-  gridSize: number
+  gridSize: number,
+  basePoint?: Point
 ): SnapPoint | null {
   const snapPoints: SnapPoint[] = [];
 
@@ -664,7 +878,7 @@ export function findNearestSnapPoint(
 
   // Get snap points from all shapes
   shapes.forEach((shape) => {
-    snapPoints.push(...getShapeSnapPoints(shape, activeSnaps, cursor));
+    snapPoints.push(...getShapeSnapPoints(shape, activeSnaps, cursor, basePoint));
   });
 
   // Get intersection points if enabled

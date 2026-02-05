@@ -33,6 +33,8 @@ export function useSnapDetection() {
     setCurrentTrackingLines,
     setTrackingPoint,
     setDirectDistanceAngle,
+    // Drawing points for in-progress polyline snapping
+    drawingPoints,
   } = useAppStore();
 
   // Filter shapes to only include visible shapes in the current drawing
@@ -43,9 +45,12 @@ export function useSnapDetection() {
   /**
    * Find and snap to the nearest snap point (geometry or grid), with tracking support
    * Returns both the snapped point and the snap info (for dimension associativity)
+   * @param point - Current cursor position in world coordinates
+   * @param basePoint - Base point for tracking (e.g., first click point when drawing)
+   * @param sourceSnapAngle - Angle of the source shape from first snap (for perpendicular tracking)
    */
   const snapPoint = useCallback(
-    (point: Point, basePoint?: Point): SnapResult => {
+    (point: Point, basePoint?: Point, sourceSnapAngle?: number): SnapResult => {
       let resultPoint = point;
       let usedTracking = false;
 
@@ -60,11 +65,12 @@ export function useSnapDetection() {
           perpendicularTrackingEnabled: activeSnaps.includes('perpendicular'), // Respect snap setting
           polarAngleIncrement: orthoMode ? 90 : polarAngleIncrement,
           trackingTolerance: snapTolerance,
+          sourceSnapAngle: sourceSnapAngle, // Pass source angle for perpendicular/parallel tracking
         };
 
-        // Convert shapes to format expected by tracking (only shapes in current drawing)
+        // Convert shapes to format expected by tracking (lines and beams in current drawing)
         const trackableShapes = drawingShapes
-          .filter((s) => s.type === 'line')
+          .filter((s) => s.type === 'line' || s.type === 'beam')
           .map((s) => ({
             id: s.id,
             type: s.type,
@@ -128,13 +134,79 @@ export function useSnapDetection() {
           drawingShapes,
           effectiveSnaps,
           worldTolerance,
-          adjustedGridSize
+          adjustedGridSize,
+          basePoint
         );
 
-        if (nearestSnap) {
-          // Object snap takes priority over tracking
+        // Also check in-progress drawing points for polyline/spline snapping
+        let nearestDrawingPointSnap: SnapPoint | null = null;
+        const cursorPoint = usedTracking ? resultPoint : point;
+
+        if (drawingPoints.length > 1) {
+          let minDist = Infinity;
+
+          // Check endpoints (all points except the last one - that's where we're drawing from)
+          if (activeSnaps.includes('endpoint')) {
+            for (let i = 0; i < drawingPoints.length - 1; i++) {
+              const dp = drawingPoints[i];
+              const dist = Math.sqrt(
+                (dp.x - cursorPoint.x) ** 2 + (dp.y - cursorPoint.y) ** 2
+              );
+              if (dist <= worldTolerance && dist < minDist) {
+                minDist = dist;
+                nearestDrawingPointSnap = {
+                  point: dp,
+                  type: 'endpoint',
+                  sourceShapeId: 'in-progress-drawing',
+                };
+              }
+            }
+          }
+
+          // Check midpoints of segments (all segments except the one being drawn)
+          if (activeSnaps.includes('midpoint')) {
+            for (let i = 0; i < drawingPoints.length - 2; i++) {
+              const p1 = drawingPoints[i];
+              const p2 = drawingPoints[i + 1];
+              const midpoint = {
+                x: (p1.x + p2.x) / 2,
+                y: (p1.y + p2.y) / 2,
+              };
+              const dist = Math.sqrt(
+                (midpoint.x - cursorPoint.x) ** 2 + (midpoint.y - cursorPoint.y) ** 2
+              );
+              if (dist <= worldTolerance && dist < minDist) {
+                minDist = dist;
+                nearestDrawingPointSnap = {
+                  point: midpoint,
+                  type: 'midpoint',
+                  sourceShapeId: 'in-progress-drawing',
+                };
+              }
+            }
+          }
+        }
+
+        // Return the closest snap point (either from existing shapes or drawing points)
+        if (nearestSnap && nearestDrawingPointSnap) {
+          const cursorPoint = usedTracking ? resultPoint : point;
+          const distToShape = Math.sqrt(
+            (nearestSnap.point.x - cursorPoint.x) ** 2 +
+            (nearestSnap.point.y - cursorPoint.y) ** 2
+          );
+          const distToDrawing = Math.sqrt(
+            (nearestDrawingPointSnap.point.x - cursorPoint.x) ** 2 +
+            (nearestDrawingPointSnap.point.y - cursorPoint.y) ** 2
+          );
+          const bestSnap = distToDrawing < distToShape ? nearestDrawingPointSnap : nearestSnap;
+          setCurrentSnapPoint(bestSnap);
+          return { point: bestSnap.point, snapInfo: bestSnap };
+        } else if (nearestSnap) {
           setCurrentSnapPoint(nearestSnap);
           return { point: nearestSnap.point, snapInfo: nearestSnap };
+        } else if (nearestDrawingPointSnap) {
+          setCurrentSnapPoint(nearestDrawingPointSnap);
+          return { point: nearestDrawingPointSnap.point, snapInfo: nearestDrawingPointSnap };
         }
       }
 
@@ -158,6 +230,7 @@ export function useSnapDetection() {
       setCurrentTrackingLines,
       setTrackingPoint,
       setDirectDistanceAngle,
+      drawingPoints,
     ]
   );
 

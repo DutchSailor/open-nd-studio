@@ -75,18 +75,18 @@ export interface DimensionStyle {
 }
 
 /**
- * Default dimension style - matches typical CAD conventions
+ * Default dimension style - Revit-like appearance
  */
 export const DEFAULT_DIMENSION_STYLE: DimensionStyle = {
-  arrowType: 'filled',
-  arrowSize: 3,
-  extensionLineGap: 2,
-  extensionLineOvershoot: 2,
-  textHeight: 3,
-  textPlacement: 'above',
-  lineColor: '#00ffff', // Cyan - standard dimension color
+  arrowType: 'tick',        // Revit uses diagonal tick marks
+  arrowSize: 2.5,           // Tick mark size
+  extensionLineGap: 1.5,    // Small gap between geometry and extension line
+  extensionLineOvershoot: 2.5, // Extension line extends past dimension line
+  textHeight: 2.5,          // Slightly smaller text
+  textPlacement: 'centered', // Revit centers text on dimension line
+  lineColor: '#00ffff',     // Cyan - standard dimension color
   textColor: '#00ffff',
-  precision: 2,
+  precision: 0,             // Revit typically shows whole numbers
 };
 
 // ============================================================================
@@ -141,6 +141,12 @@ export interface DimensionShape extends BaseShape {
 
   /** Whether this dimension constrains the measured geometry */
   dimensionLocked?: boolean;
+
+  /** Text position offset from default center position (for dragging text) */
+  textOffset?: Point;
+
+  /** Individual witness line gap overrides [gap1, gap2] */
+  witnessLineGaps?: [number, number];
 }
 
 // ============================================================================

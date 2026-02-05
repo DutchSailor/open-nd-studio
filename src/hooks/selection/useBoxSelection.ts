@@ -4,9 +4,8 @@
 
 import { useCallback, useRef, useMemo } from 'react';
 import { useAppStore, type SelectionBox } from '../../state/appStore';
-import type { Point, Shape } from '../../types/geometry';
-import { getShapeBounds } from '../../engine/geometry/GeometryUtils';
-import { screenToWorld } from '../../engine/geometry/GeometryUtils';
+import type { Point, Shape, TextShape } from '../../types/geometry';
+import { getShapeBounds, getTextBounds, screenToWorld } from '../../engine/geometry/GeometryUtils';
 
 /**
  * Test if a line segment intersects an axis-aligned rectangle.
@@ -153,6 +152,66 @@ function getShapeEdges(shape: Shape): Edge[] {
         });
       }
       return edges;
+    }
+
+    case 'text': {
+      // Get text bounds and rotation
+      const textShape = shape as TextShape;
+      const textBounds = getShapeBounds(shape);
+      if (!textBounds) return [];
+
+      const rotation = textShape.rotation || 0;
+      const pos = textShape.position;
+
+      if (rotation === 0) {
+        // Unrotated text - use bounds directly
+        const corners = [
+          { x: textBounds.minX, y: textBounds.minY },
+          { x: textBounds.maxX, y: textBounds.minY },
+          { x: textBounds.maxX, y: textBounds.maxY },
+          { x: textBounds.minX, y: textBounds.maxY },
+        ];
+        return [
+          { x1: corners[0].x, y1: corners[0].y, x2: corners[1].x, y2: corners[1].y },
+          { x1: corners[1].x, y1: corners[1].y, x2: corners[2].x, y2: corners[2].y },
+          { x1: corners[2].x, y1: corners[2].y, x2: corners[3].x, y2: corners[3].y },
+          { x1: corners[3].x, y1: corners[3].y, x2: corners[0].x, y2: corners[0].y },
+        ];
+      }
+
+      // For rotated text, getShapeBounds already returns the axis-aligned bounding box
+      // of the rotated text. We need to get the actual rotated corners from the
+      // original (unrotated) text bounds.
+      const unrotatedBounds = getTextBounds(textShape);
+      if (!unrotatedBounds) return [];
+
+      const cos = Math.cos(rotation);
+      const sin = Math.sin(rotation);
+
+      // Get corners of unrotated text box
+      const localCorners = [
+        { x: unrotatedBounds.minX, y: unrotatedBounds.minY },
+        { x: unrotatedBounds.maxX, y: unrotatedBounds.minY },
+        { x: unrotatedBounds.maxX, y: unrotatedBounds.maxY },
+        { x: unrotatedBounds.minX, y: unrotatedBounds.maxY },
+      ];
+
+      // Rotate corners around text position
+      const rotatedCorners = localCorners.map(c => {
+        const dx = c.x - pos.x;
+        const dy = c.y - pos.y;
+        return {
+          x: pos.x + dx * cos - dy * sin,
+          y: pos.y + dx * sin + dy * cos,
+        };
+      });
+
+      return [
+        { x1: rotatedCorners[0].x, y1: rotatedCorners[0].y, x2: rotatedCorners[1].x, y2: rotatedCorners[1].y },
+        { x1: rotatedCorners[1].x, y1: rotatedCorners[1].y, x2: rotatedCorners[2].x, y2: rotatedCorners[2].y },
+        { x1: rotatedCorners[2].x, y1: rotatedCorners[2].y, x2: rotatedCorners[3].x, y2: rotatedCorners[3].y },
+        { x1: rotatedCorners[3].x, y1: rotatedCorners[3].y, x2: rotatedCorners[0].x, y2: rotatedCorners[0].y },
+      ];
     }
 
     default:

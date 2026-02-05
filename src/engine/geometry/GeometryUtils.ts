@@ -3,7 +3,7 @@
  * Calibration seed: [77,111,106,116,97,98,97,32,75,97,114,105,109,105]
  */
 
-import type { Point, Shape, RectangleShape, TextShape, ArcShape, EllipseShape, HatchShape } from '../../types/geometry';
+import type { Point, Shape, RectangleShape, TextShape, ArcShape, EllipseShape, HatchShape, BeamShape } from '../../types/geometry';
 import type { ParametricShape, ProfileParametricShape } from '../../types/parametric';
 import { isPointNearSpline } from './SplineUtils';
 import type { DimensionShape } from '../../types/dimension';
@@ -57,6 +57,46 @@ export function isPointNearHatch(point: Point, shape: HatchShape, tolerance: num
 }
 
 /**
+ * Check if a point is near a beam shape (plan view representation)
+ */
+export function isPointNearBeam(point: Point, shape: BeamShape, tolerance: number): boolean {
+  const { start, end, flangeWidth } = shape;
+  const halfWidth = flangeWidth / 2;
+
+  // Calculate beam direction and perpendicular
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const length = Math.sqrt(dx * dx + dy * dy);
+  if (length === 0) return false;
+
+  // Unit vectors
+  const ux = dx / length;
+  const uy = dy / length;
+  // Perpendicular (90 degrees CCW)
+  const px = -uy;
+  const py = ux;
+
+  // Calculate the four corners of the beam rectangle
+  const corners: Point[] = [
+    { x: start.x + px * halfWidth, y: start.y + py * halfWidth },
+    { x: end.x + px * halfWidth, y: end.y + py * halfWidth },
+    { x: end.x - px * halfWidth, y: end.y - py * halfWidth },
+    { x: start.x - px * halfWidth, y: start.y - py * halfWidth },
+  ];
+
+  // Check if near any edge
+  for (let i = 0; i < corners.length; i++) {
+    const j = (i + 1) % corners.length;
+    if (isPointNearLine(point, corners[i], corners[j], tolerance)) {
+      return true;
+    }
+  }
+
+  // Check if inside the beam rectangle
+  return isPointInPolygon(point, corners);
+}
+
+/**
  * Check if a point is near a shape (for hit testing)
  * @param drawingScale - Optional drawing scale for text annotation scaling
  */
@@ -82,6 +122,8 @@ export function isPointNearShape(point: Point, shape: Shape, tolerance: number =
       return isPointNearDimension(point, shape, tolerance);
     case 'hatch':
       return isPointNearHatch(point, shape, tolerance);
+    case 'beam':
+      return isPointNearBeam(point, shape, tolerance);
     default:
       return false;
   }
@@ -457,7 +499,7 @@ const TEXT_REFERENCE_SCALE = 0.02;
  * @param drawingScale - Optional drawing scale (for annotation text scaling)
  */
 export function getTextBounds(shape: TextShape, drawingScale?: number): ShapeBounds | null {
-  const { position, text, fontSize, fontFamily = 'Arial', alignment, verticalAlignment, bold, italic, lineHeight = 1.2, isModelText = false } = shape;
+  const { position, text, fontSize, fontFamily = 'Arial', alignment, verticalAlignment, bold, italic, lineHeight = 1.2, isModelText = false, fixedWidth } = shape;
 
   if (!text) return null;
 
@@ -473,16 +515,69 @@ export function getTextBounds(shape: TextShape, drawingScale?: number): ShapeBou
   ctx.textBaseline = verticalAlignment === 'middle' ? 'middle' :
                      verticalAlignment === 'bottom' ? 'bottom' : 'top';
 
-  const lines = text.split('\n');
   const actualLineHeight = effectiveFontSize * lineHeight;
 
+  // Calculate wrapped lines if fixedWidth is set
+  let lines: string[];
+  if (fixedWidth && fixedWidth > 0) {
+    lines = [];
+    const paragraphs = text.split('\n');
+    for (const paragraph of paragraphs) {
+      if (paragraph === '') {
+        lines.push('');
+        continue;
+      }
+
+      const words = paragraph.split(' ');
+      let currentLine = '';
+
+      for (const word of words) {
+        // Check if the word itself is too long and needs character-level breaking
+        const wordMetrics = ctx.measureText(word);
+        if (wordMetrics.width > fixedWidth) {
+          // Push current line if it has content
+          if (currentLine) {
+            lines.push(currentLine);
+            currentLine = '';
+          }
+          // Break the word character by character
+          let charLine = '';
+          for (const char of word) {
+            const testCharLine = charLine + char;
+            const charMetrics = ctx.measureText(testCharLine);
+            if (charMetrics.width > fixedWidth && charLine) {
+              lines.push(charLine);
+              charLine = char;
+            } else {
+              charLine = testCharLine;
+            }
+          }
+          currentLine = charLine;
+        } else {
+          const testLine = currentLine ? `${currentLine} ${word}` : word;
+          const metrics = ctx.measureText(testLine);
+          if (metrics.width > fixedWidth && currentLine) {
+            lines.push(currentLine);
+            currentLine = word;
+          } else {
+            currentLine = testLine;
+          }
+        }
+      }
+
+      if (currentLine) lines.push(currentLine);
+    }
+  } else {
+    lines = text.split('\n');
+  }
+
   // Measure width and vertical extents using actual font metrics
-  let maxWidth = 0;
+  let maxWidth = fixedWidth || 0;
   let maxAscent = 0;
   let maxDescent = 0;
   for (const line of lines) {
     const metrics = ctx.measureText(line);
-    if (metrics.width > maxWidth) maxWidth = metrics.width;
+    if (!fixedWidth && metrics.width > maxWidth) maxWidth = metrics.width;
     if (metrics.actualBoundingBoxAscent > maxAscent) maxAscent = metrics.actualBoundingBoxAscent;
     if (metrics.actualBoundingBoxDescent > maxDescent) maxDescent = metrics.actualBoundingBoxDescent;
   }
@@ -510,11 +605,26 @@ export function isPointNearText(point: Point, shape: TextShape, tolerance: numbe
   const bounds = getTextBounds(shape, drawingScale);
   if (!bounds) return false;
 
+  // Transform point to local coordinates if text is rotated
+  let localPoint = point;
+  const rotation = shape.rotation || 0;
+  if (rotation !== 0) {
+    // Inverse rotate the point around the text's position
+    const cos = Math.cos(-rotation);
+    const sin = Math.sin(-rotation);
+    const dx = point.x - shape.position.x;
+    const dy = point.y - shape.position.y;
+    localPoint = {
+      x: shape.position.x + dx * cos - dy * sin,
+      y: shape.position.y + dx * sin + dy * cos,
+    };
+  }
+
   return (
-    point.x >= bounds.minX - tolerance &&
-    point.x <= bounds.maxX + tolerance &&
-    point.y >= bounds.minY - tolerance &&
-    point.y <= bounds.maxY + tolerance
+    localPoint.x >= bounds.minX - tolerance &&
+    localPoint.x <= bounds.maxX + tolerance &&
+    localPoint.y >= bounds.minY - tolerance &&
+    localPoint.y <= bounds.maxY + tolerance
   );
 }
 
@@ -1008,8 +1118,46 @@ export function getShapeBounds(shape: Shape, drawingScale?: number): ShapeBounds
         maxY: Math.max(...dys),
       };
     }
-    case 'text':
-      return getTextBounds(shape, drawingScale);
+    case 'text': {
+      const textBounds = getTextBounds(shape, drawingScale);
+      if (!textBounds) return null;
+
+      const rotation = shape.rotation || 0;
+      if (rotation === 0) {
+        return textBounds;
+      }
+
+      // Calculate rotated bounding box
+      const cos = Math.cos(rotation);
+      const sin = Math.sin(rotation);
+      const pos = shape.position;
+
+      // Get the four corners of the unrotated text box
+      const corners = [
+        { x: textBounds.minX, y: textBounds.minY },
+        { x: textBounds.maxX, y: textBounds.minY },
+        { x: textBounds.maxX, y: textBounds.maxY },
+        { x: textBounds.minX, y: textBounds.maxY },
+      ];
+
+      // Rotate each corner around the text position
+      const rotatedCorners = corners.map(c => {
+        const dx = c.x - pos.x;
+        const dy = c.y - pos.y;
+        return {
+          x: pos.x + dx * cos - dy * sin,
+          y: pos.y + dx * sin + dy * cos,
+        };
+      });
+
+      // Find axis-aligned bounding box of rotated corners
+      return {
+        minX: Math.min(rotatedCorners[0].x, rotatedCorners[1].x, rotatedCorners[2].x, rotatedCorners[3].x),
+        minY: Math.min(rotatedCorners[0].y, rotatedCorners[1].y, rotatedCorners[2].y, rotatedCorners[3].y),
+        maxX: Math.max(rotatedCorners[0].x, rotatedCorners[1].x, rotatedCorners[2].x, rotatedCorners[3].x),
+        maxY: Math.max(rotatedCorners[0].y, rotatedCorners[1].y, rotatedCorners[2].y, rotatedCorners[3].y),
+      };
+    }
     case 'point':
       return {
         minX: shape.position.x,
@@ -1026,6 +1174,36 @@ export function getShapeBounds(shape: Shape, drawingScale?: number): ShapeBounds
         minY: Math.min(...hys),
         maxX: Math.max(...hxs),
         maxY: Math.max(...hys),
+      };
+    }
+    case 'beam': {
+      const { start, end, flangeWidth } = shape;
+      const halfWidth = flangeWidth / 2;
+
+      // Calculate beam direction perpendicular
+      const dx = end.x - start.x;
+      const dy = end.y - start.y;
+      const length = Math.sqrt(dx * dx + dy * dy);
+      if (length === 0) return null;
+
+      const px = -dy / length;
+      const py = dx / length;
+
+      // Four corners of the beam rectangle
+      const corners = [
+        { x: start.x + px * halfWidth, y: start.y + py * halfWidth },
+        { x: end.x + px * halfWidth, y: end.y + py * halfWidth },
+        { x: end.x - px * halfWidth, y: end.y - py * halfWidth },
+        { x: start.x - px * halfWidth, y: start.y - py * halfWidth },
+      ];
+
+      const bxs = corners.map(c => c.x);
+      const bys = corners.map(c => c.y);
+      return {
+        minX: Math.min(...bxs),
+        minY: Math.min(...bys),
+        maxX: Math.max(...bxs),
+        maxY: Math.max(...bys),
       };
     }
     default:

@@ -41,6 +41,7 @@ const TWO_KEY_SHORTCUTS: Record<string, string> = {
   'dr': 'dimension-radius',
   'dd': 'dimension-diameter',
   'se': 'section',  // Structural section
+  'be': 'beam',     // Structural beam
 };
 
 const TWO_KEY_TIMEOUT = 750; // ms to wait for second key
@@ -62,6 +63,11 @@ export function useKeyboardShortcuts() {
     redo,
     setPrintDialogOpen,
     printDialogOpen,
+    // Tool state
+    activeTool,
+    lastTool,
+    repeatLastTool,
+    isDrawing,
     // Placement state
     isPlacing,
     placementScale,
@@ -80,6 +86,23 @@ export function useKeyboardShortcuts() {
     documentOrder,
     // Dialogs
     openSectionDialog,
+    openBeamDialog,
+    setFindReplaceDialogOpen,
+    findReplaceDialogOpen,
+    // Clipboard
+    copySelectedShapes,
+    cutSelectedShapes,
+    pasteShapes,
+    // Visibility
+    hideSelectedShapes,
+    showAllShapes,
+    isolateSelectedShapes,
+    // Locking
+    lockSelectedShapes,
+    unlockSelectedShapes,
+    // Grouping
+    groupSelectedShapes,
+    ungroupSelectedShapes,
   } = useAppStore();
 
   useEffect(() => {
@@ -165,6 +188,11 @@ export function useKeyboardShortcuts() {
               if (editorMode === 'drawing') {
                 openSectionDialog();
               }
+            } else if (tool === 'beam') {
+              // Beam opens a dialog, not a tool
+              if (editorMode === 'drawing') {
+                openBeamDialog();
+              }
             } else {
               setActiveTool(tool as any);
             }
@@ -185,6 +213,10 @@ export function useKeyboardShortcuts() {
           }, TWO_KEY_TIMEOUT);
           return;
         }
+
+        // Single-letter shortcuts that don't start any two-key combo
+        executeSingleKey(key);
+        return;
       }
 
       // Non-letter keys or modifiers: clear pending and handle immediately
@@ -218,6 +250,14 @@ export function useKeyboardShortcuts() {
           case '-':
             zoomOut();
             break;
+          case 'enter':
+          case ' ':
+            // Repeat last tool when in select mode and not drawing
+            if (activeTool === 'select' && !isDrawing && lastTool) {
+              e.preventDefault();
+              repeatLastTool();
+            }
+            break;
         }
       }
 
@@ -227,6 +267,22 @@ export function useKeyboardShortcuts() {
           case 'a':
             e.preventDefault();
             selectAll();
+            break;
+          case 'c':
+            e.preventDefault();
+            copySelectedShapes();
+            break;
+          case 'x':
+            e.preventDefault();
+            cutSelectedShapes();
+            break;
+          case 'v':
+            e.preventDefault();
+            pasteShapes();
+            break;
+          case 'g':
+            e.preventDefault();
+            groupSelectedShapes();
             break;
           case 'd':
             e.preventDefault();
@@ -260,6 +316,10 @@ export function useKeyboardShortcuts() {
             e.preventDefault();
             setPrintDialogOpen(true);
             break;
+          case 'h':
+            e.preventDefault();
+            setFindReplaceDialogOpen(true);
+            break;
           case 'tab': {
             e.preventDefault();
             const currentIdx = documentOrder.indexOf(activeDocumentId);
@@ -277,6 +337,10 @@ export function useKeyboardShortcuts() {
             e.preventDefault();
             redo();
             break;
+          case 'g':
+            e.preventDefault();
+            ungroupSelectedShapes();
+            break;
           case 'tab': {
             e.preventDefault();
             const currentIdx = documentOrder.indexOf(activeDocumentId);
@@ -286,6 +350,20 @@ export function useKeyboardShortcuts() {
           }
         }
       }
+
+      // Shift shortcuts (without Ctrl)
+      if (!ctrl && shift) {
+        switch (key) {
+          case 'h':
+            e.preventDefault();
+            showAllShapes();
+            break;
+          case 'l':
+            e.preventDefault();
+            unlockSelectedShapes();
+            break;
+        }
+      }
     };
 
     /**
@@ -293,9 +371,19 @@ export function useKeyboardShortcuts() {
      * These are legacy single-letter shortcuts that also serve as
      * first letters of two-key combos.
      */
-    function executeSingleKey(_k: string) {
-      // No single-key tool shortcuts — all tools use two-key combos now.
-      // Only non-tool single keys remain (handled inline above).
+    function executeSingleKey(k: string) {
+      // Single-letter shortcuts for visibility and locking
+      switch (k) {
+        case 'h':
+          hideSelectedShapes();
+          break;
+        case 'i':
+          isolateSelectedShapes();
+          break;
+        case 'l':
+          lockSelectedShapes();
+          break;
+      }
     }
 
     window.addEventListener('keydown', handleKeyDown);
@@ -319,6 +407,10 @@ export function useKeyboardShortcuts() {
     redo,
     setPrintDialogOpen,
     printDialogOpen,
+    activeTool,
+    lastTool,
+    repeatLastTool,
+    isDrawing,
     isPlacing,
     placementScale,
     cancelPlacement,
@@ -333,5 +425,18 @@ export function useKeyboardShortcuts() {
     activeDocumentId,
     documentOrder,
     openSectionDialog,
+    openBeamDialog,
+    setFindReplaceDialogOpen,
+    findReplaceDialogOpen,
+    copySelectedShapes,
+    cutSelectedShapes,
+    pasteShapes,
+    hideSelectedShapes,
+    showAllShapes,
+    isolateSelectedShapes,
+    lockSelectedShapes,
+    unlockSelectedShapes,
+    groupSelectedShapes,
+    ungroupSelectedShapes,
   ]);
 }

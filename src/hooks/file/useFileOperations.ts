@@ -238,11 +238,21 @@ export function useFileOperations() {
       const s = useAppStore.getState();
       const shapes = parseDXF(content, s.activeLayerId, s.activeDrawingId);
       if (shapes.length === 0) {
-        await showInfo('No supported entities found in the DXF file.');
+        await showInfo('No supported entities found in the DXF file.\n\nSupported entities: LINE, CIRCLE, ARC, ELLIPSE, POLYLINE, LWPOLYLINE, SPLINE, TEXT, MTEXT, POINT, SOLID, 3DFACE, TRACE');
         return;
       }
+
+      // Count shape types for detailed feedback
+      const typeCounts: Record<string, number> = {};
+      for (const shape of shapes) {
+        typeCounts[shape.type] = (typeCounts[shape.type] || 0) + 1;
+      }
+      const typeBreakdown = Object.entries(typeCounts)
+        .map(([type, count]) => `${count} ${type}${count > 1 ? 's' : ''}`)
+        .join(', ');
+
       addShapes(shapes);
-      await showInfo(`Imported ${shapes.length} shape(s) from DXF.`);
+      await showInfo(`Imported ${shapes.length} shape(s) from DXF:\n${typeBreakdown}`);
     } catch (err) {
       await showError(`Failed to import DXF: ${err}`);
     }

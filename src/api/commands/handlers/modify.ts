@@ -163,7 +163,15 @@ function scaleShape(shape: Shape, center: Point, factor: number): void {
       break;
     case 'text':
       shape.position = scale(shape.position);
-      shape.fontSize = (shape.fontSize || 12) * factor;
+      // Only scale fontSize for Model Text (isModelText === true)
+      // Annotation text maintains fixed paper size
+      if (shape.isModelText) {
+        shape.fontSize = (shape.fontSize || 12) * factor;
+        // Also scale background padding if present
+        if (shape.backgroundPadding) {
+          shape.backgroundPadding *= factor;
+        }
+      }
       break;
     case 'dimension':
       if (shape.points) {

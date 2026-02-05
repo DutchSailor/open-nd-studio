@@ -2,11 +2,14 @@ import { useRef, useEffect, useCallback } from 'react';
 import { useAppStore } from '../../state/appStore';
 import { CADRenderer } from '../../engine/renderer/CADRenderer';
 import { useCanvasEvents } from '../../hooks/canvas/useCanvasEvents';
+import { useContextMenu } from '../../hooks/canvas/useContextMenu';
 import { useDrawingKeyboard } from '../../hooks/keyboard/useDrawingKeyboard';
 import { DynamicInput } from './DynamicInput/DynamicInput';
 import { TextEditor } from '../editors/TextEditor/TextEditor';
-import type { TextShape } from '../../types/geometry';
+import { ContextMenu } from '../shared/ContextMenu';
+import type { TextShape, Point } from '../../types/geometry';
 import { MM_TO_PIXELS } from '../../engine/renderer/types';
+import { screenToWorld } from '../../engine/geometry/GeometryUtils';
 
 export function Canvas() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -214,8 +217,53 @@ export function Canvas() {
   }, []);
 
   // Handle mouse events
-  const { handleMouseDown, handleMouseMove, handleMouseUp, handleWheel, handleClick, handleDoubleClick, handleContextMenu, isPanning } =
+  const { handleMouseDown, handleMouseMove, handleMouseUp, handleWheel, handleClick, handleDoubleClick, handleContextMenu: baseHandleContextMenu, isPanning } =
     useCanvasEvents(canvasRef);
+
+  // Context menu state
+  const { menuState, openMenu, closeMenu, getMenuItems } = useContextMenu();
+  const contextMenuWorldPosRef = useRef<Point | null>(null);
+
+  // Extended context menu handler that opens our React menu
+  const handleContextMenu = useCallback(
+    (e: React.MouseEvent<HTMLCanvasElement>) => {
+      const s = useAppStore.getState();
+
+      // In drawing mode
+      if (s.editorMode === 'drawing' && !s.pendingSection && !s.pendingBeam) {
+        e.preventDefault();
+
+        // If in a drawing/modify tool (not select)
+        if (s.activeTool !== 'select') {
+          // If actively drawing (points placed), finish current drawing but stay in tool
+          if (s.isDrawing || s.drawingPoints.length > 0) {
+            useAppStore.getState().clearDrawingPoints();
+            return;
+          }
+          // Not drawing - exit to select mode
+          useAppStore.getState().setActiveTool('select');
+          return;
+        }
+
+        // In select mode - show context menu
+        // Calculate world position for paste
+        const canvas = canvasRef.current;
+        if (canvas) {
+          const rect = canvas.getBoundingClientRect();
+          const screenX = e.clientX - rect.left;
+          const screenY = e.clientY - rect.top;
+          contextMenuWorldPosRef.current = screenToWorld(screenX, screenY, s.viewport);
+        }
+
+        openMenu(e.clientX, e.clientY);
+        return;
+      }
+
+      // Fall back to base handler for other cases
+      baseHandleContextMenu(e);
+    },
+    [baseHandleContextMenu, openMenu]
+  );
 
   // Attach wheel listener with passive: false to allow preventDefault
   useEffect(() => {
@@ -336,6 +384,19 @@ export function Canvas() {
           <text x="38" y="53" fill="#ef4444" fontSize="12" fontWeight="bold">X</text>
         </svg>
       </div>
+
+      {/* Context Menu */}
+      {menuState.isOpen && (
+        <ContextMenu
+          x={menuState.x}
+          y={menuState.y}
+          items={getMenuItems(
+            useAppStore.getState().selectedShapeIds.length > 0,
+            contextMenuWorldPosRef.current ?? undefined
+          )}
+          onClose={closeMenu}
+        />
+      )}
     </div>
   );
 }

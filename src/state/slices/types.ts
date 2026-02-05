@@ -22,6 +22,7 @@ import type {
   PaperOrientation,
   CropRegion,
   ViewportLayerOverride,
+  TextStyle,
 } from '../../types/geometry';
 import type { StateCreator } from 'zustand';
 
@@ -46,6 +47,7 @@ export type {
   PaperOrientation,
   CropRegion,
   ViewportLayerOverride,
+  TextStyle,
 };
 
 // Legacy aliases for backward compatibility
@@ -67,6 +69,7 @@ export type DrawingPreview =
   | { type: 'text'; position: Point }
   | { type: 'dimension'; dimensionType: DimensionType; points: Point[]; dimensionLineOffset: number; linearDirection?: 'horizontal' | 'vertical'; value: string }
   | { type: 'hatch'; points: Point[]; currentPoint: Point }
+  | { type: 'beam'; start: Point; end: Point; flangeWidth: number; showCenterline: boolean }
   | { type: 'modifyPreview'; shapes: Shape[] }
   | { type: 'mirrorAxis'; start: Point; end: Point; shapes: Shape[] }
   | { type: 'rotateGuide'; center: Point; startRay?: Point; endRay: Point; angle?: number; shapes: Shape[] }
@@ -291,6 +294,25 @@ export const getShapeBounds = (shape: Shape): { minX: number; minY: number; maxX
         maxX: Math.max(...dimXs) + offset,
         maxY: Math.max(...dimYs) + offset,
       };
+    case 'beam': {
+      // Calculate bounding box including flange width
+      const beamHalfWidth = shape.flangeWidth / 2;
+      const angle = Math.atan2(shape.end.y - shape.start.y, shape.end.x - shape.start.x);
+      const perpX = Math.sin(angle) * beamHalfWidth;
+      const perpY = Math.cos(angle) * beamHalfWidth;
+      const corners = [
+        { x: shape.start.x + perpX, y: shape.start.y - perpY },
+        { x: shape.start.x - perpX, y: shape.start.y + perpY },
+        { x: shape.end.x + perpX, y: shape.end.y - perpY },
+        { x: shape.end.x - perpX, y: shape.end.y + perpY },
+      ];
+      return {
+        minX: Math.min(...corners.map(c => c.x)),
+        minY: Math.min(...corners.map(c => c.y)),
+        maxX: Math.max(...corners.map(c => c.x)),
+        maxY: Math.max(...corners.map(c => c.y)),
+      };
+    }
     default:
       return null;
   }
@@ -331,3 +353,115 @@ export type SliceCreator<TSlice, TStore = TSlice> = (
   set: (fn: (state: TStore) => void) => void,
   get: () => TStore
 ) => TSlice;
+
+// Built-in Text Styles (like Revit's default text types)
+export const createDefaultTextStyles = (): TextStyle[] => [
+  {
+    id: 'annotation-small',
+    name: '2.5mm Annotation',
+    fontFamily: 'Arial',
+    fontSize: 2.5,
+    bold: false,
+    italic: false,
+    underline: false,
+    color: '#ffffff',
+    alignment: 'left',
+    verticalAlignment: 'top',
+    lineHeight: 1.2,
+    isModelText: false,
+    backgroundMask: false,
+    backgroundColor: '#1a1a2e',
+    backgroundPadding: 0.5,
+    isBuiltIn: true,
+  },
+  {
+    id: 'annotation-medium',
+    name: '3.5mm Annotation',
+    fontFamily: 'Arial',
+    fontSize: 3.5,
+    bold: false,
+    italic: false,
+    underline: false,
+    color: '#ffffff',
+    alignment: 'left',
+    verticalAlignment: 'top',
+    lineHeight: 1.2,
+    isModelText: false,
+    backgroundMask: false,
+    backgroundColor: '#1a1a2e',
+    backgroundPadding: 0.5,
+    isBuiltIn: true,
+  },
+  {
+    id: 'annotation-large',
+    name: '5mm Annotation',
+    fontFamily: 'Arial',
+    fontSize: 5,
+    bold: false,
+    italic: false,
+    underline: false,
+    color: '#ffffff',
+    alignment: 'left',
+    verticalAlignment: 'top',
+    lineHeight: 1.2,
+    isModelText: false,
+    backgroundMask: false,
+    backgroundColor: '#1a1a2e',
+    backgroundPadding: 0.5,
+    isBuiltIn: true,
+  },
+  {
+    id: 'title-text',
+    name: 'Title (7mm Bold)',
+    fontFamily: 'Arial',
+    fontSize: 7,
+    bold: true,
+    italic: false,
+    underline: false,
+    color: '#ffffff',
+    alignment: 'left',
+    verticalAlignment: 'top',
+    lineHeight: 1.2,
+    isModelText: false,
+    backgroundMask: false,
+    backgroundColor: '#1a1a2e',
+    backgroundPadding: 0.5,
+    isBuiltIn: true,
+  },
+  {
+    id: 'model-text-small',
+    name: 'Model Text (100mm)',
+    fontFamily: 'Arial',
+    fontSize: 100,
+    bold: false,
+    italic: false,
+    underline: false,
+    color: '#ffffff',
+    alignment: 'left',
+    verticalAlignment: 'top',
+    lineHeight: 1.2,
+    isModelText: true,
+    backgroundMask: false,
+    backgroundColor: '#1a1a2e',
+    backgroundPadding: 5,
+    isBuiltIn: true,
+  },
+  {
+    id: 'model-text-large',
+    name: 'Model Text (500mm)',
+    fontFamily: 'Arial',
+    fontSize: 500,
+    bold: false,
+    italic: false,
+    underline: false,
+    color: '#ffffff',
+    alignment: 'left',
+    verticalAlignment: 'top',
+    lineHeight: 1.2,
+    isModelText: true,
+    backgroundMask: false,
+    backgroundColor: '#1a1a2e',
+    backgroundPadding: 25,
+    isBuiltIn: true,
+  },
+];

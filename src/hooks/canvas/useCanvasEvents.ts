@@ -26,6 +26,7 @@ import { useViewportEditing } from '../editing/useViewportEditing';
 import { useAnnotationEditing } from '../editing/useAnnotationEditing';
 import { useGripEditing } from '../editing/useGripEditing';
 import { useModifyTools } from '../editing/useModifyTools';
+import { useBeamDrawing } from '../drawing/useBeamDrawing';
 
 export function useCanvasEvents(canvasRef: React.RefObject<HTMLCanvasElement>) {
   // Compose specialized hooks
@@ -39,6 +40,7 @@ export function useCanvasEvents(canvasRef: React.RefObject<HTMLCanvasElement>) {
   const annotationEditing = useAnnotationEditing();
   const gripEditing = useGripEditing();
   const modifyTools = useModifyTools();
+  const beamDrawing = useBeamDrawing();
 
   const {
     viewport,
@@ -59,10 +61,13 @@ export function useCanvasEvents(canvasRef: React.RefObject<HTMLCanvasElement>) {
     clearPendingSection,
     insertProfile,
     setSectionPlacementPreview,
+    pendingBeam,
+    clearPendingBeam,
     explodeParametricShapes,
     addShapes,
     selectedShapeIds,
     drawings,
+    sourceSnapAngle,
   } = useAppStore();
 
   // Get the active drawing's scale for text hit detection
@@ -221,6 +226,87 @@ export function useCanvasEvents(canvasRef: React.RefObject<HTMLCanvasElement>) {
         return;
       }
 
+      // Handle beam drawing
+      if (activeTool === 'beam' && pendingBeam) {
+        deselectAll();
+        // Pass the source angle from snap result for perpendicular tracking
+        let sourceAngle = snapResult.snapInfo?.sourceAngle;
+
+        // Fallback 1: if snap has sourceShapeId but no sourceAngle, compute it from the shape
+        if (sourceAngle === undefined && snapResult.snapInfo?.sourceShapeId) {
+          // Use getState() to avoid stale closure issues
+          const { shapes: currentShapes } = useAppStore.getState();
+          const sourceShape = currentShapes.find(s => s.id === snapResult.snapInfo?.sourceShapeId);
+          if (sourceShape) {
+            if (sourceShape.type === 'beam') {
+              const beam = sourceShape as any;
+              sourceAngle = Math.atan2(beam.end.y - beam.start.y, beam.end.x - beam.start.x);
+            } else if (sourceShape.type === 'line') {
+              const line = sourceShape as any;
+              sourceAngle = Math.atan2(line.end.y - line.start.y, line.end.x - line.start.x);
+            }
+          }
+        }
+
+        // Fallback 2: find nearest beam/line at click point and use its angle
+        if (sourceAngle === undefined) {
+          const tolerance = 20 / viewport.zoom; // Wider tolerance for finding nearby shapes
+          // Use getState() to avoid stale closure issues
+          const { shapes: currentShapes, activeDrawingId: currentDrawingId } = useAppStore.getState();
+          const drawingShapes = currentShapes.filter(s => s.drawingId === currentDrawingId && s.visible);
+
+          for (const shape of drawingShapes) {
+            if (shape.type === 'beam') {
+              const beam = shape as any;
+              // Check distance to beam
+              const dx = beam.end.x - beam.start.x;
+              const dy = beam.end.y - beam.start.y;
+              const length = Math.sqrt(dx * dx + dy * dy);
+              if (length > 0) {
+                // Project click point onto beam line
+                const t = Math.max(0, Math.min(1,
+                  ((snappedPos.x - beam.start.x) * dx + (snappedPos.y - beam.start.y) * dy) / (length * length)
+                ));
+                const closestX = beam.start.x + t * dx;
+                const closestY = beam.start.y + t * dy;
+                const dist = Math.sqrt((snappedPos.x - closestX) ** 2 + (snappedPos.y - closestY) ** 2);
+
+                if (dist < tolerance + beam.flangeWidth / 2) {
+                  sourceAngle = Math.atan2(dy, dx);
+                  break;
+                }
+              }
+            } else if (shape.type === 'line') {
+              const line = shape as any;
+              const dx = line.end.x - line.start.x;
+              const dy = line.end.y - line.start.y;
+              const length = Math.sqrt(dx * dx + dy * dy);
+              if (length > 0) {
+                const t = Math.max(0, Math.min(1,
+                  ((snappedPos.x - line.start.x) * dx + (snappedPos.y - line.start.y) * dy) / (length * length)
+                ));
+                const closestX = line.start.x + t * dx;
+                const closestY = line.start.y + t * dy;
+                const dist = Math.sqrt((snappedPos.x - closestX) ** 2 + (snappedPos.y - closestY) ** 2);
+
+                if (dist < tolerance) {
+                  sourceAngle = Math.atan2(dy, dx);
+                  break;
+                }
+              }
+            }
+          }
+        }
+
+        // Validate sourceAngle is a valid number before passing
+        const validSourceAngle = (sourceAngle !== undefined && !isNaN(sourceAngle)) ? sourceAngle : undefined;
+
+        if (beamDrawing.handleBeamClick(snappedPos, e.shiftKey, validSourceAngle)) {
+          snapDetection.clearTracking();
+          return;
+        }
+      }
+
       // Tool-specific handling
       switch (activeTool) {
         case 'select': {
@@ -308,6 +394,8 @@ export function useCanvasEvents(canvasRef: React.RefObject<HTMLCanvasElement>) {
       selectShape,
       deselectAll,
       modifyTools,
+      beamDrawing,
+      pendingBeam,
     ]
   );
 
@@ -377,6 +465,19 @@ export function useCanvasEvents(canvasRef: React.RefObject<HTMLCanvasElement>) {
         return;
       }
 
+      // Beam drawing preview
+      if (activeTool === 'beam' && pendingBeam && editorMode === 'drawing') {
+        const worldPos = screenToWorld(screenPos.x, screenPos.y, viewport);
+        // Use the beam's first point as base for tracking (shows polar tracking lines)
+        // Pass sourceSnapAngle for perpendicular/parallel tracking to snapped beam edge
+        // IMPORTANT: Use getState() to get fresh sourceSnapAngle (avoids stale closure after click)
+        const basePoint = beamDrawing.getBeamBasePoint();
+        const freshSourceSnapAngle = useAppStore.getState().sourceSnapAngle;
+        const snapResult = snapDetection.snapPoint(worldPos, basePoint ?? undefined, freshSourceSnapAngle ?? undefined);
+        beamDrawing.updateBeamPreview(snapResult.point, e.shiftKey);
+        return;
+      }
+
       // Modify tools - update preview
       const isModifyToolActive = ['move', 'copy', 'rotate', 'scale', 'mirror', 'array', 'trim', 'extend', 'fillet', 'chamfer', 'offset'].includes(activeTool);
       if (isModifyToolActive && editorMode === 'drawing') {
@@ -429,7 +530,7 @@ export function useCanvasEvents(canvasRef: React.RefObject<HTMLCanvasElement>) {
         setHoveredShapeId(null);
       }
     },
-    [panZoom, annotationEditing, viewportEditing, editorMode, viewport, boundaryEditing, gripEditing, boxSelection, shapeDrawing, snapDetection, activeTool, dimensionMode, pickLinesMode, findShapeAtPoint, setHoveredShapeId, canvasRef, modifyTools]
+    [panZoom, annotationEditing, viewportEditing, editorMode, viewport, boundaryEditing, gripEditing, boxSelection, shapeDrawing, snapDetection, activeTool, dimensionMode, pickLinesMode, findShapeAtPoint, setHoveredShapeId, canvasRef, modifyTools, beamDrawing, pendingBeam, sourceSnapAngle]
   );
 
   /**
@@ -524,6 +625,13 @@ export function useCanvasEvents(canvasRef: React.RefObject<HTMLCanvasElement>) {
         return;
       }
 
+      // Cancel beam drawing
+      if (pendingBeam) {
+        beamDrawing.cancelBeamDrawing();
+        setActiveTool('select');
+        return;
+      }
+
       // If actively drawing, finish the drawing
       if (shapeDrawing.isDrawing()) {
         shapeDrawing.finishDrawing();
@@ -611,7 +719,7 @@ export function useCanvasEvents(canvasRef: React.RefObject<HTMLCanvasElement>) {
       }
 
       // If a drawing or annotation tool is selected but not actively drawing, deselect it
-      const drawingTools = ['line', 'rectangle', 'circle', 'arc', 'polyline', 'spline', 'ellipse', 'hatch', 'text', 'dimension'];
+      const drawingTools = ['line', 'rectangle', 'circle', 'arc', 'polyline', 'spline', 'ellipse', 'hatch', 'text', 'dimension', 'beam'];
       if (drawingTools.includes(activeTool)) {
         setActiveTool('select');
         // Clear any lingering snap/tracking indicators
@@ -620,7 +728,7 @@ export function useCanvasEvents(canvasRef: React.RefObject<HTMLCanvasElement>) {
     },
     [editorMode, annotationEditing, shapeDrawing, activeTool, setActiveTool, snapDetection, modifyTools, setPrintDialogOpen,
      panZoom, viewport, findShapeAtPoint, parametricShapes, selectedShapeIds, explodeParametricShapes, addShapes,
-     pendingSection, clearPendingSection, setSectionPlacementPreview]
+     pendingSection, clearPendingSection, setSectionPlacementPreview, pendingBeam, beamDrawing]
   );
 
   /**

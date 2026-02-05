@@ -13,6 +13,7 @@ import type {
   ProfileType,
   ParameterValues,
 } from '../../types/parametric';
+import type { BeamMaterial, BeamJustification } from '../../types/geometry';
 import {
   createProfileShape,
   updateParametricParameters,
@@ -44,6 +45,20 @@ export interface ParametricState {
 
   /** Preview position for section placement (mouse following) */
   sectionPlacementPreview: Point | null;
+
+  /** Beam dialog state */
+  beamDialogOpen: boolean;
+  pendingBeam: {
+    profileType: ProfileType;
+    parameters: ParameterValues;
+    presetId?: string;
+    presetName?: string;
+    flangeWidth: number;
+    material: BeamMaterial;
+    justification: BeamJustification;
+    showCenterline: boolean;
+    showLabel: boolean;
+  } | null;
 }
 
 // ============================================================================
@@ -94,6 +109,12 @@ export interface ParametricActions {
   setPendingSection: (pending: ParametricState['pendingSection']) => void;
   clearPendingSection: () => void;
   setSectionPlacementPreview: (position: Point | null) => void;
+
+  // Beam dialog
+  openBeamDialog: () => void;
+  closeBeamDialog: () => void;
+  setPendingBeam: (pending: ParametricState['pendingBeam']) => void;
+  clearPendingBeam: () => void;
 }
 
 export type ParametricSlice = ParametricState & ParametricActions;
@@ -107,6 +128,8 @@ export const initialParametricState: ParametricState = {
   sectionDialogOpen: false,
   pendingSection: null,
   sectionPlacementPreview: null,
+  beamDialogOpen: false,
+  pendingBeam: null,
 };
 
 // ============================================================================
@@ -350,5 +373,29 @@ export const createParametricSlice = (
   setSectionPlacementPreview: (position) =>
     set((state) => {
       state.sectionPlacementPreview = position;
+    }),
+
+  // ============================================================================
+  // Beam Dialog
+  // ============================================================================
+
+  openBeamDialog: () =>
+    set((state) => {
+      state.beamDialogOpen = true;
+    }),
+
+  closeBeamDialog: () =>
+    set((state) => {
+      state.beamDialogOpen = false;
+    }),
+
+  setPendingBeam: (pending) =>
+    set((state) => {
+      state.pendingBeam = pending;
+    }),
+
+  clearPendingBeam: () =>
+    set((state) => {
+      state.pendingBeam = null;
     }),
 });

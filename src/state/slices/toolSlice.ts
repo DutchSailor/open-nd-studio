@@ -12,6 +12,7 @@ import { defaultStyle } from './types';
 
 export interface ToolState {
   activeTool: ToolType;
+  lastTool: ToolType | null;  // Last used drawing/modify tool for "Repeat" feature
   circleMode: 'center-radius' | 'center-diameter' | '2point' | '3point';
   rectangleMode: 'corner' | 'center' | '3point';
   arcMode: '3point' | 'center-start-end' | 'start-end-radius' | 'fillet' | 'tangent';
@@ -23,6 +24,7 @@ export interface ToolState {
   drawingPreview: DrawingPreview;
   drawingPoints: Point[];  // Points clicked so far in current drawing session
   drawingBulges: number[];  // Bulge values for polyline arc segments
+  sourceSnapAngle: number | null;  // Angle from first snap point's source shape (for perpendicular tracking)
 
   // Phase 1: Options bar state
   chainMode: boolean;               // Line tool: chain mode (continue from last endpoint)
@@ -90,6 +92,7 @@ export interface ToolState {
 
 export interface ToolActions {
   setActiveTool: (tool: ToolType) => void;
+  repeatLastTool: () => void;
   setCircleMode: (mode: 'center-radius' | 'center-diameter' | '2point' | '3point') => void;
   setRectangleMode: (mode: 'corner' | 'center' | '3point') => void;
   setArcMode: (mode: '3point' | 'center-start-end' | 'start-end-radius' | 'fillet' | 'tangent') => void;
@@ -99,9 +102,10 @@ export interface ToolActions {
   setCurrentStyle: (style: Partial<ShapeStyle>) => void;
   setIsDrawing: (isDrawing: boolean) => void;
   setDrawingPreview: (preview: DrawingPreview) => void;
-  addDrawingPoint: (point: Point) => void;
+  addDrawingPoint: (point: Point, sourceAngle?: number) => void;
   undoDrawingPoint: () => void;
   clearDrawingPoints: () => void;
+  setSourceSnapAngle: (angle: number | null) => void;
   closeDrawing: () => void;
   addDrawingBulge: (bulge: number) => void;
 
@@ -164,6 +168,7 @@ export type ToolSlice = ToolState & ToolActions;
 
 export const initialToolState: ToolState = {
   activeTool: 'select',
+  lastTool: null,
   circleMode: 'center-radius',
   rectangleMode: 'corner',
   arcMode: '3point',
@@ -175,6 +180,7 @@ export const initialToolState: ToolState = {
   drawingPreview: null,
   drawingPoints: [],
   drawingBulges: [],
+  sourceSnapAngle: null,
 
   // Options bar state
   chainMode: true,
@@ -244,6 +250,17 @@ export const createToolSlice = (
 ): ToolActions => ({
   setActiveTool: (tool) =>
     set((state) => {
+      // Track last tool for "Repeat" feature (only drawing/modify tools)
+      const repeatableTools: ToolType[] = [
+        'line', 'rectangle', 'circle', 'arc', 'polyline', 'ellipse', 'spline',
+        'text', 'dimension', 'beam', 'hatch', 'filled-region',
+        'move', 'copy', 'rotate', 'scale', 'mirror', 'trim', 'extend',
+        'fillet', 'chamfer', 'offset', 'array'
+      ];
+      if (repeatableTools.includes(state.activeTool) && state.activeTool !== tool) {
+        state.lastTool = state.activeTool;
+      }
+
       state.activeTool = tool;
       state.isDrawing = false;
       state.drawingPreview = null;
@@ -252,11 +269,33 @@ export const createToolSlice = (
       state.polylineArcMode = false;
       state.polylineArcThroughPoint = null;
       state.modifyRefShapeId = null;
+      state.sourceSnapAngle = null;
       // Reset copy flag for mirror (default on)
       if (tool === 'mirror') {
         state.modifyCopy = true;
       } else if (tool === 'move' || tool === 'rotate' || tool === 'scale') {
         state.modifyCopy = false;
+      }
+    }),
+
+  repeatLastTool: () =>
+    set((state) => {
+      if (state.lastTool) {
+        state.activeTool = state.lastTool;
+        state.isDrawing = false;
+        state.drawingPreview = null;
+        state.drawingPoints = [];
+        state.drawingBulges = [];
+        state.polylineArcMode = false;
+        state.polylineArcThroughPoint = null;
+        state.modifyRefShapeId = null;
+        state.sourceSnapAngle = null;
+        // Reset copy flag for mirror (default on)
+        if (state.lastTool === 'mirror') {
+          state.modifyCopy = true;
+        } else if (state.lastTool === 'move' || state.lastTool === 'rotate' || state.lastTool === 'scale') {
+          state.modifyCopy = false;
+        }
       }
     }),
 
@@ -323,10 +362,19 @@ export const createToolSlice = (
       state.drawingPreview = preview;
     }),
 
-  addDrawingPoint: (point) =>
+  addDrawingPoint: (point, sourceAngle) =>
     set((state) => {
       state.drawingPoints.push(point);
       state.isDrawing = true;
+      // Store source angle on first point only
+      if (state.drawingPoints.length === 1 && sourceAngle !== undefined) {
+        state.sourceSnapAngle = sourceAngle;
+      }
+    }),
+
+  setSourceSnapAngle: (angle) =>
+    set((state) => {
+      state.sourceSnapAngle = angle;
     }),
 
   undoDrawingPoint: () =>
@@ -353,6 +401,7 @@ export const createToolSlice = (
       state.drawingPreview = null;
       state.polylineArcMode = false;
       state.polylineArcThroughPoint = null;
+      state.sourceSnapAngle = null;
     }),
 
   closeDrawing: () =>
@@ -363,6 +412,7 @@ export const createToolSlice = (
       state.drawingPreview = null;
       state.polylineArcMode = false;
       state.polylineArcThroughPoint = null;
+      state.sourceSnapAngle = null;
     }),
 
   addDrawingBulge: (bulge) =>
