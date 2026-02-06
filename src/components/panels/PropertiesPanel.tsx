@@ -1433,8 +1433,6 @@ export const PropertiesPanel = memo(function PropertiesPanel() {
     );
   }
 
-  const totalSelected = selectedShapes.length + selectedParametricShapes.length;
-
   // If only parametric shapes selected, show parametric properties
   if (selectedParametricShapes.length > 0 && selectedShapes.length === 0) {
     return (
