@@ -1,4 +1,4 @@
-import { memo, useState, useRef, useEffect } from 'react';
+import { memo, useState, useRef, useEffect, useMemo } from 'react';
 import { useAppStore } from '../../state/appStore';
 import type { LineStyle, Shape, TextAlignment, TextVerticalAlignment, BeamShape, BeamMaterial, BeamJustification, LeaderArrowType, LeaderAttachment, LeaderConfig, TextCase } from '../../types/geometry';
 import type { ParametricShape, ProfileParametricShape } from '../../types/parametric';
@@ -1380,8 +1380,9 @@ export const PropertiesPanel = memo(function PropertiesPanel() {
   const updateShape = useAppStore(s => s.updateShape);
   const activeTool = useAppStore(s => s.activeTool);
 
-  const selectedShapes = shapes.filter((s) => selectedShapeIds.includes(s.id));
-  const selectedParametricShapes = parametricShapes.filter((s) => selectedShapeIds.includes(s.id));
+  const selectedIdSet = useMemo(() => new Set(selectedShapeIds), [selectedShapeIds]);
+  const selectedShapes = shapes.filter((s) => selectedIdSet.has(s.id));
+  const selectedParametricShapes = parametricShapes.filter((s) => selectedIdSet.has(s.id));
   const hasSelection = selectedShapes.length > 0 || selectedParametricShapes.length > 0;
   const hasRegularShapeSelection = selectedShapes.length > 0;
   const isHatchToolActive = activeTool === 'hatch';

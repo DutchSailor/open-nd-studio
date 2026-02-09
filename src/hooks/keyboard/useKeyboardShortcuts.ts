@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { useAppStore } from '../../state/appStore';
+import { getShapeBounds } from '../../engine/geometry/GeometryUtils';
 
 // Common viewport scales (as ratios, e.g., 0.01 = 1:100)
 const VIEWPORT_SCALES = [
@@ -104,6 +105,10 @@ export function useKeyboardShortcuts() {
     // Grouping
     groupSelectedShapes,
     ungroupSelectedShapes,
+    // 2D Cursor
+    resetCursor2D,
+    setCursor2DToSelected,
+    snapSelectionToCursor2D,
   } = useAppStore();
 
   useEffect(() => {
@@ -363,6 +368,17 @@ export function useKeyboardShortcuts() {
             e.preventDefault();
             unlockSelectedShapes();
             break;
+          case 'c':
+            e.preventDefault();
+            resetCursor2D();
+            break;
+          case 's':
+            e.preventDefault();
+            // Snap cursor to selected (if shapes selected) or selected to cursor
+            if (selectedShapeIds.length > 0) {
+              setCursor2DToSelected();
+            }
+            break;
         }
       }
     };
@@ -375,9 +391,31 @@ export function useKeyboardShortcuts() {
     function executeSingleKey(k: string) {
       // Single-letter shortcuts for tools, visibility and locking
       switch (k) {
-        case 'g':
+        case 'g': {
           setActiveTool('move');
+          // Auto-set base point to center of selected shapes for immediate move
+          const s = useAppStore.getState();
+          if (s.selectedShapeIds.length > 0) {
+            const idSet = new Set(s.selectedShapeIds);
+            const selected = s.shapes.filter(sh => idSet.has(sh.id));
+            if (selected.length > 0) {
+              let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+              for (const sh of selected) {
+                const b = getShapeBounds(sh);
+                if (b) {
+                  minX = Math.min(minX, b.minX);
+                  minY = Math.min(minY, b.minY);
+                  maxX = Math.max(maxX, b.maxX);
+                  maxY = Math.max(maxY, b.maxY);
+                }
+              }
+              if (minX !== Infinity) {
+                s.addDrawingPoint({ x: (minX + maxX) / 2, y: (minY + maxY) / 2 });
+              }
+            }
+          }
           break;
+        }
         case 'h':
           hideSelectedShapes();
           break;
@@ -442,5 +480,8 @@ export function useKeyboardShortcuts() {
     unlockSelectedShapes,
     groupSelectedShapes,
     ungroupSelectedShapes,
+    resetCursor2D,
+    setCursor2DToSelected,
+    snapSelectionToCursor2D,
   ]);
 }

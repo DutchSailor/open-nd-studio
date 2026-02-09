@@ -83,11 +83,13 @@ export const createSelectionSlice = (
 
   selectAll: () =>
     set((state) => {
+      // Build layer lookup for O(1) access
+      const layerMap = new Map(state.layers.map((l) => [l.id, l]));
       // Only select shapes in the current drawing
       state.selectedShapeIds = state.shapes
         .filter((s) => {
           if (s.drawingId !== state.activeDrawingId) return false;
-          const layer = state.layers.find((l) => l.id === s.layerId);
+          const layer = layerMap.get(s.layerId);
           return layer && layer.visible && !layer.locked && s.visible && !s.locked;
         })
         .map((s) => s.id);

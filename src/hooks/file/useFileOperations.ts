@@ -35,6 +35,46 @@ export function useFileOperations() {
     const filePath = await showOpenDialog();
     if (!filePath) return;
 
+    const extension = filePath.split('.').pop()?.toLowerCase();
+
+    if (extension === 'dxf') {
+      try {
+        const content = await readTextFile(filePath);
+        const fileName = filePath.split(/[/\\]/).pop()?.replace('.dxf', '') || 'Untitled';
+
+        const s = useAppStore.getState();
+        const prevDocId = s.activeDocumentId;
+        const isEmptyUntitled = !s.isModified && !s.currentFilePath
+          && s.shapes.length === 0 && s.projectName.startsWith('Untitled');
+
+        // Create a new empty document first so we get its default layer/drawing IDs
+        const docId = generateId();
+        s.openDocument(docId, {
+          projectName: fileName,
+          isModified: false,
+          projectInfo: { ...DEFAULT_PROJECT_INFO },
+        });
+
+        // Now parse DXF using the new document's layer/drawing IDs
+        const newState = useAppStore.getState();
+        const shapes = parseDXF(content, newState.activeLayerId, newState.activeDrawingId);
+        if (shapes.length === 0) {
+          await showInfo('No supported entities found in the DXF file.\n\nSupported entities: LINE, CIRCLE, ARC, ELLIPSE, POLYLINE, LWPOLYLINE, SPLINE, TEXT, MTEXT, POINT, SOLID, 3DFACE, TRACE');
+          return;
+        }
+
+        // Add the parsed shapes to the new document
+        useAppStore.getState().addShapes(shapes);
+
+        if (isEmptyUntitled) {
+          useAppStore.getState().closeDocument(prevDocId);
+        }
+      } catch (err) {
+        await showError(`Failed to open DXF: ${err}`);
+      }
+      return;
+    }
+
     try {
       const project = await readProjectFile(filePath);
       const fileName = filePath.split(/[/\\]/).pop()?.replace('.o2d', '') || 'Untitled';
@@ -87,7 +127,7 @@ export function useFileOperations() {
     } catch (err) {
       await showError(`Failed to open file: ${err}`);
     }
-  }, []);
+  }, [addShapes]);
 
   const handleSave = useCallback(async () => {
     const s = useAppStore.getState();
@@ -274,17 +314,7 @@ export function useFileOperations() {
         return;
       }
 
-      // Count shape types for detailed feedback
-      const typeCounts: Record<string, number> = {};
-      for (const shape of shapes) {
-        typeCounts[shape.type] = (typeCounts[shape.type] || 0) + 1;
-      }
-      const typeBreakdown = Object.entries(typeCounts)
-        .map(([type, count]) => `${count} ${type}${count > 1 ? 's' : ''}`)
-        .join(', ');
-
       addShapes(shapes);
-      await showInfo(`Imported ${shapes.length} shape(s) from DXF:\n${typeBreakdown}`);
     } catch (err) {
       await showError(`Failed to import DXF: ${err}`);
     }

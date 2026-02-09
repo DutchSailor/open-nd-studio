@@ -85,14 +85,14 @@ export const NavigationPanel = memo(function NavigationPanel() {
   return (
     <div
       ref={containerRef}
-      className="flex flex-col bg-cad-bg border-r border-cad-border relative"
+      className="flex flex-col bg-cad-bg border-r border-cad-border relative cursor-default [&_*]:cursor-default"
       style={{ width: panelWidth, minWidth: 140, maxWidth: 500 }}
     >
       {/* Drawings Section */}
       <div className="flex flex-col min-h-0 overflow-hidden" style={getDrawingsStyle()}>
         {/* Drawings Header */}
         <div
-          className="flex items-center gap-1 px-2 py-1.5 bg-cad-surface border-b border-cad-border cursor-pointer hover:bg-cad-hover select-none"
+          className="flex items-center gap-1 px-2 py-1.5 bg-cad-surface border-b border-cad-border cursor-default hover:bg-cad-hover select-none"
           onClick={() => setDrawingsCollapsed(!drawingsCollapsed)}
         >
           {drawingsCollapsed ? (
@@ -115,7 +115,7 @@ export const NavigationPanel = memo(function NavigationPanel() {
       {/* Resizable Divider - only show when both sections are expanded */}
       {!drawingsCollapsed && !sheetsCollapsed && (
         <div
-          className="h-1 bg-cad-border hover:bg-cad-accent cursor-ns-resize flex-shrink-0"
+          className="h-1 bg-cad-border hover:bg-cad-accent flex-shrink-0"
           onMouseDown={handleMouseDown}
         />
       )}
@@ -124,7 +124,7 @@ export const NavigationPanel = memo(function NavigationPanel() {
       <div className="flex flex-col min-h-0 overflow-hidden" style={getSheetsStyle()}>
         {/* Sheets Header */}
         <div
-          className="flex items-center gap-1 px-2 py-1.5 bg-cad-surface border-b border-cad-border cursor-pointer hover:bg-cad-hover select-none"
+          className="flex items-center gap-1 px-2 py-1.5 bg-cad-surface border-b border-cad-border cursor-default hover:bg-cad-hover select-none"
           onClick={() => setSheetsCollapsed(!sheetsCollapsed)}
         >
           {sheetsCollapsed ? (
@@ -146,7 +146,7 @@ export const NavigationPanel = memo(function NavigationPanel() {
 
       {/* Horizontal resize handle */}
       <div
-        className="absolute top-0 right-0 w-px h-full cursor-col-resize hover:bg-cad-accent z-10"
+        className="absolute top-0 right-0 w-px h-full hover:bg-cad-accent z-10"
         onMouseDown={(e) => {
           e.preventDefault();
           isResizingWidth.current = true;

@@ -77,9 +77,8 @@ export const createClipboardSlice = (
     if (state.selectedShapeIds.length === 0) return;
 
     // Get selected shapes
-    const selectedShapes = state.shapes.filter(s =>
-      state.selectedShapeIds.includes(s.id)
-    );
+    const idSet = new Set(state.selectedShapeIds);
+    const selectedShapes = state.shapes.filter(s => idSet.has(s.id));
 
     if (selectedShapes.length === 0) return;
 
@@ -101,9 +100,8 @@ export const createClipboardSlice = (
     if (state.selectedShapeIds.length === 0) return;
 
     // Get selected shapes
-    const selectedShapes = state.shapes.filter(s =>
-      state.selectedShapeIds.includes(s.id)
-    );
+    const idSet = new Set(state.selectedShapeIds);
+    const selectedShapes = state.shapes.filter(s => idSet.has(s.id));
 
     if (selectedShapes.length === 0) return;
 

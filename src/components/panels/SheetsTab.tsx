@@ -136,7 +136,7 @@ export function SheetsTab() {
               ))}
             </select>
             <div className="flex gap-2">
-              <label className="flex items-center gap-1 text-xs text-cad-text cursor-pointer">
+              <label className="flex items-center gap-1 text-xs text-cad-text cursor-default">
                 <input
                   type="radio"
                   name="orientation"
@@ -146,7 +146,7 @@ export function SheetsTab() {
                 />
                 Landscape
               </label>
-              <label className="flex items-center gap-1 text-xs text-cad-text cursor-pointer">
+              <label className="flex items-center gap-1 text-xs text-cad-text cursor-default">
                 <input
                   type="radio"
                   name="orientation"
@@ -250,7 +250,7 @@ export function SheetsTab() {
             {sheets.map((sheet) => (
               <div
                 key={sheet.id}
-                className={`group flex flex-col gap-1 px-2 py-1.5 rounded cursor-pointer transition-colors ${
+                className={`group flex flex-col gap-1 px-2 py-1.5 rounded cursor-default transition-colors ${
                   sheet.id === activeSheetId && editorMode === 'sheet'
                     ? 'bg-cad-accent/20 border border-cad-accent'
                     : 'hover:bg-cad-border/50 border border-transparent'

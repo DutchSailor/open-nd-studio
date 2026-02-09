@@ -13,6 +13,7 @@ import { GridLayer } from '../layers/GridLayer';
 import { SnapLayer } from '../layers/SnapLayer';
 import { TrackingLayer } from '../layers/TrackingLayer';
 import { SelectionLayer } from '../layers/SelectionLayer';
+import { CursorLayer } from '../layers/CursorLayer';
 import { HandleRenderer } from '../ui/HandleRenderer';
 import { COLORS } from '../types';
 import { generateProfileGeometry } from '../../../services/parametric/geometryGenerators';
@@ -51,6 +52,10 @@ export interface DrawingRenderOptions {
   };
   /** Live preview: temporarily apply this pattern to selected hatches on hover */
   previewPatternId?: string | null;
+  /** 2D cursor position in world coordinates */
+  cursor2D?: Point | null;
+  /** Whether 2D cursor is visible */
+  cursor2DVisible?: boolean;
 }
 
 // Legacy alias
@@ -63,6 +68,7 @@ export class DrawingRenderer extends BaseRenderer {
   private snapLayer: SnapLayer;
   private trackingLayer: TrackingLayer;
   private selectionLayer: SelectionLayer;
+  private cursorLayer: CursorLayer;
   private handleRenderer: HandleRenderer;
 
   constructor(ctx: CanvasRenderingContext2D, width: number, height: number, dpr: number) {
@@ -73,6 +79,7 @@ export class DrawingRenderer extends BaseRenderer {
     this.snapLayer = new SnapLayer(ctx, width, height, dpr);
     this.trackingLayer = new TrackingLayer(ctx, width, height, dpr);
     this.selectionLayer = new SelectionLayer(ctx, width, height, dpr);
+    this.cursorLayer = new CursorLayer(ctx, width, height, dpr);
     this.handleRenderer = new HandleRenderer(ctx, width, height, dpr);
   }
 
@@ -88,6 +95,7 @@ export class DrawingRenderer extends BaseRenderer {
     this.snapLayer = new SnapLayer(this.ctx, width, height, this.dpr);
     this.trackingLayer = new TrackingLayer(this.ctx, width, height, this.dpr);
     this.selectionLayer = new SelectionLayer(this.ctx, width, height, this.dpr);
+    this.cursorLayer = new CursorLayer(this.ctx, width, height, this.dpr);
     this.handleRenderer = new HandleRenderer(this.ctx, width, height, this.dpr);
   }
 
@@ -158,10 +166,13 @@ export class DrawingRenderer extends BaseRenderer {
       );
     }
 
+    // Build Set for O(1) selection lookups (avoids O(n²) with .includes() in loop)
+    const selectedSet = new Set(selectedShapeIds);
+
     // Draw shapes
     for (const shape of shapes) {
       if (!shape.visible) continue;
-      const isSelected = selectedShapeIds.includes(shape.id);
+      const isSelected = selectedSet.has(shape.id);
       const isHovered = hoveredShapeId === shape.id;
       this.shapeRenderer.drawShape(shape, isSelected, isHovered, whiteBackground, hideSelectionHandles);
     }
@@ -171,7 +182,7 @@ export class DrawingRenderer extends BaseRenderer {
     if (parametricShapes) {
       for (const shape of parametricShapes) {
         if (!shape.visible) continue;
-        const isSelected = selectedShapeIds.includes(shape.id);
+        const isSelected = selectedSet.has(shape.id);
         const isHovered = hoveredShapeId === shape.id;
         this.parametricRenderer.drawParametricShape(shape, isSelected, isHovered, whiteBackground);
       }
@@ -190,6 +201,11 @@ export class DrawingRenderer extends BaseRenderer {
     // Draw snap point indicator (skip grid snaps - they're not useful to show)
     if (currentSnapPoint && currentSnapPoint.type !== 'grid') {
       this.snapLayer.drawSnapIndicator(currentSnapPoint, viewport);
+    }
+
+    // Draw 2D cursor
+    if (options.cursor2DVisible && options.cursor2D) {
+      this.cursorLayer.drawCursor(options.cursor2D, viewport, whiteBackground);
     }
 
     // Draw section placement preview (pending section following mouse)

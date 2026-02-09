@@ -203,6 +203,8 @@ export function Canvas() {
               projectPatterns: s.projectPatterns,
             },
             previewPatternId: s.previewPatternId,
+            cursor2D: s.cursor2D,
+            cursor2DVisible: s.cursor2DVisible,
           });
         }
       }
@@ -225,10 +227,26 @@ export function Canvas() {
   const { menuState, openMenu, closeMenu, getMenuItems } = useContextMenu();
   const contextMenuWorldPosRef = useRef<Point | null>(null);
 
+  const setCursor2D = useAppStore(s => s.setCursor2D);
+
   // Extended context menu handler that opens our React menu
   const handleContextMenu = useCallback(
     (e: React.MouseEvent<HTMLCanvasElement>) => {
       const s = useAppStore.getState();
+
+      // Shift+Right-Click: place 2D cursor
+      if (e.shiftKey) {
+        e.preventDefault();
+        const canvas = canvasRef.current;
+        if (canvas) {
+          const rect = canvas.getBoundingClientRect();
+          const screenX = e.clientX - rect.left;
+          const screenY = e.clientY - rect.top;
+          const worldPos = screenToWorld(screenX, screenY, s.viewport);
+          setCursor2D(worldPos);
+        }
+        return;
+      }
 
       // In drawing mode
       if (s.editorMode === 'drawing' && !s.pendingSection && !s.pendingBeam) {
@@ -263,7 +281,7 @@ export function Canvas() {
       // Fall back to base handler for other cases
       baseHandleContextMenu(e);
     },
-    [baseHandleContextMenu, openMenu]
+    [baseHandleContextMenu, openMenu, setCursor2D]
   );
 
   // Attach wheel listener with passive: false to allow preventDefault

@@ -62,6 +62,10 @@ interface RenderOptions {
   };
   /** Live preview: temporarily apply this pattern to selected hatches on hover */
   previewPatternId?: string | null;
+  /** 2D cursor position in world coordinates */
+  cursor2D?: { x: number; y: number } | null;
+  /** Whether 2D cursor is visible */
+  cursor2DVisible?: boolean;
 }
 
 // Interface for sheet mode rendering (supports both new and legacy property names)
@@ -149,6 +153,8 @@ export class CADRenderer {
       pendingSection: options.pendingSection,
       customPatterns: options.customPatterns,
       previewPatternId: options.previewPatternId,
+      cursor2D: options.cursor2D,
+      cursor2DVisible: options.cursor2DVisible,
     };
 
     this.drawingRenderer.render(drawingOptions);

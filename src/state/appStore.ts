@@ -189,6 +189,9 @@ function extractPerDocState(s: any) {
     activeTextStyleId: s.activeTextStyleId,
     // Project info
     projectInfo: s.projectInfo,
+    // 2D Cursor
+    cursor2D: s.cursor2D,
+    cursor2DVisible: s.cursor2DVisible,
   };
 }
 
@@ -427,8 +430,10 @@ export const useAppStore = create<AppState>()(
           if (untitledCount > 0) name = `Untitled ${untitledCount + 1}`;
         }
 
-        // Cancel any active drawing
+        // Cancel any active drawing/modify command and reset selection
         appState.clearDrawingPoints();
+        appState.setActiveTool('select');
+        appState.deselectAll();
 
         // Save current document state before switching
         saveDocState(appState.activeDocumentId, appState);
@@ -448,6 +453,11 @@ export const useAppStore = create<AppState>()(
 
       openDocument: (id: string, initial?) => {
         const appState = get();
+
+        // Cancel any active drawing/modify command and reset selection
+        appState.clearDrawingPoints();
+        appState.setActiveTool('select');
+        appState.deselectAll();
 
         // Check if already open by filePath
         if (initial?.filePath) {
@@ -479,6 +489,12 @@ export const useAppStore = create<AppState>()(
 
       closeDocument: (id: string) => {
         const appState = get();
+
+        // Cancel any active drawing/modify command and reset selection
+        appState.clearDrawingPoints();
+        appState.setActiveTool('select');
+        appState.deselectAll();
+
         const order = [...appState.documentOrder];
         const idx = order.indexOf(id);
         if (idx === -1) return;
@@ -516,7 +532,10 @@ export const useAppStore = create<AppState>()(
         if (!appState.documentOrder.includes(id)) return;
         if (id === appState.activeDocumentId) return;
 
+        // Cancel any active drawing/modify command and reset selection
         appState.clearDrawingPoints();
+        appState.setActiveTool('select');
+        appState.deselectAll();
 
         // Save current document state
         saveDocState(appState.activeDocumentId, appState);
@@ -592,7 +611,8 @@ export const useDrawingLayers = () => useAppStore((state) => {
 export const useDraftLayers = useDrawingLayers;
 
 export const useSelectedShapes = () => useAppStore((state) => {
-  return state.shapes.filter((s) => state.selectedShapeIds.includes(s.id));
+  const idSet = new Set(state.selectedShapeIds);
+  return state.shapes.filter((s) => idSet.has(s.id));
 });
 
 // View selectors

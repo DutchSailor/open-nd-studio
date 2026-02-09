@@ -64,11 +64,13 @@ export function useModifyTools() {
   const isModifyTool = useCallback((tool: ToolType) => MODIFY_TOOLS.includes(tool), []);
 
   const getSelectedShapes = useCallback((): Shape[] => {
-    return shapes.filter((s) => selectedShapeIds.includes(s.id));
+    const idSet = new Set(selectedShapeIds);
+    return shapes.filter((s) => idSet.has(s.id));
   }, [shapes, selectedShapeIds]);
 
   const getSelectedParametricShapes = useCallback((): ParametricShape[] => {
-    return parametricShapes.filter((s) => selectedShapeIds.includes(s.id));
+    const idSet = new Set(selectedShapeIds);
+    return parametricShapes.filter((s) => idSet.has(s.id));
   }, [parametricShapes, selectedShapeIds]);
 
   /**

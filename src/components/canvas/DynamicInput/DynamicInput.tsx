@@ -105,7 +105,8 @@ export function DynamicInput() {
     const transform = translateTransform(dx, dy);
 
     const state = useAppStore.getState();
-    const selected = state.shapes.filter((s) => state.selectedShapeIds.includes(s.id));
+    const idSet = new Set(state.selectedShapeIds);
+    const selected = state.shapes.filter((s) => idSet.has(s.id));
     if (selected.length === 0) return;
 
     if (activeTool === 'copy' || state.modifyCopy) {
@@ -146,7 +147,8 @@ export function DynamicInput() {
     const transform = rotateTransform(center, angleRad);
 
     const state = useAppStore.getState();
-    const selected = state.shapes.filter((s) => state.selectedShapeIds.includes(s.id));
+    const idSet2 = new Set(state.selectedShapeIds);
+    const selected = state.shapes.filter((s) => idSet2.has(s.id));
     if (selected.length === 0) return;
 
     if (state.modifyCopy) {

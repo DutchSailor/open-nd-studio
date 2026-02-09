@@ -772,6 +772,25 @@ export function Backstage({ isOpen, onClose, initialView, onOpenSheetTemplateImp
                 </table>
               </div>
 
+              {/* 2D Cursor */}
+              <div>
+                <h3 className="text-sm font-semibold text-cad-text mb-3 border-b border-cad-border pb-1">2D Cursor</h3>
+                <table className="w-full text-xs">
+                  <tbody>
+                    {([
+                      ['Shift+RClick', 'Place 2D cursor'],
+                      ['Shift+C', 'Reset cursor to origin'],
+                      ['Shift+S', 'Snap cursor to selected'],
+                    ] as const).map(([key, desc]) => (
+                      <tr key={key} className="border-b border-cad-bg">
+                        <td className="py-1.5 pr-4"><kbd className="px-1.5 py-0.5 bg-cad-surface border border-cad-border text-cad-text rounded text-[10px] font-mono">{key}</kbd></td>
+                        <td className="py-1.5 text-cad-text-dim">{desc}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
               {/* Toggle Keys */}
               <div>
                 <h3 className="text-sm font-semibold text-cad-text mb-3 border-b border-cad-border pb-1">Toggles</h3>

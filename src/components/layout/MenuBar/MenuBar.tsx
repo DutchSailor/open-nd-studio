@@ -181,6 +181,8 @@ export const MenuBar = memo(function MenuBar({ onSendFeedback }: MenuBarProps) {
     <div className="h-8 bg-cad-surface border-b border-cad-border flex items-center select-none">
       {/* Quick Access Toolbar */}
       <div className="flex items-center gap-0.5 px-2">
+        <img src="/logo.svg" alt="Open 2D Studio" className="w-5 h-5" draggable={false} />
+        <div className="w-px h-4 bg-cad-border mx-0.5" />
         <button onClick={handleNew} className={qatBtn} title="New (Ctrl+N)">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>

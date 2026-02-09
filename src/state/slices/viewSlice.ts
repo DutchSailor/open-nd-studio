@@ -12,6 +12,8 @@ export interface ViewState {
   viewport: Viewport;
   canvasSize: { width: number; height: number };
   mousePosition: Point;
+  cursor2D: Point;
+  cursor2DVisible: boolean;
 }
 
 // ============================================================================
@@ -27,6 +29,10 @@ export interface ViewActions {
   resetView: () => void;
   setCanvasSize: (size: { width: number; height: number }) => void;
   setMousePosition: (point: Point) => void;
+  setCursor2D: (point: Point) => void;
+  resetCursor2D: () => void;
+  setCursor2DToSelected: () => void;
+  snapSelectionToCursor2D: () => void;
 }
 
 export type ViewSlice = ViewState & ViewActions;
@@ -39,6 +45,8 @@ export const initialViewState: ViewState = {
   viewport: { offsetX: 0, offsetY: 0, zoom: 1 },
   canvasSize: { width: 800, height: 600 },
   mousePosition: { x: 0, y: 0 },
+  cursor2D: { x: 0, y: 0 },
+  cursor2DVisible: true,
 };
 
 // ============================================================================
@@ -47,11 +55,13 @@ export const initialViewState: ViewState = {
 
 import type { Shape } from '../../types/geometry';
 import { getShapeBounds } from './types';
+import { translateTransform, transformShape } from '../../engine/geometry/Modify';
 
 // Type for the full store that this slice needs access to
 interface StoreWithModel {
   shapes: Shape[];
   selectedShapeIds: string[];
+  updateShapes: (updates: { id: string; updates: Partial<Shape> }[]) => void;
 }
 
 type FullStore = ViewState & StoreWithModel;
@@ -140,7 +150,8 @@ export const createViewSlice = (
     if (store.selectedShapeIds.length === 0) return;
 
     // Get bounding box of selected shapes
-    const selectedShapes = store.shapes.filter(s => store.selectedShapeIds.includes(s.id));
+    const idSet = new Set(store.selectedShapeIds);
+    const selectedShapes = store.shapes.filter(s => idSet.has(s.id));
     if (selectedShapes.length === 0) return;
 
     let minX = Infinity, minY = Infinity;
@@ -199,4 +210,82 @@ export const createViewSlice = (
     set((state) => {
       state.mousePosition = point;
     }),
+
+  setCursor2D: (point) =>
+    set((state) => {
+      state.cursor2D = point;
+      state.cursor2DVisible = true;
+    }),
+
+  resetCursor2D: () =>
+    set((state) => {
+      state.cursor2D = { x: 0, y: 0 };
+      state.cursor2DVisible = true;
+    }),
+
+  setCursor2DToSelected: () => {
+    const store = get();
+    if (store.selectedShapeIds.length === 0) return;
+
+    const idSet = new Set(store.selectedShapeIds);
+    const selected = store.shapes.filter(s => idSet.has(s.id));
+    if (selected.length === 0) return;
+
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const shape of selected) {
+      const bounds = getShapeBounds(shape);
+      if (bounds) {
+        minX = Math.min(minX, bounds.minX);
+        minY = Math.min(minY, bounds.minY);
+        maxX = Math.max(maxX, bounds.maxX);
+        maxY = Math.max(maxY, bounds.maxY);
+      }
+    }
+    if (minX === Infinity) return;
+
+    set((state) => {
+      state.cursor2D = { x: (minX + maxX) / 2, y: (minY + maxY) / 2 };
+      state.cursor2DVisible = true;
+    });
+  },
+
+  snapSelectionToCursor2D: () => {
+    const store = get();
+    if (store.selectedShapeIds.length === 0) return;
+
+    const idSet = new Set(store.selectedShapeIds);
+    const selected = store.shapes.filter(s => idSet.has(s.id));
+    if (selected.length === 0) return;
+
+    // Calculate center of selection
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const shape of selected) {
+      const bounds = getShapeBounds(shape);
+      if (bounds) {
+        minX = Math.min(minX, bounds.minX);
+        minY = Math.min(minY, bounds.minY);
+        maxX = Math.max(maxX, bounds.maxX);
+        maxY = Math.max(maxY, bounds.maxY);
+      }
+    }
+    if (minX === Infinity) return;
+
+    const centerX = (minX + maxX) / 2;
+    const centerY = (minY + maxY) / 2;
+    const dx = store.cursor2D.x - centerX;
+    const dy = store.cursor2D.y - centerY;
+
+    if (dx === 0 && dy === 0) return;
+
+    const transform = translateTransform(dx, dy);
+
+    set((state) => {
+      for (let i = 0; i < state.shapes.length; i++) {
+        if (!idSet.has(state.shapes[i].id)) continue;
+        // transformShape returns a new immutable shape; replace in-place for Immer
+        const transformed = transformShape(state.shapes[i] as Shape, transform);
+        state.shapes[i] = transformed as any;
+      }
+    });
+  },
 });

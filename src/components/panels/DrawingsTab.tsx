@@ -72,7 +72,7 @@ export function DrawingsTab() {
           {drawings.map((drawing) => (
             <div
               key={drawing.id}
-              className={`group flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer transition-colors ${
+              className={`group flex items-center gap-2 px-2 py-1.5 rounded cursor-default transition-colors ${
                 drawing.id === activeDrawingId && editorMode === 'drawing'
                   ? 'bg-cad-accent/20 border border-cad-accent'
                   : isPlacing && placingDrawingId === drawing.id

@@ -85,6 +85,10 @@ export function useContextMenu() {
     sendToBack,
     zoomToSelection,
     zoomToFit,
+    // 2D Cursor
+    resetCursor2D,
+    setCursor2DToSelected,
+    snapSelectionToCursor2D,
   } = useAppStore();
 
   const openMenu = useCallback((x: number, y: number) => {
@@ -97,7 +101,8 @@ export function useContextMenu() {
 
   // Check if selected shapes have groups
   const hasGroupedShapes = useMemo(() => {
-    const selected = shapes.filter(s => selectedShapeIds.includes(s.id));
+    const idSet = new Set(selectedShapeIds);
+    const selected = shapes.filter(s => idSet.has(s.id));
     return selected.some(s => s.groupId);
   }, [shapes, selectedShapeIds]);
 
@@ -265,6 +270,26 @@ export function useContextMenu() {
         },
         { type: 'divider' },
         {
+          id: 'cursor-to-selected',
+          label: 'Cursor to Selected',
+          shortcut: 'Shift+S',
+          action: setCursor2DToSelected,
+          disabled: !hasSelection,
+        },
+        {
+          id: 'selection-to-cursor',
+          label: 'Selection to Cursor',
+          action: snapSelectionToCursor2D,
+          disabled: !hasSelection,
+        },
+        {
+          id: 'cursor-to-origin',
+          label: 'Cursor to Origin',
+          shortcut: 'Shift+C',
+          action: resetCursor2D,
+        },
+        { type: 'divider' },
+        {
           id: 'zoom-to-selection',
           label: 'Zoom to Selection',
           action: zoomToSelection,
@@ -305,6 +330,13 @@ export function useContextMenu() {
       },
       { type: 'divider' },
       {
+        id: 'cursor-to-origin',
+        label: 'Cursor to Origin',
+        shortcut: 'Shift+C',
+        action: resetCursor2D,
+      },
+      { type: 'divider' },
+      {
         id: 'zoom-to-fit',
         label: 'Zoom to Fit',
         action: zoomToFit,
@@ -336,6 +368,9 @@ export function useContextMenu() {
     sendToBack,
     zoomToSelection,
     zoomToFit,
+    resetCursor2D,
+    setCursor2DToSelected,
+    snapSelectionToCursor2D,
   ]);
 
   return {

@@ -676,7 +676,8 @@ export const createModelSlice = (
 
     set((state) => {
       // Find all unique group IDs from selected shapes
-      const selectedShapes = state.shapes.filter(s => store.selectedShapeIds.includes(s.id));
+      const selectedIdSet = new Set(store.selectedShapeIds);
+      const selectedShapes = state.shapes.filter(s => selectedIdSet.has(s.id));
       const groupIdsToRemove = new Set<string>();
 
       for (const shape of selectedShapes) {

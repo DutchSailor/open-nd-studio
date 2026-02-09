@@ -211,8 +211,12 @@ export function createNewProject(): ProjectFile {
 export async function showOpenDialog(): Promise<string | null> {
   const result = await open({
     multiple: false,
-    filters: [PROJECT_FILTER],
-    title: 'Open Project',
+    filters: [
+      { name: 'Supported Files', extensions: [PROJECT_EXTENSION, 'dxf'] },
+      PROJECT_FILTER,
+      { name: 'DXF', extensions: ['dxf'] },
+    ],
+    title: 'Open',
   });
 
   return result as string | null;

@@ -390,6 +390,8 @@ export const StatusBar = memo(function StatusBar() {
   const toggleDynamicInput = useAppStore(s => s.toggleDynamicInput);
   const terminalOpen = useAppStore(s => s.terminalOpen);
   const toggleTerminal = useAppStore(s => s.toggleTerminal);
+  const cursor2D = useAppStore(s => s.cursor2D);
+  const cursor2DVisible = useAppStore(s => s.cursor2DVisible);
   const drawings = useAppStore(s => s.drawings);
   const activeDrawingId = useAppStore(s => s.activeDrawingId);
   const editorMode = useAppStore(s => s.editorMode);
@@ -431,6 +433,15 @@ export const StatusBar = memo(function StatusBar() {
         <span>Y:</span>
         <span className="text-cad-text font-mono w-20">{worldY.toFixed(2)}</span>
       </div>
+
+      {/* 2D Cursor position */}
+      {cursor2DVisible && (
+        <div className="flex items-center gap-2">
+          <span className="text-red-400">Cursor:</span>
+          <span className="text-red-300 font-mono w-20">{cursor2D.x.toFixed(2)}</span>
+          <span className="text-red-300 font-mono w-20">{cursor2D.y.toFixed(2)}</span>
+        </div>
+      )}
 
       {/* Zoom level */}
       <div className="flex items-center gap-2">
