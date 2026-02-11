@@ -76,7 +76,7 @@ export function useGlobalKeyboard() {
     }
     try {
       const project: ProjectFile = {
-        version: 2,
+        version: 3,
         name: projectName,
         createdAt: new Date().toISOString(),
         modifiedAt: new Date().toISOString(),
@@ -157,7 +157,7 @@ export function useGlobalKeyboard() {
 
     try {
       const project: ProjectFile = {
-        version: 2,
+        version: 3,
         name: projectName,
         createdAt: new Date().toISOString(),
         modifiedAt: new Date().toISOString(),
@@ -194,7 +194,7 @@ export function useGlobalKeyboard() {
 
     try {
       const project: ProjectFile = {
-        version: 2,
+        version: 3,
         name: projectName,
         createdAt: new Date().toISOString(),
         modifiedAt: new Date().toISOString(),

@@ -27,6 +27,7 @@ import { useAnnotationEditing } from '../editing/useAnnotationEditing';
 import { useGripEditing } from '../editing/useGripEditing';
 import { useModifyTools } from '../editing/useModifyTools';
 import { useBeamDrawing } from '../drawing/useBeamDrawing';
+import { useLeaderDrawing } from '../drawing/useLeaderDrawing';
 import { showImportImageDialog } from '../../services/file/fileService';
 import { importImage } from '../../services/file/imageImportService';
 import type { ImageShape } from '../../types/geometry';
@@ -44,6 +45,7 @@ export function useCanvasEvents(canvasRef: React.RefObject<HTMLCanvasElement>) {
   const gripEditing = useGripEditing();
   const modifyTools = useModifyTools();
   const beamDrawing = useBeamDrawing();
+  const leaderDrawing = useLeaderDrawing();
 
   const {
     viewport,
@@ -70,6 +72,7 @@ export function useCanvasEvents(canvasRef: React.RefObject<HTMLCanvasElement>) {
     selectedShapeIds,
     drawings,
     sourceSnapAngle,
+    switchToDrawing,
   } = useAppStore();
 
   // Get the active drawing's scale for text hit detection
@@ -80,8 +83,8 @@ export function useCanvasEvents(canvasRef: React.RefObject<HTMLCanvasElement>) {
 
   // Build spatial index for efficient shape lookup
   const quadTree = useMemo(() => {
-    return QuadTree.buildFromShapes(shapes, activeDrawingId);
-  }, [shapes, activeDrawingId]);
+    return QuadTree.buildFromShapes(shapes, activeDrawingId, activeDrawingScale);
+  }, [shapes, activeDrawingId, activeDrawingScale]);
 
   /**
    * Find shape at point using spatial index (only shapes in active drawing)
@@ -361,6 +364,12 @@ export function useCanvasEvents(canvasRef: React.RefObject<HTMLCanvasElement>) {
           snapDetection.clearTracking();
           break;
 
+        case 'leader':
+          deselectAll();
+          leaderDrawing.handleLeaderClick(snappedPos);
+          snapDetection.clearTracking();
+          break;
+
         case 'image': {
           deselectAll();
           // Open file dialog, import image, place at click point
@@ -436,6 +445,7 @@ export function useCanvasEvents(canvasRef: React.RefObject<HTMLCanvasElement>) {
       deselectAll,
       modifyTools,
       beamDrawing,
+      leaderDrawing,
       pendingBeam,
     ]
   );
@@ -511,6 +521,15 @@ export function useCanvasEvents(canvasRef: React.RefObject<HTMLCanvasElement>) {
         return;
       }
 
+      // Leader drawing preview
+      if (activeTool === 'leader' && leaderDrawing.isLeaderDrawing && editorMode === 'drawing') {
+        const worldPos = screenToWorld(screenPos.x, screenPos.y, viewport);
+        const basePoint = leaderDrawing.getLeaderBasePoint();
+        const snapResult = snapDetection.snapPoint(worldPos, basePoint ?? undefined);
+        leaderDrawing.updateLeaderPreview(snapResult.point);
+        return;
+      }
+
       // Modify tools - update preview
       const isModifyToolActive = ['move', 'copy', 'rotate', 'scale', 'mirror', 'array', 'trim', 'extend', 'fillet', 'chamfer', 'offset'].includes(activeTool);
       if (isModifyToolActive && editorMode === 'drawing') {
@@ -530,7 +549,7 @@ export function useCanvasEvents(canvasRef: React.RefObject<HTMLCanvasElement>) {
       }
 
       // Drawing tools - always detect snaps when hovering (even before first click)
-      const isDrawingTool = ['line', 'rectangle', 'circle', 'arc', 'polyline', 'spline', 'ellipse', 'hatch', 'dimension'].includes(activeTool);
+      const isDrawingTool = ['line', 'rectangle', 'circle', 'arc', 'polyline', 'spline', 'ellipse', 'hatch', 'dimension', 'leader'].includes(activeTool);
 
       if (isDrawingTool && editorMode === 'drawing') {
         const worldPos = screenToWorld(screenPos.x, screenPos.y, viewport);
@@ -563,7 +582,7 @@ export function useCanvasEvents(canvasRef: React.RefObject<HTMLCanvasElement>) {
         setHoveredShapeId(null);
       }
     },
-    [panZoom, annotationEditing, viewportEditing, editorMode, viewport, boundaryEditing, gripEditing, boxSelection, shapeDrawing, snapDetection, activeTool, dimensionMode, pickLinesMode, findShapeAtPoint, setHoveredShapeId, canvasRef, modifyTools, beamDrawing, pendingBeam, sourceSnapAngle]
+    [panZoom, annotationEditing, viewportEditing, editorMode, viewport, boundaryEditing, gripEditing, boxSelection, shapeDrawing, snapDetection, activeTool, dimensionMode, pickLinesMode, findShapeAtPoint, setHoveredShapeId, canvasRef, modifyTools, beamDrawing, leaderDrawing, pendingBeam, sourceSnapAngle]
   );
 
   /**
@@ -665,6 +684,13 @@ export function useCanvasEvents(canvasRef: React.RefObject<HTMLCanvasElement>) {
         return;
       }
 
+      // Cancel leader drawing on right-click
+      if (leaderDrawing.isLeaderDrawing) {
+        leaderDrawing.cancelLeader();
+        snapDetection.clearTracking();
+        return;
+      }
+
       // If actively drawing, finish the drawing
       if (shapeDrawing.isDrawing()) {
         shapeDrawing.finishDrawing();
@@ -752,7 +778,7 @@ export function useCanvasEvents(canvasRef: React.RefObject<HTMLCanvasElement>) {
       }
 
       // If a drawing or annotation tool is selected but not actively drawing, deselect it
-      const drawingTools = ['line', 'rectangle', 'circle', 'arc', 'polyline', 'spline', 'ellipse', 'hatch', 'text', 'dimension', 'beam', 'image'];
+      const drawingTools = ['line', 'rectangle', 'circle', 'arc', 'polyline', 'spline', 'ellipse', 'hatch', 'text', 'leader', 'dimension', 'beam', 'image'];
       if (drawingTools.includes(activeTool)) {
         setActiveTool('select');
         // Clear any lingering snap/tracking indicators
@@ -761,7 +787,7 @@ export function useCanvasEvents(canvasRef: React.RefObject<HTMLCanvasElement>) {
     },
     [editorMode, annotationEditing, shapeDrawing, activeTool, setActiveTool, snapDetection, modifyTools, setPrintDialogOpen,
      panZoom, viewport, findShapeAtPoint, parametricShapes, selectedShapeIds, explodeParametricShapes, addShapes,
-     pendingSection, clearPendingSection, setSectionPlacementPreview, pendingBeam, beamDrawing]
+     pendingSection, clearPendingSection, setSectionPlacementPreview, pendingBeam, beamDrawing, leaderDrawing]
   );
 
   /**
@@ -770,9 +796,21 @@ export function useCanvasEvents(canvasRef: React.RefObject<HTMLCanvasElement>) {
   const handleDoubleClick = useCallback(
     (e: React.MouseEvent<HTMLCanvasElement>) => {
       if (e.button !== 0) return;
-      if (editorMode !== 'drawing') return;
 
       const screenPos = panZoom.getMousePos(e);
+
+      // Sheet mode: double-click on a viewport to switch to that drawing
+      if (editorMode === 'sheet') {
+        const sheetPos = viewportEditing.screenToSheet(screenPos.x, screenPos.y);
+        const vp = viewportEditing.findViewportAtPoint(sheetPos);
+        if (vp) {
+          switchToDrawing(vp.drawingId);
+        }
+        return;
+      }
+
+      if (editorMode !== 'drawing') return;
+
       const worldPos = screenToWorld(screenPos.x, screenPos.y, viewport);
 
       // Find shape at point
@@ -785,7 +823,7 @@ export function useCanvasEvents(canvasRef: React.RefObject<HTMLCanvasElement>) {
         }
       }
     },
-    [editorMode, panZoom, viewport, findShapeAtPoint, shapes, textDrawing]
+    [editorMode, panZoom, viewport, findShapeAtPoint, shapes, textDrawing, viewportEditing, switchToDrawing]
   );
 
   /**

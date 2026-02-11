@@ -9,9 +9,10 @@ import type { Shape, ShapeStyle, LineStyle, Layer, Drawing, Sheet, Viewport, Dra
 import { splineToSvgPath } from '../../engine/geometry/SplineUtils';
 import { bulgeToArc, bulgeArcBounds } from '../../engine/geometry/GeometryUtils';
 export { exportToIFC } from '../export/ifcExport';
+import { CAD_DEFAULT_FONT } from '../../constants/cadDefaults';
 
 // File format version for future compatibility
-const FILE_FORMAT_VERSION = 2;
+const FILE_FORMAT_VERSION = 3;
 
 // Default drawing boundary (in drawing units)
 const DEFAULT_DRAWING_BOUNDARY: DrawingBoundary = {
@@ -102,8 +103,19 @@ export interface ProjectFileV2 {
   unitSettings?: import('../../units/types').UnitSettings;
 }
 
+/**
+ * Project file structure V3 (ISO 3098 text standards)
+ * - fontSize now means paper mm for annotation text
+ * - Font changed from Arial to Osifont
+ * - lineHeight changed from 1.2 to 1.4
+ * - Dimension style values now in paper mm
+ */
+export interface ProjectFileV3 extends Omit<ProjectFileV2, 'version'> {
+  version: 3;
+}
+
 // Current project file type
-export type ProjectFile = ProjectFileV2;
+export type ProjectFile = ProjectFileV3;
 
 /**
  * Generate a unique ID
@@ -159,6 +171,75 @@ function migrateV1ToV2(v1: ProjectFileV1): ProjectFileV2 {
 }
 
 /**
+ * Migrate V2 project to V3 format (ISO 3098 text standards)
+ *
+ * The scaling formula changed from `fontSize * (0.02 / drawingScale)` to `fontSize / drawingScale`.
+ * To preserve visual appearance, annotation text fontSize values are multiplied by 0.02
+ * (the old REFERENCE_SCALE). Same for dimension style numeric values.
+ *
+ * Font is updated from Arial to Osifont, lineHeight from 1.2 to 1.4.
+ */
+function migrateV2ToV3(v2: ProjectFileV2): ProjectFileV3 {
+  const REFERENCE_SCALE = 0.02;
+
+  const migratedShapes = v2.shapes.map(shape => {
+    if (shape.type === 'text') {
+      const textShape = shape as any;
+      const isModel = textShape.isModelText === true;
+      return {
+        ...textShape,
+        // Annotation text: convert fontSize to paper mm
+        fontSize: isModel ? textShape.fontSize : textShape.fontSize * REFERENCE_SCALE,
+        // Update font and line height
+        fontFamily: textShape.fontFamily === 'Arial' ? CAD_DEFAULT_FONT : textShape.fontFamily,
+        lineHeight: textShape.lineHeight === 1.2 ? 1.4 : textShape.lineHeight,
+      };
+    }
+    if (shape.type === 'dimension') {
+      const dimShape = shape as any;
+      const ds = dimShape.dimensionStyle;
+      if (ds) {
+        return {
+          ...dimShape,
+          dimensionStyle: {
+            ...ds,
+            textHeight: ds.textHeight * REFERENCE_SCALE,
+            arrowSize: ds.arrowSize * REFERENCE_SCALE,
+            extensionLineGap: ds.extensionLineGap * REFERENCE_SCALE,
+            extensionLineOvershoot: ds.extensionLineOvershoot * REFERENCE_SCALE,
+          },
+        };
+      }
+    }
+    return shape;
+  });
+
+  // Migrate sheet title block fonts (sizes are already in paper mm, only update font)
+  const migratedSheets = (v2.sheets || []).map(sheet => {
+    if (sheet.titleBlock && sheet.titleBlock.fields) {
+      return {
+        ...sheet,
+        titleBlock: {
+          ...sheet.titleBlock,
+          fields: sheet.titleBlock.fields.map((field: any) => ({
+            ...field,
+            fontFamily: field.fontFamily === 'Arial' ? CAD_DEFAULT_FONT : field.fontFamily,
+          })),
+        },
+      };
+    }
+    return sheet;
+  });
+
+  return {
+    ...v2,
+    version: 3,
+    shapes: migratedShapes,
+    sheets: migratedSheets,
+  } as ProjectFileV3;
+}
+
+/**
  * Create a new empty project data structure
  */
 export function createNewProject(): ProjectFile {
@@ -167,7 +248,7 @@ export function createNewProject(): ProjectFile {
   const layerId = generateId();
 
   return {
-    version: FILE_FORMAT_VERSION as 2,
+    version: FILE_FORMAT_VERSION as 3,
     name: 'Untitled',
     createdAt: now,
     modifiedAt: now,
@@ -275,19 +356,26 @@ export async function showExportAllFormatsDialog(
  */
 export async function readProjectFile(path: string): Promise<ProjectFile> {
   const content = await readTextFile(path);
-  const data = JSON.parse(content) as ProjectFileV1 | ProjectFileV2;
+  const data = JSON.parse(content) as ProjectFileV1 | ProjectFileV2 | ProjectFileV3;
 
   // Validate file format version
   if (!data.version || data.version > FILE_FORMAT_VERSION) {
     throw new Error(`Unsupported file format version: ${data.version}`);
   }
 
-  // Migrate V1 files to V2
+  // Chain migrations: V1 → V2 → V3
+  let result: ProjectFileV2 | ProjectFileV3;
   if (data.version === 1) {
-    return migrateV1ToV2(data as ProjectFileV1);
+    result = migrateV1ToV2(data as ProjectFileV1);
+  } else {
+    result = data as ProjectFileV2 | ProjectFileV3;
   }
 
-  return data as ProjectFileV2;
+  if (result.version === 2) {
+    result = migrateV2ToV3(result as ProjectFileV2);
+  }
+
+  return result as ProjectFileV3;
 }
 
 /**
@@ -1128,7 +1216,7 @@ export function parseDXF(
           position: { x, y: -y },
           text: textContent,
           fontSize: height,
-          fontFamily: 'Arial',
+          fontFamily: CAD_DEFAULT_FONT,
           rotation: (-rotation * Math.PI) / 180,
           alignment: 'left',
           verticalAlignment: 'bottom',
@@ -1192,7 +1280,7 @@ export function parseDXF(
           position: { x, y: -y },
           text: textContent.trim(),
           fontSize: height,
-          fontFamily: 'Arial',
+          fontFamily: CAD_DEFAULT_FONT,
           rotation: (-rotation * Math.PI) / 180,
           alignment: 'left',
           verticalAlignment: 'top',

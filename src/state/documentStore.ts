@@ -12,6 +12,7 @@ import { useStore } from 'zustand';
 import { enablePatches, produceWithPatches, applyPatches, current, type Patch } from 'immer';
 
 import { useAppStore } from './appStore';
+import { CAD_DEFAULT_FONT } from '../constants/cadDefaults';
 
 import type {
   Shape,
@@ -114,7 +115,7 @@ function createTitleBlockFromSVGTemplate(svgTemplateId: string): TitleBlock | nu
     width: 80,
     height: 12,
     fontSize: 10,
-    fontFamily: 'Arial',
+    fontFamily: CAD_DEFAULT_FONT,
     align: 'left' as const,
   }));
 
@@ -217,6 +218,7 @@ export interface DocumentState {
   // Text Styles
   textStyles: TextStyle[];              // Available text styles (built-in + custom)
   activeTextStyleId: string | null;     // Currently selected text style for new text
+  textStyleManagerOpen: boolean;        // UI state for text style manager dialog
 
   // Project Info
   projectInfo: import('../types/projectInfo').ProjectInfo;
@@ -395,7 +397,10 @@ export interface DocumentActions {
   addTextStyle: (style: Omit<TextStyle, 'id'>) => string;
   updateTextStyle: (id: string, updates: Partial<TextStyle>) => void;
   deleteTextStyle: (id: string) => void;
+  duplicateTextStyle: (id: string) => string | undefined;
   applyTextStyleToShape: (shapeId: string, styleId: string) => void;
+  textStyleManagerOpen: boolean;
+  setTextStyleManagerOpen: (open: boolean) => void;
 
   // File actions
   setFilePath: (path: string | null) => void;
@@ -502,7 +507,7 @@ export function createEmptyDocumentState(projectName = 'Untitled'): DocumentStat
     textEditingId: null,
     textEditingContent: '',
     defaultTextStyle: {
-      fontFamily: 'Arial',
+      fontFamily: CAD_DEFAULT_FONT,
       fontSize: 10,
       bold: false,
       italic: false,
@@ -526,6 +531,7 @@ export function createEmptyDocumentState(projectName = 'Untitled'): DocumentStat
     // Text Styles
     textStyles: createDefaultTextStyles(),
     activeTextStyleId: 'annotation-medium', // Default to 3.5mm annotation
+    textStyleManagerOpen: false,
     // Project Info
     projectInfo: {
       projectName: '',
@@ -1874,7 +1880,7 @@ export function createDocumentStoreInstance(initial?: Partial<DocumentState>): S
         const id = generateId();
         const annotation: SheetTextAnnotation = {
           id, type: 'text', position, content,
-          fontSize: options.fontSize ?? 3.5, fontFamily: options.fontFamily ?? 'Arial',
+          fontSize: options.fontSize ?? 3.5, fontFamily: options.fontFamily ?? CAD_DEFAULT_FONT,
           rotation: options.rotation ?? 0, alignment: options.alignment ?? 'left',
           color: options.color ?? '#000000',
           visible: options.visible ?? true, locked: options.locked ?? false,
@@ -2118,6 +2124,29 @@ export function createDocumentStoreInstance(initial?: Partial<DocumentState>): S
           }
         }),
 
+      duplicateTextStyle: (id) => {
+        const style = get().textStyles.find(s => s.id === id);
+        if (style) {
+          const newId = generateId();
+          set((state) => {
+            state.textStyles.push({
+              ...structuredClone(style),
+              id: newId,
+              name: `${style.name} (Copy)`,
+              isBuiltIn: false,
+            });
+            state.isModified = true;
+          });
+          return newId;
+        }
+        return undefined;
+      },
+
+      textStyleManagerOpen: false,
+
+      setTextStyleManagerOpen: (open) =>
+        set((state) => { state.textStyleManagerOpen = open; }),
+
       applyTextStyleToShape: (shapeId, styleId) =>
         set((state) => {
           const shape = state.shapes.find(s => s.id === shapeId);
@@ -2136,6 +2165,12 @@ export function createDocumentStoreInstance(initial?: Partial<DocumentState>): S
             shape.backgroundMask = style.backgroundMask;
             shape.backgroundColor = style.backgroundColor;
             shape.backgroundPadding = style.backgroundPadding;
+            shape.strikethrough = style.strikethrough ?? false;
+            shape.textCase = style.textCase;
+            shape.letterSpacing = style.letterSpacing;
+            shape.widthFactor = style.widthFactor;
+            shape.obliqueAngle = style.obliqueAngle;
+            shape.paragraphSpacing = style.paragraphSpacing;
             shape.textStyleId = styleId;
             state.isModified = true;
           }

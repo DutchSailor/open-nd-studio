@@ -222,8 +222,6 @@ export interface VectorRenderOptions {
   drawingScale?: number;
 }
 
-// Reference scale used for text sizing (1:50)
-const REFERENCE_SCALE = 0.02;
 
 // ============================================================================
 // Style Setup
@@ -612,9 +610,9 @@ function renderText(doc: jsPDF, shape: Shape & { type: 'text' }, opts: VectorRen
   const textColor = transformColor(color || shape.style.strokeColor, opts.appearance, true);
   doc.setTextColor(textColor.r, textColor.g, textColor.b);
 
-  // Apply drawing scale factor for proper text sizing (same formula as ShapeRenderer)
-  const drawingScale = opts.drawingScale ?? REFERENCE_SCALE;
-  const adjustedFontSize = fontSize * (REFERENCE_SCALE / drawingScale);
+  // Apply drawing scale factor for proper text sizing (fontSize is in paper mm)
+  const drawingScale = opts.drawingScale ?? 0.02;
+  const adjustedFontSize = fontSize / drawingScale;
   const scaledFontSize = adjustedFontSize * opts.scale;
 
   // Set font style

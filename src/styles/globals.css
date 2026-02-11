@@ -2,6 +2,15 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ISO 3098 compliant CAD font */
+@font-face {
+  font-family: 'Osifont';
+  src: url('/fonts/osifont.ttf') format('truetype');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
 /* ============================================================================
    Theme CSS Variables
    ============================================================================ */

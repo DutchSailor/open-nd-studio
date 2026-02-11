@@ -114,6 +114,8 @@ export function useDimensionDrawing() {
     clearDrawingPoints,
     setDrawingPreview,
     dimensionMode,
+    dimensionPrecision,
+    dimensionArrowStyle,
     shapes,
     unitSettings,
   } = useAppStore();
@@ -137,7 +139,7 @@ export function useDimensionDrawing() {
       linearDirection?: 'horizontal' | 'vertical'
     ) => {
       const value = calculateDimensionValue(points, dimensionType, linearDirection);
-      const formattedValue = formatDimensionValue(value, dimensionType, DEFAULT_DIMENSION_STYLE.precision, unitSettings);
+      const formattedValue = formatDimensionValue(value, dimensionType, dimensionPrecision, unitSettings);
 
       // Determine prefix based on type
       let prefix: string | undefined;
@@ -160,12 +162,12 @@ export function useDimensionDrawing() {
         value: formattedValue,
         valueOverridden: false,
         prefix,
-        dimensionStyle: { ...DEFAULT_DIMENSION_STYLE },
+        dimensionStyle: { ...DEFAULT_DIMENSION_STYLE, arrowType: dimensionArrowStyle, precision: dimensionPrecision },
       };
 
       addShape(dimensionShape);
     },
-    [activeLayerId, activeDrawingId, currentStyle, addShape]
+    [activeLayerId, activeDrawingId, currentStyle, addShape, dimensionPrecision, dimensionArrowStyle]
   );
 
   /**
@@ -469,7 +471,7 @@ export function useDimensionDrawing() {
         }
 
         const value = calculateDimensionValue([p1, p2], dimensionMode === 'linear' ? 'linear' : 'aligned', linearDirection);
-        const formattedValue = formatDimensionValue(value, dimensionMode === 'linear' ? 'linear' : 'aligned', DEFAULT_DIMENSION_STYLE.precision, unitSettings);
+        const formattedValue = formatDimensionValue(value, dimensionMode === 'linear' ? 'linear' : 'aligned', dimensionPrecision, unitSettings);
 
         setDrawingPreview({
           type: 'dimension',
@@ -506,7 +508,7 @@ export function useDimensionDrawing() {
         const vertex = drawingPoints[1];
         const offset = distance(vertex, snappedPos);
         const value = calculateDimensionValue([vertex, drawingPoints[2], drawingPoints[3]], 'angular');
-        const formattedValue = formatDimensionValue(value, 'angular', DEFAULT_DIMENSION_STYLE.precision, unitSettings);
+        const formattedValue = formatDimensionValue(value, 'angular', dimensionPrecision, unitSettings);
 
         setDrawingPreview({
           type: 'dimension',
@@ -535,7 +537,7 @@ export function useDimensionDrawing() {
       };
 
       const value = calculateDimensionValue([center, edgePoint], dimensionMode);
-      const formattedValue = formatDimensionValue(value, dimensionMode, DEFAULT_DIMENSION_STYLE.precision, unitSettings);
+      const formattedValue = formatDimensionValue(value, dimensionMode, dimensionPrecision, unitSettings);
 
       setDrawingPreview({
         type: 'dimension',

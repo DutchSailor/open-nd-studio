@@ -193,10 +193,10 @@ export function LineFamilyEditor({
             </p>
           </div>
 
-          {/* Row 5: Stroke Width */}
+          {/* Row 5: Lineweight */}
           <div>
             <label className="text-[10px] text-cad-text-dim uppercase tracking-wide block mb-1">
-              Stroke Width (optional)
+              Lineweight (optional)
             </label>
             <input
               type="number"

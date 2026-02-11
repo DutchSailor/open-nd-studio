@@ -142,8 +142,9 @@ export class DrawingRenderer extends BaseRenderer {
     // Set live preview pattern
     this.shapeRenderer.setPreviewPattern(options.previewPatternId || null, selectedShapeIds);
 
-    // Set lineweight display mode
+    // Set lineweight display mode and current zoom
     this.shapeRenderer.setShowLineweight(options.showLineweight !== false);
+    this.shapeRenderer.setZoom(viewport.zoom);
     this.parametricRenderer.setShowLineweight(options.showLineweight !== false);
 
     // Clear canvas

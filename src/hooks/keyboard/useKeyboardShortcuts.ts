@@ -36,6 +36,7 @@ const TWO_KEY_SHORTCUTS: Record<string, string> = {
   'el': 'ellipse',
   'sp': 'spline',
   'tx': 'text',
+  'le': 'leader',
   'di': 'dimension',
   'dl': 'dimension-linear',
   'da': 'dimension-angular',

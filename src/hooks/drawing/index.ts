@@ -3,3 +3,4 @@
  */
 
 export { useShapeDrawing } from './useShapeDrawing';
+export { useLeaderDrawing } from './useLeaderDrawing';

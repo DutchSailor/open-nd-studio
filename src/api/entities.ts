@@ -15,6 +15,7 @@ import {
 } from '../services/drawing/shapeService';
 import { findShapeAtPoint } from '../services/drawing/selectionService';
 import { generateId } from '../state/slices/types';
+import { CAD_DEFAULT_FONT } from '../constants/cadDefaults';
 
 export class EntitiesApi {
   constructor(
@@ -111,7 +112,7 @@ export class EntitiesApi {
           position: toPoint(params.position),
           text: params.text || '',
           fontSize: params.fontSize || 12,
-          fontFamily: params.fontFamily || 'Arial',
+          fontFamily: params.fontFamily || CAD_DEFAULT_FONT,
           rotation: params.rotation || 0,
           alignment: params.alignment || 'left',
           verticalAlignment: params.verticalAlignment || 'top',

@@ -215,6 +215,10 @@ export interface ProfileParametricShape extends BaseParametricShape {
   presetId?: string;
   /** Standard name (e.g., "AISC", "EN") */
   standard?: string;
+  /** Whether to show label above the section */
+  showLabel?: boolean;
+  /** Custom label text (defaults to presetId or profileType name) */
+  labelText?: string;
   /**
    * Generated geometry cache
    * Stored to avoid regeneration on every render

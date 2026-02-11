@@ -16,6 +16,7 @@ import { AnnotationRenderer } from '../sheet/AnnotationRenderer';
 import { HandleRenderer, ViewportHandleType } from '../ui/HandleRenderer';
 import { PAPER_SIZES, MM_TO_PIXELS, COLORS } from '../types';
 import { loadCustomSVGTemplates } from '../../../services/export/svgTitleBlockService';
+import { CAD_DEFAULT_FONT } from '../../../constants/cadDefaults';
 
 /** Point type for placement preview */
 interface Point {
@@ -160,10 +161,24 @@ export class SheetRenderer extends BaseRenderer {
       // For full-page templates, draw the SVG template on top of white background
       this.titleBlockRenderer.drawTitleBlock(sheet.titleBlock, paperWidth, paperHeight);
     } else {
-      // Draw paper border (non-full-page templates only - full-page SVG has its own border)
-      ctx.strokeStyle = '#888888';
-      ctx.lineWidth = 1 / viewport.zoom;
+      // Draw thin paper edge
+      ctx.strokeStyle = '#cccccc';
+      ctx.lineWidth = 0.5 / viewport.zoom;
       ctx.strokeRect(0, 0, paperWidth, paperHeight);
+
+      // Draw professional drawing frame (thick inner border with uniform margins)
+      const marginLeft = 10 * MM_TO_PIXELS;
+      const marginRight = 10 * MM_TO_PIXELS;
+      const marginTop = 10 * MM_TO_PIXELS;
+      const marginBottom = 10 * MM_TO_PIXELS;
+      const frameX = marginLeft;
+      const frameY = marginTop;
+      const frameW = paperWidth - marginLeft - marginRight;
+      const frameH = paperHeight - marginTop - marginBottom;
+
+      ctx.strokeStyle = '#000000';
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(frameX, frameY, frameW, frameH);
     }
 
     // Draw viewports
@@ -190,6 +205,11 @@ export class SheetRenderer extends BaseRenderer {
       );
     }
 
+    // Draw alignment guides during viewport drag
+    if (options.viewportDragging && selectedViewportId) {
+      this.drawAlignmentGuides(sheet, selectedViewportId, viewport.zoom);
+    }
+
     // Draw placement preview if active
     if (placementPreview?.isPlacing && placementPreview.previewPosition && placementPreview.placingDrawingId) {
       this.drawPlacementPreview(placementPreview, drawings, viewport.zoom);
@@ -207,6 +227,129 @@ export class SheetRenderer extends BaseRenderer {
     // Draw title block (skip if full-page template - already drawn as background)
     if (sheet.titleBlock.visible && !isFullPageTemplate) {
       this.titleBlockRenderer.drawTitleBlock(sheet.titleBlock, paperWidth, paperHeight);
+    }
+
+    ctx.restore();
+  }
+
+  /**
+   * Draw alignment guide lines when dragging a viewport near other viewports' edges/centers
+   */
+  private drawAlignmentGuides(sheet: Sheet, draggingId: string, sheetZoom: number): void {
+    const ctx = this.ctx;
+    const visibleViewports = sheet.viewports.filter(v => v.visible);
+    const dragging = visibleViewports.find(v => v.id === draggingId);
+    if (!dragging) return;
+
+    const threshold = 2; // mm
+    const guideColor = '#4a90d9';
+    const frameMargin = 10; // mm
+
+    // Paper dimensions in mm
+    const paperDims = this.getPaperDimensions(sheet);
+    const paperW = paperDims.width;
+    const paperH = paperDims.height;
+
+    // Dragging viewport edges in mm
+    const dTop = dragging.y;
+    const dBottom = dragging.y + dragging.height;
+    const dLeft = dragging.x;
+    const dRight = dragging.x + dragging.width;
+    const dCenterX = dragging.x + dragging.width / 2;
+    const dCenterY = dragging.y + dragging.height / 2;
+
+    ctx.save();
+    ctx.strokeStyle = guideColor;
+    ctx.lineWidth = 1 / sheetZoom;
+    ctx.setLineDash([6 / sheetZoom, 4 / sheetZoom]);
+
+    // Helper to draw a horizontal guide line across the full paper width
+    const drawHGuide = (y: number) => {
+      ctx.beginPath();
+      ctx.moveTo(0, y * MM_TO_PIXELS);
+      ctx.lineTo(paperW * MM_TO_PIXELS, y * MM_TO_PIXELS);
+      ctx.stroke();
+    };
+
+    // Helper to draw a vertical guide line across the full paper height
+    const drawVGuide = (x: number) => {
+      ctx.beginPath();
+      ctx.moveTo(x * MM_TO_PIXELS, 0);
+      ctx.lineTo(x * MM_TO_PIXELS, paperH * MM_TO_PIXELS);
+      ctx.stroke();
+    };
+
+    // --- Border snap guides (paper edges + frame edges) ---
+    const borderXPositions = [0, frameMargin, paperW - frameMargin, paperW];
+    const borderYPositions = [0, frameMargin, paperH - frameMargin, paperH];
+
+    const dXEdges = [dLeft, dRight, dCenterX];
+    const dYEdges = [dTop, dBottom, dCenterY];
+
+    for (const dX of dXEdges) {
+      for (const bx of borderXPositions) {
+        if (Math.abs(dX - bx) <= threshold) {
+          drawVGuide(bx);
+        }
+      }
+    }
+
+    for (const dY of dYEdges) {
+      for (const by of borderYPositions) {
+        if (Math.abs(dY - by) <= threshold) {
+          drawHGuide(by);
+        }
+      }
+    }
+
+    // --- Viewport-to-viewport guides ---
+    const others = visibleViewports.filter(v => v.id !== draggingId);
+
+    for (const other of others) {
+      const oTop = other.y;
+      const oBottom = other.y + other.height;
+      const oLeft = other.x;
+      const oRight = other.x + other.width;
+      const oCenterX = other.x + other.width / 2;
+      const oCenterY = other.y + other.height / 2;
+
+      // Horizontal guides (Y-axis alignment)
+      const yChecks: [number, number][] = [
+        [dTop, oTop], [dTop, oBottom], [dTop, oCenterY],
+        [dBottom, oTop], [dBottom, oBottom], [dBottom, oCenterY],
+        [dCenterY, oCenterY],
+      ];
+
+      for (const [dY, oY] of yChecks) {
+        if (Math.abs(dY - oY) <= threshold) {
+          const minX = Math.min(dLeft, oLeft);
+          const maxX = Math.max(dRight, oRight);
+          const y = oY * MM_TO_PIXELS;
+          ctx.beginPath();
+          ctx.moveTo(minX * MM_TO_PIXELS, y);
+          ctx.lineTo(maxX * MM_TO_PIXELS, y);
+          ctx.stroke();
+        }
+      }
+
+      // Vertical guides (X-axis alignment)
+      const xChecks: [number, number][] = [
+        [dLeft, oLeft], [dLeft, oRight], [dLeft, oCenterX],
+        [dRight, oLeft], [dRight, oRight], [dRight, oCenterX],
+        [dCenterX, oCenterX],
+      ];
+
+      for (const [dX, oX] of xChecks) {
+        if (Math.abs(dX - oX) <= threshold) {
+          const minY = Math.min(dTop, oTop);
+          const maxY = Math.max(dBottom, oBottom);
+          const x = oX * MM_TO_PIXELS;
+          ctx.beginPath();
+          ctx.moveTo(x, minY * MM_TO_PIXELS);
+          ctx.lineTo(x, maxY * MM_TO_PIXELS);
+          ctx.stroke();
+        }
+      }
     }
 
     ctx.restore();
@@ -254,7 +397,7 @@ export class SheetRenderer extends BaseRenderer {
     // Draw drawing name label
     ctx.setLineDash([]);
     const fontSize = 12 / sheetZoom;
-    ctx.font = `${fontSize}px Arial`;
+    ctx.font = `${fontSize}px ${CAD_DEFAULT_FONT}`;
     ctx.fillStyle = COLORS.selection;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'bottom';

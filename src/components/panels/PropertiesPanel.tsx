@@ -49,6 +49,7 @@ function TextStyleSelector({ currentStyleId, onApplyStyle }: {
   onApplyStyle: (styleId: string) => void;
 }) {
   const textStyles = useAppStore(s => s.textStyles) || [];
+  const setTextStyleManagerOpen = useAppStore(s => s.setTextStyleManagerOpen);
 
   // Don't render if no styles available
   if (textStyles.length === 0) {
@@ -60,7 +61,19 @@ function TextStyleSelector({ currentStyleId, onApplyStyle }: {
 
   return (
     <div className="mb-3 p-2 bg-cad-bg rounded border border-cad-border">
-      <label className={labelClass}>Text Style</label>
+      <div className="flex items-center justify-between mb-1">
+        <label className={labelClass + ' mb-0'}>Text Style</label>
+        <button
+          onClick={() => setTextStyleManagerOpen(true)}
+          className="p-0.5 text-cad-text-dim hover:text-cad-accent transition-colors"
+          title="Manage Text Styles"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
+            <circle cx="12" cy="12" r="3"/>
+          </svg>
+        </button>
+      </div>
       <select
         value={currentStyleId || ''}
         onChange={(e) => {
@@ -190,14 +203,15 @@ function NumberField({ label, value, onChange, step = 1, min, max, readOnly, uni
   );
 }
 
-function TextField({ label, value, onChange }: {
-  label: string; value: string; onChange: (v: string) => void;
+function TextField({ label, value, onChange, placeholder }: {
+  label: string; value: string; onChange: (v: string) => void; placeholder?: string;
 }) {
   return (
     <div className="mb-2">
       <label className={labelClass}>{label}</label>
       <input type="text" value={value}
         onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
         className={inputClass} />
     </div>
   );
@@ -310,6 +324,7 @@ function ParametricShapeProperties({ shape }: { shape: ParametricShape }) {
   const updateProfileParameters = useAppStore(s => s.updateProfileParameters);
   const updateProfilePosition = useAppStore(s => s.updateProfilePosition);
   const updateProfileRotation = useAppStore(s => s.updateProfileRotation);
+  const updateParametricShape = useAppStore(s => s.updateParametricShape);
 
   if (shape.parametricType !== 'profile') {
     return <div className="text-xs text-cad-text-dim">Unknown parametric type</div>;
@@ -366,6 +381,23 @@ function ParametricShapeProperties({ shape }: { shape: ParametricShape }) {
         onChange={(v) => updateProfileRotation(shape.id, v * DEG2RAD)}
         step={1}
       />
+
+      {/* Label */}
+      <PropertyGroup label="Label">
+        <CheckboxField
+          label="Show Label"
+          value={profileShape.showLabel ?? true}
+          onChange={(v) => updateParametricShape(shape.id, { showLabel: v })}
+        />
+        {(profileShape.showLabel ?? true) && (
+          <TextField
+            label="Label Text"
+            value={profileShape.labelText || ''}
+            placeholder={profileShape.presetId || template?.name || profileShape.profileType}
+            onChange={(v) => updateParametricShape(shape.id, { labelText: v || undefined })}
+          />
+        )}
+      </PropertyGroup>
 
       {/* Parameters */}
       {template && (
@@ -436,7 +468,7 @@ function MultiSelectShapeProperties({
               onChange={(v) => updateAll({ fontFamily: v })}
             />
             <NumberField
-              label="Font Size"
+              label="Text Height"
               value={commonFontSize ?? textShapes[0].fontSize}
               onChange={(v) => updateAll({ fontSize: v })}
               step={1}
@@ -731,7 +763,7 @@ function ShapeProperties({ shape, updateShape }: { shape: Shape; updateShape: (i
                 className={inputClass + ' resize-y'} />
             </div>
             <TextField label="Font Family" value={shape.fontFamily} onChange={(v) => update({ fontFamily: v })} />
-            <NumberField label="Font Size" value={shape.fontSize} onChange={(v) => update({ fontSize: v })} step={1} min={1} />
+            <NumberField label="Text Height" value={shape.fontSize} onChange={(v) => update({ fontSize: v })} step={1} min={1} />
             <NumberField label="Line Height" value={shape.lineHeight} onChange={(v) => update({ lineHeight: v })} step={0.1} min={0.5} />
             <div className="mb-2 flex items-center gap-3">
               <CheckboxField label="Bold" value={shape.bold} onChange={(v) => update({ bold: v })} />
@@ -1478,10 +1510,10 @@ export const PropertiesPanel = memo(function PropertiesPanel() {
       {isHatchToolActive && <HatchToolProperties />}
       <div>
         <PropertyGroup label="Style">
-          <ColorPalette label="Stroke Color" value={displayStyle.strokeColor} onChange={handleColorChange} />
+          <ColorPalette label="Color" value={displayStyle.strokeColor} onChange={handleColorChange} />
 
           <div className="mb-3">
-            <label className="block text-xs text-cad-text-dim mb-1">Stroke Width</label>
+            <label className="block text-xs text-cad-text-dim mb-1">Lineweight</label>
             <input
               type="number"
               min="0.5"

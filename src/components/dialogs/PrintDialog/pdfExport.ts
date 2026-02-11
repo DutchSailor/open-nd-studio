@@ -3,12 +3,13 @@ import { svg2pdf } from 'svg2pdf.js';
 import { save } from '@tauri-apps/plugin-dialog';
 import { writeFile } from '@tauri-apps/plugin-fs';
 import { tempDir } from '@tauri-apps/api/path';
-import type { Shape, Sheet, SheetViewport, Drawing } from '../../../types/geometry';
+import type { Shape, Sheet, SheetViewport, Drawing, TitleBlock } from '../../../types/geometry';
 import type { ParametricShape, ProfileParametricShape } from '../../../types/parametric';
 import type { CustomHatchPattern } from '../../../types/hatch';
 import type { PrintSettings } from '../../../state/slices/uiSlice';
 import { renderShapesToPdf, type VectorRenderOptions } from './vectorPdfRenderer';
 import { loadCustomSVGTemplates, renderSVGTitleBlock } from '../../../services/export/svgTitleBlockService';
+import { PROFILE_TEMPLATES } from '../../../services/parametric/profileTemplates';
 
 const PAPER_SIZES: Record<string, { width: number; height: number }> = {
   'A4': { width: 210, height: 297 },
@@ -228,6 +229,23 @@ function renderParametricShapesToPdf(
 
       doc.lines(path, startX, startY, [1, 1], 'S', closed);
     }
+
+    // Draw label above the section
+    if (profileShape.showLabel !== false) {
+      const template = PROFILE_TEMPLATES[profileShape.profileType];
+      const labelText = profileShape.labelText || profileShape.presetId || template?.name || profileShape.profileType;
+      const { bounds } = geometry;
+      const centerX = (bounds.minX + bounds.maxX) / 2;
+      const width = bounds.maxX - bounds.minX;
+      const fontSize = Math.max(2, width * 0.15);
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(fontSize * scale);
+      doc.setTextColor(r, g, b);
+      const pdfX = centerX * scale + offsetX;
+      const pdfY = bounds.minY * scale + offsetY - fontSize * scale * 0.3;
+      doc.text(labelText, pdfX, pdfY, { align: 'center' });
+    }
   }
 }
 
@@ -341,16 +359,17 @@ async function renderSheetPageVector(
   const sheetWidthMM = sheetIsLandscape ? sheetPaper.height : sheetPaper.width;
   const sheetHeightMM = sheetIsLandscape ? sheetPaper.width : sheetPaper.height;
 
-  // Check for SVG title block - render as raster image
+  // Check for SVG title block
   const svgTemplateId = (sheet.titleBlock as { svgTemplateId?: string }).svgTemplateId;
   let svgTemplate: ReturnType<typeof loadCustomSVGTemplates>[0] | undefined;
+  let isFullPageTemplate = false;
 
   if (svgTemplateId) {
     const svgTemplates = loadCustomSVGTemplates();
     svgTemplate = svgTemplates.find(t => t.id === svgTemplateId);
 
     if (svgTemplate) {
-      // Render SVG title block as image (jsPDF can handle SVG directly in some cases)
+      isFullPageTemplate = !!svgTemplate.isFullPage;
       await renderSvgTitleBlockToPdf(
         doc,
         svgTemplate,
@@ -361,6 +380,20 @@ async function renderSheetPageVector(
         svgTemplate.isFullPage ? sheetHeightMM : svgTemplate.height
       );
     }
+  }
+
+  // Draw drawing frame border (10mm margins) - skip for full-page SVG templates
+  if (!isFullPageTemplate) {
+    const frameMargin = 10; // mm
+    doc.setDrawColor(0, 0, 0);
+    doc.setLineWidth(0.4);
+    doc.setLineDashPattern([], 0);
+    doc.rect(frameMargin, frameMargin, sheetWidthMM - 2 * frameMargin, sheetHeightMM - 2 * frameMargin);
+  }
+
+  // Draw standard title block (non-SVG) if visible
+  if (sheet.titleBlock.visible && !svgTemplate) {
+    renderStandardTitleBlockToPdf(doc, sheet.titleBlock, sheetWidthMM, sheetHeightMM);
   }
 
   // Count visible viewports for "whenMultiple" title visibility
@@ -379,16 +412,20 @@ async function renderSheetPageVector(
     const vpParametricShapes = allParametricShapes.filter(s => s.drawingId === vp.drawingId && s.visible);
 
     if (vpShapes.length > 0 || vpParametricShapes.length > 0) {
-      // Save graphics state for clipping
+      // Save graphics state and clip to viewport boundary
       doc.saveGraphicsState();
 
-      // Viewport dimensions (for calculating transforms, not for drawing boundary)
+      // Viewport dimensions in mm
       const vpX = vp.x;
       const vpY = vp.y;
       const vpW = vp.width;
       const vpH = vp.height;
 
-      // Note: We do NOT draw the viewport boundary rectangle - only the content inside
+      // Clip to viewport rectangle so content outside is hidden
+      // Pass null style to define path without stroking (keeps path open for clip)
+      (doc as any).rect(vpX, vpY, vpW, vpH, null);
+      doc.clip();
+      doc.discardPath();
 
       const vpCenterX = vpX + vpW / 2;
       const vpCenterY = vpY + vpH / 2;
@@ -421,6 +458,83 @@ async function renderSheetPageVector(
     // Render viewport title (respects titleVisibility, showScale, showExtensionLine properties)
     const drawingName = drawing?.name || 'Untitled';
     renderViewportTitleToPdf(doc, vp, drawingName, totalViewportsOnSheet);
+  }
+}
+
+/**
+ * Render standard (non-SVG) title block to PDF
+ * Replicates the canvas TitleBlockRenderer logic for legacy grid layout
+ */
+function renderStandardTitleBlockToPdf(
+  doc: jsPDF,
+  titleBlock: TitleBlock,
+  sheetWidthMM: number,
+  sheetHeightMM: number
+): void {
+  // Position title block at bottom-right of paper (matching canvas renderer)
+  const tbW = titleBlock.width;
+  const tbH = titleBlock.height;
+  const tbX = sheetWidthMM - tbW - titleBlock.x;
+  const tbY = sheetHeightMM - tbH - titleBlock.y;
+
+  // Background
+  doc.setFillColor(248, 248, 248); // #f8f8f8
+  doc.rect(tbX, tbY, tbW, tbH, 'F');
+
+  // Outer border
+  doc.setDrawColor(0, 0, 0);
+  doc.setLineWidth(0.5);
+  doc.setLineDashPattern([], 0);
+  doc.rect(tbX, tbY, tbW, tbH, 'S');
+
+  // --- Grid lines (legacy layout) ---
+  doc.setLineWidth(0.15);
+
+  const row1H = 14;
+  const row2H = 11;
+
+  // Horizontal dividers
+  doc.line(tbX, tbY + row1H, tbX + tbW, tbY + row1H);
+  doc.line(tbX, tbY + row1H + row2H, tbX + tbW, tbY + row1H + row2H);
+
+  // Row 1 vertical: Title | Drawing No + Rev (split at 123mm)
+  doc.line(tbX + 123, tbY, tbX + 123, tbY + row1H);
+  // Sub-split inside Drawing No cell at 7.5mm
+  doc.line(tbX + 123, tbY + 7.5, tbX + tbW, tbY + 7.5);
+
+  // Row 2 vertical splits at 63, 123, 148mm
+  const r2Y = tbY + row1H;
+  for (const xMm of [63, 123, 148]) {
+    doc.line(tbX + xMm, r2Y, tbX + xMm, r2Y + row2H);
+  }
+
+  // Row 3 vertical splits at 38, 68, 103, 138mm
+  const r3Y = tbY + row1H + row2H;
+  const r3H = tbH - row1H - row2H;
+  for (const xMm of [38, 68, 103, 138]) {
+    doc.line(tbX + xMm, r3Y, tbX + xMm, r3Y + r3H);
+  }
+
+  // --- Fields ---
+  for (const field of titleBlock.fields) {
+    const fieldX = tbX + field.x;
+    const fieldY = tbY + field.y;
+
+    // Label (smaller, gray)
+    const labelSize = Math.max(7, (field.fontSize || 8) - 2);
+    doc.setTextColor(102, 102, 102); // #666666
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(labelSize);
+    doc.text(field.label, fieldX, fieldY + labelSize * 0.35);
+
+    // Value (larger, bold, below label)
+    const value = field.value || '';
+    if (value) {
+      doc.setTextColor(0, 0, 0);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(field.fontSize || 10);
+      doc.text(value, fieldX, fieldY + labelSize * 0.35 + 3.5);
+    }
   }
 }
 

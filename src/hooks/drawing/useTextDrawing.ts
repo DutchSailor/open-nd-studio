@@ -5,6 +5,7 @@
 import { useCallback } from 'react';
 import { useAppStore, generateId } from '../../state/appStore';
 import type { Point, TextShape } from '../../types/geometry';
+import { CAD_DEFAULT_LINE_HEIGHT } from '../../constants/cadDefaults';
 
 export function useTextDrawing() {
   const {
@@ -16,6 +17,8 @@ export function useTextDrawing() {
     startTextEditing,
     shapes,
     selectShape,
+    activeTextStyleId,
+    textStyles,
   } = useAppStore();
 
   /**
@@ -23,6 +26,11 @@ export function useTextDrawing() {
    */
   const createText = useCallback(
     (position: Point): string => {
+      // Resolve active text style if set
+      const activeStyle = activeTextStyleId
+        ? textStyles.find(s => s.id === activeTextStyleId)
+        : null;
+
       const textShape: TextShape = {
         id: generateId(),
         type: 'text',
@@ -33,16 +41,27 @@ export function useTextDrawing() {
         locked: false,
         position,
         text: '',  // Start with empty text, user will type
-        fontSize: defaultTextStyle.fontSize,
-        fontFamily: defaultTextStyle.fontFamily,
+        fontSize: activeStyle?.fontSize ?? defaultTextStyle.fontSize,
+        fontFamily: activeStyle?.fontFamily ?? defaultTextStyle.fontFamily,
         rotation: 0,
-        alignment: defaultTextStyle.alignment,
-        verticalAlignment: 'top',
-        bold: defaultTextStyle.bold,
-        italic: defaultTextStyle.italic,
-        underline: defaultTextStyle.underline,
-        color: defaultTextStyle.color,
-        lineHeight: 1.2,
+        alignment: activeStyle?.alignment ?? defaultTextStyle.alignment,
+        verticalAlignment: activeStyle?.verticalAlignment ?? 'top',
+        bold: activeStyle?.bold ?? defaultTextStyle.bold,
+        italic: activeStyle?.italic ?? defaultTextStyle.italic,
+        underline: activeStyle?.underline ?? defaultTextStyle.underline,
+        color: activeStyle?.color ?? defaultTextStyle.color,
+        lineHeight: activeStyle?.lineHeight ?? CAD_DEFAULT_LINE_HEIGHT,
+        strikethrough: activeStyle?.strikethrough,
+        textCase: activeStyle?.textCase,
+        letterSpacing: activeStyle?.letterSpacing,
+        widthFactor: activeStyle?.widthFactor,
+        obliqueAngle: activeStyle?.obliqueAngle,
+        paragraphSpacing: activeStyle?.paragraphSpacing,
+        isModelText: activeStyle?.isModelText,
+        backgroundMask: activeStyle?.backgroundMask,
+        backgroundColor: activeStyle?.backgroundColor,
+        backgroundPadding: activeStyle?.backgroundPadding,
+        textStyleId: activeTextStyleId ?? undefined,
       };
 
       addShape(textShape);
@@ -52,7 +71,7 @@ export function useTextDrawing() {
 
       return textShape.id;
     },
-    [activeLayerId, activeDrawingId, currentStyle, defaultTextStyle, addShape, startTextEditing]
+    [activeLayerId, activeDrawingId, currentStyle, defaultTextStyle, addShape, startTextEditing, activeTextStyleId, textStyles]
   );
 
   /**

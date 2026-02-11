@@ -7,6 +7,7 @@ import type { TransactionManager } from './transactions';
 import type { EntitiesApi } from './entities';
 import { toPoint, type ApiPoint } from './types';
 import type { DimensionStyle } from '../types/dimension';
+import { DEFAULT_DIMENSION_STYLE } from '../constants/cadDefaults';
 
 export class DimensionsApi {
   constructor(
@@ -69,18 +70,7 @@ export class DimensionsApi {
   }
 
   getStyle(): DimensionStyle {
-    // Return default dimension style
-    return {
-      arrowType: 'filled',
-      arrowSize: 3,
-      extensionLineGap: 2,
-      extensionLineOvershoot: 2,
-      textHeight: 3,
-      textPlacement: 'above',
-      lineColor: '#00ffff',
-      textColor: '#00ffff',
-      precision: 2,
-    };
+    return { ...DEFAULT_DIMENSION_STYLE };
   }
 
   setStyle(_style: Partial<DimensionStyle>): void {

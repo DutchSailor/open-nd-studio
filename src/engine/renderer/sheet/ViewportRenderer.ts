@@ -13,6 +13,8 @@ import { BaseRenderer } from '../core/BaseRenderer';
 import { ShapeRenderer } from '../core/ShapeRenderer';
 import { HandleRenderer } from '../ui/HandleRenderer';
 import { MM_TO_PIXELS, COLORS } from '../types';
+import { CAD_DEFAULT_FONT } from '../../../constants/cadDefaults';
+import { PROFILE_TEMPLATES } from '../../../services/parametric/profileTemplates';
 
 export interface ViewportRenderOptions {
   /** All layers for filtering */
@@ -214,9 +216,12 @@ export class ViewportRenderer extends BaseRenderer {
       this.shapeRenderer.setCustomPatterns(options.customPatterns.userPatterns, options.customPatterns.projectPatterns);
     }
 
-    // Set lineweight display mode
+    // Set lineweight display mode and effective zoom for line width calculation
     this._showLineweight = options?.showLineweight !== false;
     this.shapeRenderer.setShowLineweight(this._showLineweight);
+    // In sheet viewports, effective zoom combines sheet zoom with viewport scale
+    const effectiveZoom = (options?.sheetZoom || 1) * vp.scale * MM_TO_PIXELS;
+    this.shapeRenderer.setZoom(effectiveZoom);
 
     // Get the drawing to access its boundary
     const drawing = drawings.find(d => d.id === vp.drawingId);
@@ -458,7 +463,7 @@ export class ViewportRenderer extends BaseRenderer {
 
       // Draw reference number text centered in circle
       ctx.fillStyle = '#333333';
-      ctx.font = `bold ${10 / zoom}px Arial`;
+      ctx.font = `bold ${10 / zoom}px ${CAD_DEFAULT_FONT}`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(referenceNumber, circleX, circleY);
@@ -469,7 +474,7 @@ export class ViewportRenderer extends BaseRenderer {
 
     // Draw title
     ctx.fillStyle = '#333333';
-    ctx.font = `${11 / zoom}px Arial`;
+    ctx.font = `${11 / zoom}px ${CAD_DEFAULT_FONT}`;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'alphabetic';
     ctx.fillText(title, textStartX, titleY);
@@ -478,7 +483,7 @@ export class ViewportRenderer extends BaseRenderer {
     if (showScale) {
       const scaleText = `Scale: ${this.formatScale(scale)}`;
       ctx.fillStyle = '#666666';
-      ctx.font = `${9 / zoom}px Arial`;
+      ctx.font = `${9 / zoom}px ${CAD_DEFAULT_FONT}`;
       ctx.fillText(scaleText, textStartX, scaleY);
     }
 
@@ -540,6 +545,24 @@ export class ViewportRenderer extends BaseRenderer {
       }
 
       ctx.stroke();
+    }
+
+    // Draw label above the section
+    if (profileShape.showLabel !== false) {
+      const template = PROFILE_TEMPLATES[profileShape.profileType];
+      const labelText = profileShape.labelText || profileShape.presetId || template?.name || profileShape.profileType;
+      const { bounds } = geometry;
+      const centerX = (bounds.minX + bounds.maxX) / 2;
+      const width = bounds.maxX - bounds.minX;
+      const zoom = ctx.getTransform().a / this.dpr;
+      const fontSize = Math.max(10 / zoom, width * 0.15);
+
+      let textColor = strokeColor;
+      ctx.fillStyle = textColor;
+      ctx.font = `${fontSize}px ${CAD_DEFAULT_FONT}`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'bottom';
+      ctx.fillText(labelText, centerX, bounds.minY - fontSize * 0.3);
     }
 
     ctx.restore();

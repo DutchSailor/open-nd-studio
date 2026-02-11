@@ -6,6 +6,7 @@
 
 import type { CommandDefinition, CommandContext, CommandResponse } from '../types';
 import type { Shape, ShapeType, Point } from '../../../types/geometry';
+import { DEFAULT_DIMENSION_STYLE, CAD_DEFAULT_FONT, CAD_DEFAULT_LINE_HEIGHT } from '../../../constants/cadDefaults';
 
 /**
  * Helper to create a shape via the state
@@ -208,7 +209,7 @@ function createTextInternal(
     position: params.position as Point,
     text: (params.text as string) || '',
     fontSize: (params.fontSize as number) || 12,
-    fontFamily: (params.fontFamily as string) || 'Arial',
+    fontFamily: (params.fontFamily as string) || CAD_DEFAULT_FONT,
     rotation: (params.rotation as number) || 0,
     alignment: (params.alignment as string) || 'left',
     verticalAlignment: (params.verticalAlignment as string) || 'top',
@@ -216,7 +217,7 @@ function createTextInternal(
     italic: (params.italic as boolean) || false,
     underline: (params.underline as boolean) || false,
     color: (params.color as string) || '#ffffff',
-    lineHeight: (params.lineHeight as number) || 1.2,
+    lineHeight: (params.lineHeight as number) || CAD_DEFAULT_LINE_HEIGHT,
     fixedWidth: params.fixedWidth as number | undefined,
   } as Shape;
 }
@@ -262,17 +263,7 @@ function createDimensionInternal(
     valueOverridden: (params.valueOverridden as boolean) || false,
     prefix: params.prefix,
     suffix: params.suffix,
-    dimensionStyle: params.dimensionStyle || {
-      arrowType: 'filled',
-      arrowSize: 3,
-      extensionLineGap: 2,
-      extensionLineOvershoot: 2,
-      textHeight: 3,
-      textPlacement: 'above',
-      lineColor: '#00ffff',
-      textColor: '#00ffff',
-      precision: 2,
-    },
+    dimensionStyle: params.dimensionStyle || { ...DEFAULT_DIMENSION_STYLE },
   } as Shape;
 }
 
@@ -463,7 +454,7 @@ export const drawCommands: CommandDefinition[] = [
       { name: 'position', type: 'point', required: true, description: 'Text position' },
       { name: 'text', type: 'string', required: true, description: 'Text content' },
       { name: 'fontSize', type: 'number', default: 12, description: 'Font size' },
-      { name: 'fontFamily', type: 'string', default: 'Arial', description: 'Font family' },
+      { name: 'fontFamily', type: 'string', default: 'Osifont', description: 'Font family' },
       { name: 'rotation', type: 'number', default: 0, description: 'Rotation in radians' },
       { name: 'alignment', type: 'string', default: 'left', enum: ['left', 'center', 'right'], description: 'Horizontal alignment' },
       { name: 'verticalAlignment', type: 'string', default: 'top', enum: ['top', 'middle', 'bottom'], description: 'Vertical alignment' },

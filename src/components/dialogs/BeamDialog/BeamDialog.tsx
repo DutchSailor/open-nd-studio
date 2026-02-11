@@ -11,6 +11,7 @@
 
 import { useState, useMemo, useRef, useCallback, useEffect } from 'react';
 import { X, Search } from 'lucide-react';
+import { CAD_DEFAULT_FONT } from '../../../constants/cadDefaults';
 import {
   PROFILE_TEMPLATES,
   getDefaultParameters,
@@ -246,7 +247,7 @@ export function BeamDialog({ isOpen, onClose, onDraw }: BeamDialogProps) {
 
     } catch {
       ctx.fillStyle = '#ff6b6b';
-      ctx.font = '12px Arial';
+      ctx.font = `12px ${CAD_DEFAULT_FONT}`;
       ctx.textAlign = 'center';
       ctx.fillText('Preview error', canvas.width / 2, canvas.height / 2);
     }

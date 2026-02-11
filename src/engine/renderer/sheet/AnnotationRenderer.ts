@@ -22,6 +22,7 @@ import type {
   SheetRevisionCloud,
 } from '../../../types/sheet';
 import type { Point } from '../../../types/geometry';
+import { CAD_DEFAULT_FONT } from '../../../constants/cadDefaults';
 
 export interface AnnotationRenderOptions {
   /** Selected annotation IDs */
@@ -225,7 +226,7 @@ export class AnnotationRenderer extends BaseRenderer {
     const displayText = `${prefix || ''}${value}${suffix || ''}`;
     const textHeight = style.textHeight * MM_TO_PIXELS;
 
-    ctx.font = `${textHeight}px Arial`;
+    ctx.font = `${textHeight}px ${CAD_DEFAULT_FONT}`;
     ctx.fillStyle = textColor;
     ctx.textAlign = 'center';
     ctx.textBaseline = style.textPlacement === 'above' ? 'bottom' :
@@ -274,7 +275,7 @@ export class AnnotationRenderer extends BaseRenderer {
     const displayText = `${prefix || (type === 'radius' ? 'R' : '\u2300')}${value}${suffix || ''}`;
     const textHeight = style.textHeight * MM_TO_PIXELS;
 
-    ctx.font = `${textHeight}px Arial`;
+    ctx.font = `${textHeight}px ${CAD_DEFAULT_FONT}`;
     ctx.fillStyle = textColor;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'bottom';
@@ -315,7 +316,7 @@ export class AnnotationRenderer extends BaseRenderer {
     const displayText = `${prefix || ''}${value}${suffix || '\u00B0'}`;
     const textHeight = style.textHeight * MM_TO_PIXELS;
 
-    ctx.font = `${textHeight}px Arial`;
+    ctx.font = `${textHeight}px ${CAD_DEFAULT_FONT}`;
     ctx.fillStyle = textColor;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
@@ -422,7 +423,7 @@ export class AnnotationRenderer extends BaseRenderer {
     const lastPoint = pixelPoints[pixelPoints.length - 1];
     const fontSizePx = fontSize * MM_TO_PIXELS;
 
-    ctx.font = `${fontSizePx}px Arial`;
+    ctx.font = `${fontSizePx}px ${CAD_DEFAULT_FONT}`;
     ctx.fillStyle = txtColor;
     ctx.textAlign = textAlignment;
     ctx.textBaseline = 'bottom';
@@ -488,7 +489,7 @@ export class AnnotationRenderer extends BaseRenderer {
 
     // Draw callout number
     ctx.fillStyle = isSelected ? '#0066ff' : lineColor;
-    ctx.font = `bold ${sizePx * 0.6}px Arial`;
+    ctx.font = `bold ${sizePx * 0.6}px ${CAD_DEFAULT_FONT}`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(calloutNumber, x, y);
@@ -577,7 +578,7 @@ export class AnnotationRenderer extends BaseRenderer {
 
       // Section number
       ctx.fillStyle = color;
-      ctx.font = `bold 12px Arial`;
+      ctx.font = `bold 12px ${CAD_DEFAULT_FONT}`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(sectionNumber, x, y);

@@ -11,6 +11,7 @@ import { useAppStore } from '../../../state/appStore';
 import { worldToScreen } from '../../../engine/geometry/GeometryUtils';
 import type { TextShape } from '../../../types/geometry';
 import { SymbolPalette, processTextCodes } from '../SymbolPalette/SymbolPalette';
+import { CAD_DEFAULT_LINE_HEIGHT } from '../../../constants/cadDefaults';
 
 interface TextEditorProps {
   shape: TextShape;
@@ -19,11 +20,47 @@ interface TextEditorProps {
 }
 
 export function TextEditor({ shape, onSave, onCancel }: TextEditorProps) {
-  const { viewport } = useAppStore();
+  const { viewport, drawings, activeDrawingId, updateShape } = useAppStore();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [text, setText] = useState(shape.text);
   const [showSymbolPalette, setShowSymbolPalette] = useState(false);
+
+  // Local formatting state synced to shape
+  const [bold, setBold] = useState(shape.bold);
+  const [italic, setItalic] = useState(shape.italic);
+  const [underline, setUnderline] = useState(shape.underline);
+  const [strikethrough, setStrikethrough] = useState(shape.strikethrough ?? false);
+  const [alignment, setAlignment] = useState(shape.alignment);
+
+  const toggleBold = useCallback(() => {
+    const next = !bold;
+    setBold(next);
+    updateShape(shape.id, { bold: next });
+  }, [bold, shape.id, updateShape]);
+
+  const toggleItalic = useCallback(() => {
+    const next = !italic;
+    setItalic(next);
+    updateShape(shape.id, { italic: next });
+  }, [italic, shape.id, updateShape]);
+
+  const toggleUnderline = useCallback(() => {
+    const next = !underline;
+    setUnderline(next);
+    updateShape(shape.id, { underline: next });
+  }, [underline, shape.id, updateShape]);
+
+  const toggleStrikethrough = useCallback(() => {
+    const next = !strikethrough;
+    setStrikethrough(next);
+    updateShape(shape.id, { strikethrough: next });
+  }, [strikethrough, shape.id, updateShape]);
+
+  const setAlignmentValue = useCallback((value: 'left' | 'center' | 'right') => {
+    setAlignment(value);
+    updateShape(shape.id, { alignment: value });
+  }, [shape.id, updateShape]);
 
   // Calculate screen position from world coordinates
   const screenPos = worldToScreen(shape.position.x, shape.position.y, viewport);
@@ -103,9 +140,13 @@ export function TextEditor({ shape, onSave, onCancel }: TextEditorProps) {
     }
   }, [text, onSave, onCancel]);
 
-  // Calculate font styles for textarea
-  const fontSize = shape.fontSize * viewport.zoom;
-  const fontStyle = `${shape.italic ? 'italic ' : ''}${shape.bold ? 'bold ' : ''}`;
+  // Calculate font styles for textarea — match canvas rendering formula
+  const drawingScale = drawings.find(d => d.id === activeDrawingId)?.scale || 0.02;
+  const effectiveFontSize = shape.isModelText
+    ? shape.fontSize
+    : shape.fontSize / drawingScale;
+  const fontSize = effectiveFontSize * viewport.zoom;
+  const fontStyle = `${italic ? 'italic ' : ''}${bold ? 'bold ' : ''}`;
 
   return (
     <div
@@ -117,7 +158,7 @@ export function TextEditor({ shape, onSave, onCancel }: TextEditorProps) {
         zIndex: 1000,
       }}
     >
-      {/* Toolbar with symbol button */}
+      {/* Formatting toolbar */}
       <div
         style={{
           position: 'absolute',
@@ -125,13 +166,165 @@ export function TextEditor({ shape, onSave, onCancel }: TextEditorProps) {
           left: 0,
           marginBottom: '4px',
           display: 'flex',
-          gap: '4px',
+          gap: '2px',
           backgroundColor: 'rgba(30, 30, 30, 0.95)',
-          padding: '4px',
+          padding: '3px 4px',
           borderRadius: '4px',
           border: '1px solid #444',
+          alignItems: 'center',
         }}
       >
+        {/* Bold */}
+        <button
+          onClick={toggleBold}
+          title="Bold"
+          style={{
+            padding: '2px 6px',
+            fontSize: '12px',
+            fontWeight: 'bold',
+            backgroundColor: bold ? '#0066ff' : '#333',
+            color: '#fff',
+            border: '1px solid #555',
+            borderRadius: '3px',
+            cursor: 'pointer',
+            minWidth: 24,
+          }}
+        >
+          B
+        </button>
+        {/* Italic */}
+        <button
+          onClick={toggleItalic}
+          title="Italic"
+          style={{
+            padding: '2px 6px',
+            fontSize: '12px',
+            fontStyle: 'italic',
+            backgroundColor: italic ? '#0066ff' : '#333',
+            color: '#fff',
+            border: '1px solid #555',
+            borderRadius: '3px',
+            cursor: 'pointer',
+            minWidth: 24,
+          }}
+        >
+          I
+        </button>
+        {/* Underline */}
+        <button
+          onClick={toggleUnderline}
+          title="Underline"
+          style={{
+            padding: '2px 6px',
+            fontSize: '12px',
+            textDecoration: 'underline',
+            backgroundColor: underline ? '#0066ff' : '#333',
+            color: '#fff',
+            border: '1px solid #555',
+            borderRadius: '3px',
+            cursor: 'pointer',
+            minWidth: 24,
+          }}
+        >
+          U
+        </button>
+        {/* Strikethrough */}
+        <button
+          onClick={toggleStrikethrough}
+          title="Strikethrough"
+          style={{
+            padding: '2px 6px',
+            fontSize: '12px',
+            textDecoration: 'line-through',
+            backgroundColor: strikethrough ? '#0066ff' : '#333',
+            color: '#fff',
+            border: '1px solid #555',
+            borderRadius: '3px',
+            cursor: 'pointer',
+            minWidth: 24,
+          }}
+        >
+          S
+        </button>
+
+        {/* Separator */}
+        <div style={{ width: 1, height: 18, backgroundColor: '#555', margin: '0 2px' }} />
+
+        {/* Alignment buttons */}
+        <button
+          onClick={() => setAlignmentValue('left')}
+          title="Align Left"
+          style={{
+            padding: '2px 5px',
+            fontSize: '11px',
+            backgroundColor: alignment === 'left' ? '#0066ff' : '#333',
+            color: '#fff',
+            border: '1px solid #555',
+            borderRadius: '3px',
+            cursor: 'pointer',
+            minWidth: 22,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'flex-start',
+            gap: 1,
+            lineHeight: 1,
+          }}
+        >
+          <span style={{ display: 'block', width: 10, height: 1.5, backgroundColor: '#fff' }} />
+          <span style={{ display: 'block', width: 7, height: 1.5, backgroundColor: '#fff' }} />
+          <span style={{ display: 'block', width: 10, height: 1.5, backgroundColor: '#fff' }} />
+        </button>
+        <button
+          onClick={() => setAlignmentValue('center')}
+          title="Align Center"
+          style={{
+            padding: '2px 5px',
+            fontSize: '11px',
+            backgroundColor: alignment === 'center' ? '#0066ff' : '#333',
+            color: '#fff',
+            border: '1px solid #555',
+            borderRadius: '3px',
+            cursor: 'pointer',
+            minWidth: 22,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: 1,
+            lineHeight: 1,
+          }}
+        >
+          <span style={{ display: 'block', width: 10, height: 1.5, backgroundColor: '#fff' }} />
+          <span style={{ display: 'block', width: 7, height: 1.5, backgroundColor: '#fff' }} />
+          <span style={{ display: 'block', width: 10, height: 1.5, backgroundColor: '#fff' }} />
+        </button>
+        <button
+          onClick={() => setAlignmentValue('right')}
+          title="Align Right"
+          style={{
+            padding: '2px 5px',
+            fontSize: '11px',
+            backgroundColor: alignment === 'right' ? '#0066ff' : '#333',
+            color: '#fff',
+            border: '1px solid #555',
+            borderRadius: '3px',
+            cursor: 'pointer',
+            minWidth: 22,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'flex-end',
+            gap: 1,
+            lineHeight: 1,
+          }}
+        >
+          <span style={{ display: 'block', width: 10, height: 1.5, backgroundColor: '#fff' }} />
+          <span style={{ display: 'block', width: 7, height: 1.5, backgroundColor: '#fff' }} />
+          <span style={{ display: 'block', width: 10, height: 1.5, backgroundColor: '#fff' }} />
+        </button>
+
+        {/* Separator */}
+        <div style={{ width: 1, height: 18, backgroundColor: '#555', margin: '0 2px' }} />
+
+        {/* Symbol palette button */}
         <button
           onClick={() => setShowSymbolPalette(!showSymbolPalette)}
           title="Insert Symbol (Ctrl+Shift+S)"
@@ -145,11 +338,8 @@ export function TextEditor({ shape, onSave, onCancel }: TextEditorProps) {
             cursor: 'pointer',
           }}
         >
-          Ω
+          &Omega;
         </button>
-        <span style={{ fontSize: '10px', color: '#888', alignSelf: 'center' }}>
-          Ctrl+Shift+S for symbols
-        </span>
       </div>
 
       {/* Symbol palette popup */}
@@ -182,8 +372,12 @@ export function TextEditor({ shape, onSave, onCancel }: TextEditorProps) {
           padding: '2px 4px',
           transform: shape.rotation ? `rotate(${shape.rotation}rad)` : undefined,
           transformOrigin: 'top left',
-          lineHeight: shape.lineHeight || 1.2,
-          textAlign: shape.alignment,
+          lineHeight: shape.lineHeight || CAD_DEFAULT_LINE_HEIGHT,
+          textAlign: alignment,
+          textDecoration: [
+            underline ? 'underline' : '',
+            strikethrough ? 'line-through' : '',
+          ].filter(Boolean).join(' ') || 'none',
           boxShadow: '0 2px 8px rgba(0, 0, 0, 0.5)',
         }}
         placeholder="Enter text..."

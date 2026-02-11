@@ -403,8 +403,11 @@ export function isSnapType(value: unknown): value is SnapType {
  */
 const TOOL_TYPES: ToolType[] = [
   'select', 'pan', 'line', 'rectangle', 'circle', 'arc',
-  'polyline', 'ellipse', 'spline', 'text', 'move', 'copy', 'rotate',
-  'scale', 'mirror', 'trim', 'extend', 'fillet', 'offset'
+  'polyline', 'ellipse', 'spline', 'text', 'leader', 'dimension',
+  'hatch', 'filled-region', 'insulation', 'beam', 'image',
+  'move', 'copy', 'rotate', 'scale', 'mirror', 'trim', 'extend',
+  'fillet', 'chamfer', 'offset', 'array', 'detail-component',
+  'sheet-text', 'sheet-leader', 'sheet-dimension', 'sheet-callout', 'sheet-revision-cloud'
 ];
 
 /**
@@ -418,7 +421,7 @@ export function isToolType(value: unknown): value is ToolType {
  * Check if a tool is a drawing tool
  */
 export function isDrawingTool(tool: ToolType): boolean {
-  return ['line', 'rectangle', 'circle', 'arc', 'polyline', 'ellipse', 'spline', 'text'].includes(tool);
+  return ['line', 'rectangle', 'circle', 'arc', 'polyline', 'ellipse', 'spline', 'text', 'leader', 'dimension', 'hatch', 'beam', 'image'].includes(tool);
 }
 
 /**

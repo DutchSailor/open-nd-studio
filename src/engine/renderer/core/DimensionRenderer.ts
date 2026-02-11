@@ -4,6 +4,7 @@
 
 import { BaseRenderer } from './BaseRenderer';
 import type { DimensionShape, DimensionStyle } from '../../../types/dimension';
+import { DEFAULT_DIMENSION_STYLE, CAD_DEFAULT_FONT } from '../../../constants/cadDefaults';
 import type { Point } from '../../../types/geometry';
 import type { DrawingPreview, Viewport } from '../types';
 import { COLORS } from '../types';
@@ -18,7 +19,6 @@ import {
 
 export class DimensionRenderer extends BaseRenderer {
   private drawingScale: number = 0.02;
-  private static readonly REFERENCE_SCALE = 0.02; // 1:50
 
   /**
    * Set the drawing scale for dimension text/arrow scaling
@@ -32,11 +32,13 @@ export class DimensionRenderer extends BaseRenderer {
    */
   drawDimension(dimension: DimensionShape, isSelected: boolean, isHovered: boolean = false): void {
     const ctx = this.ctx;
-    const scaleFactor = DimensionRenderer.REFERENCE_SCALE / this.drawingScale;
+    const scaleFactor = 1 / this.drawingScale;
     const style: DimensionStyle = {
       ...dimension.dimensionStyle,
       textHeight: dimension.dimensionStyle.textHeight * scaleFactor,
       arrowSize: dimension.dimensionStyle.arrowSize * scaleFactor,
+      extensionLineGap: dimension.dimensionStyle.extensionLineGap * scaleFactor,
+      extensionLineOvershoot: dimension.dimensionStyle.extensionLineOvershoot * scaleFactor,
     };
 
     // Set drawing style
@@ -102,7 +104,7 @@ export class DimensionRenderer extends BaseRenderer {
     let displayText = dimension.value;
     if (dimension.prefix) displayText = dimension.prefix + displayText;
     if (dimension.suffix) displayText = displayText + dimension.suffix;
-    ctx.font = `${textHeight}px Arial`;
+    ctx.font = `${textHeight}px ${CAD_DEFAULT_FONT}`;
     const textMetrics = ctx.measureText(displayText);
     const textGap = textMetrics.width + textHeight * 0.8; // Gap for text plus padding
 
@@ -431,7 +433,7 @@ export class DimensionRenderer extends BaseRenderer {
     ctx.rotate(angle);
 
     // Set font
-    ctx.font = `${textHeight}px Arial`;
+    ctx.font = `${textHeight}px ${CAD_DEFAULT_FONT}`;
     ctx.textAlign = 'center';
 
     // Determine vertical position based on placement
@@ -613,16 +615,13 @@ export class DimensionRenderer extends BaseRenderer {
     if (!preview || preview.type !== 'dimension') return;
 
     const ctx = this.ctx;
+    const scaleFactor = 1 / this.drawingScale;
     const style = {
-      arrowType: 'filled' as const,
-      arrowSize: 3 / viewport.zoom, // Scale for zoom
-      extensionLineGap: 2 / viewport.zoom,
-      extensionLineOvershoot: 2 / viewport.zoom,
-      textHeight: 3 / viewport.zoom,
-      textPlacement: 'above' as const,
-      lineColor: '#00ffff',
-      textColor: '#00ffff',
-      precision: 2,
+      ...DEFAULT_DIMENSION_STYLE,
+      arrowSize: DEFAULT_DIMENSION_STYLE.arrowSize * scaleFactor,
+      extensionLineGap: DEFAULT_DIMENSION_STYLE.extensionLineGap * scaleFactor,
+      extensionLineOvershoot: DEFAULT_DIMENSION_STYLE.extensionLineOvershoot * scaleFactor,
+      textHeight: DEFAULT_DIMENSION_STYLE.textHeight * scaleFactor,
     };
 
     ctx.strokeStyle = style.lineColor;

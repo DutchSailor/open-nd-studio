@@ -19,6 +19,7 @@ import type {
   LayerOverrideEditState,
   ViewportLayerOverride,
 } from './types';
+import { PAPER_SIZES } from './types';
 
 // ============================================================================
 // State Interface
@@ -177,10 +178,122 @@ export const createViewportEditSlice = (
       const dx = sheetPos.x - dragStart.x;
       const dy = sheetPos.y - dragStart.y;
 
-      // Only allow moving (center handle) - size is derived from boundary × scale 
+      // Only allow moving (center handle) - size is derived from boundary × scale
       if (activeHandle === 'center') {
-        viewport.x = originalViewport.x + dx;
-        viewport.y = originalViewport.y + dy;
+        let newX = originalViewport.x + dx;
+        let newY = originalViewport.y + dy;
+
+        // Snap-to-alignment: check edges/centers against other viewports and sheet borders
+        const snapThreshold = 2; // mm
+        const others = sheet.viewports.filter(v => v.visible && v.id !== selectedViewportId);
+
+        const dWidth = originalViewport.width;
+        const dHeight = originalViewport.height;
+
+        // Compute paper dimensions in mm for border snapping
+        const frameMargin = 10; // mm
+        let paperW: number, paperH: number;
+        if (sheet.paperSize === 'Custom') {
+          paperW = sheet.customWidth || 210;
+          paperH = sheet.customHeight || 297;
+        } else {
+          const baseDims = PAPER_SIZES[sheet.paperSize];
+          if (sheet.orientation === 'landscape') {
+            paperW = baseDims.height;
+            paperH = baseDims.width;
+          } else {
+            paperW = baseDims.width;
+            paperH = baseDims.height;
+          }
+        }
+
+        // Border snap positions: paper edges + frame edges
+        const borderXPositions = [0, frameMargin, paperW - frameMargin, paperW];
+        const borderYPositions = [0, frameMargin, paperH - frameMargin, paperH];
+
+        let snappedX = false;
+        let snappedY = false;
+
+        // --- Snap to sheet borders first (higher priority) ---
+        const dXOffsets = [0, dWidth, dWidth / 2]; // left, right, center
+        const dYOffsets = [0, dHeight, dHeight / 2]; // top, bottom, center
+
+        for (const offset of dXOffsets) {
+          if (snappedX) break;
+          for (const bx of borderXPositions) {
+            if (Math.abs((newX + offset) - bx) <= snapThreshold) {
+              newX = bx - offset;
+              snappedX = true;
+              break;
+            }
+          }
+        }
+
+        for (const offset of dYOffsets) {
+          if (snappedY) break;
+          for (const by of borderYPositions) {
+            if (Math.abs((newY + offset) - by) <= snapThreshold) {
+              newY = by - offset;
+              snappedY = true;
+              break;
+            }
+          }
+        }
+
+        // --- Snap to other viewports ---
+        for (const other of others) {
+          if (snappedX && snappedY) break;
+
+          const oLeft = other.x;
+          const oRight = other.x + other.width;
+          const oCenterX = other.x + other.width / 2;
+          const oTop = other.y;
+          const oBottom = other.y + other.height;
+          const oCenterY = other.y + other.height / 2;
+
+          // X-axis snap targets (other viewport edge/center positions)
+          if (!snappedX) {
+            const xTargets = [oLeft, oRight, oCenterX];
+            const xEdges = [
+              { offset: 0, targets: xTargets },             // left edge
+              { offset: dWidth, targets: xTargets },         // right edge
+              { offset: dWidth / 2, targets: [oCenterX] },   // center to center only
+            ];
+            for (const { offset, targets } of xEdges) {
+              for (const target of targets) {
+                if (Math.abs((newX + offset) - target) <= snapThreshold) {
+                  newX = target - offset;
+                  snappedX = true;
+                  break;
+                }
+              }
+              if (snappedX) break;
+            }
+          }
+
+          // Y-axis snap targets
+          if (!snappedY) {
+            const yTargets = [oTop, oBottom, oCenterY];
+            const yEdges = [
+              { offset: 0, targets: yTargets },              // top edge
+              { offset: dHeight, targets: yTargets },         // bottom edge
+              { offset: dHeight / 2, targets: [oCenterY] },   // center to center only
+            ];
+            for (const { offset, targets } of yEdges) {
+              for (const target of targets) {
+                if (Math.abs((newY + offset) - target) <= snapThreshold) {
+                  newY = target - offset;
+                  snappedY = true;
+                  break;
+                }
+              }
+              if (snappedY) break;
+            }
+          }
+        }
+
+        viewport.x = newX;
+        viewport.y = newY;
       }
       // Note: Resize handles are ignored - viewport size is controlled by scale
 

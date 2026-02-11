@@ -4,6 +4,7 @@
 
 import type { ToolType, ShapeStyle, Point, DrawingPreview, DefaultTextStyle } from './types';
 import type { DimensionType } from '../../types/dimension';
+import type { LeaderConfig } from '../../types/geometry';
 import { defaultStyle } from './types';
 
 // ============================================================================
@@ -88,6 +89,9 @@ export interface ToolState {
   // Dynamic Input toggle
   dynamicInputEnabled: boolean;
 
+  // Leader tool options
+  defaultLeaderConfig: LeaderConfig;
+
   // Display Lineweight toggle
   showLineweight: boolean;
 }
@@ -165,6 +169,9 @@ export interface ToolActions {
   finishFilledRegion: () => void;
   setFilledRegionDrawTool: (tool: 'line' | 'rectangle' | 'polygon' | 'circle' | 'arc' | 'spline' | 'pickLines') => void;
 
+  // Leader tool actions
+  updateDefaultLeaderConfig: (config: Partial<LeaderConfig>) => void;
+
   // Dynamic Input toggle
   toggleDynamicInput: () => void;
 
@@ -203,7 +210,7 @@ export const initialToolState: ToolState = {
   lockedDistance: null,
   lockedAngle: null,
   dimensionPrecision: 2,
-  dimensionArrowStyle: 'filled',
+  dimensionArrowStyle: 'tick',
   linearDimensionDirection: 'auto',
   pickLinesMode: false,
   pickLinesOffset: 10,
@@ -211,8 +218,8 @@ export const initialToolState: ToolState = {
   // Text tool state
   textEditingId: null,
   defaultTextStyle: {
-    fontFamily: 'Arial',
-    fontSize: 10,
+    fontFamily: 'Osifont',
+    fontSize: 2.5,
     bold: false,
     italic: false,
     underline: false,
@@ -254,8 +261,18 @@ export const initialToolState: ToolState = {
   // Dynamic Input
   dynamicInputEnabled: true,
 
-  // Display Lineweight (default: on)
-  showLineweight: true,
+  // Leader tool options
+  defaultLeaderConfig: {
+    arrowType: 'filled-arrow',
+    arrowSize: 2.5,
+    attachment: 'middle-left',
+    hasLanding: true,
+    landingLength: 5,
+    lineWeight: 0.18,
+  },
+
+  // Display Lineweight (default: off — lines render at 1 screen pixel)
+  showLineweight: false,
 };
 
 // ============================================================================
@@ -271,7 +288,7 @@ export const createToolSlice = (
       // Track last tool for "Repeat" feature (only drawing/modify tools)
       const repeatableTools: ToolType[] = [
         'line', 'rectangle', 'circle', 'arc', 'polyline', 'ellipse', 'spline',
-        'text', 'dimension', 'beam', 'hatch', 'filled-region',
+        'text', 'leader', 'dimension', 'beam', 'hatch', 'filled-region',
         'move', 'copy', 'rotate', 'scale', 'mirror', 'trim', 'extend',
         'fillet', 'chamfer', 'offset', 'array'
       ];
@@ -625,6 +642,12 @@ export const createToolSlice = (
       state.drawingPoints = [];
       state.drawingBulges = [];
       state.drawingPreview = null;
+    }),
+
+  // Leader tool actions
+  updateDefaultLeaderConfig: (config) =>
+    set((state) => {
+      state.defaultLeaderConfig = { ...state.defaultLeaderConfig, ...config };
     }),
 
   // Dynamic Input toggle

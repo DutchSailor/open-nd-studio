@@ -8,6 +8,7 @@ import { exportToPDF, generatePDFForPrint } from './pdfExport';
 import { SheetSelectionDialog } from './SheetSelectionDialog';
 import { getTemplateById } from '../../../services/template/titleBlockService';
 import { loadCustomSVGTemplates, renderSVGTitleBlock } from '../../../services/export/svgTitleBlockService';
+import { CAD_DEFAULT_FONT } from '../../../constants/cadDefaults';
 
 const PAPER_SIZES: Record<string, { width: number; height: number; label: string }> = {
   'A4': { width: 210, height: 297, label: 'A4 (210 x 297 mm)' },
@@ -545,13 +546,13 @@ export function PrintDialog({ isOpen, onClose }: PrintDialogProps) {
               // Label (font sizes are in screen px, convert to mm)
               const labelFontSize = Math.max(6, cell.fontSize - 2) * PX;
               ctx.fillStyle = '#666666';
-              ctx.font = `${labelFontSize}px Arial`;
+              ctx.font = `${labelFontSize}px ${CAD_DEFAULT_FONT}`;
               ctx.fillText(field.label, textX, currentY + padding);
 
               // Value
               const valueFontSize = cell.fontSize * PX;
               ctx.fillStyle = '#000000';
-              ctx.font = `${cell.isBold ? 'bold ' : ''}${valueFontSize}px Arial`;
+              ctx.font = `${cell.isBold ? 'bold ' : ''}${valueFontSize}px ${CAD_DEFAULT_FONT}`;
               ctx.fillText(field.value || '', textX, currentY + padding + labelFontSize + 2 * PX);
 
               ctx.textAlign = 'left';
@@ -584,12 +585,12 @@ export function PrintDialog({ isOpen, onClose }: PrintDialogProps) {
 
           const labelSize = Math.max(7, (field.fontSize || 8) - 2) * PX;
           ctx.fillStyle = '#666666';
-          ctx.font = `${labelSize}px Arial`;
+          ctx.font = `${labelSize}px ${CAD_DEFAULT_FONT}`;
           ctx.fillText(field.label, fieldX, fieldY);
 
           const valueSize = (field.fontSize || 10) * PX;
           ctx.fillStyle = '#000000';
-          ctx.font = `bold ${valueSize}px Arial`;
+          ctx.font = `bold ${valueSize}px ${CAD_DEFAULT_FONT}`;
           ctx.fillText(field.value || '', fieldX, fieldY + labelSize + 2 * PX);
         }
         ctx.textBaseline = 'alphabetic';

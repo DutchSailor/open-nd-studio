@@ -843,6 +843,7 @@ export function Backstage({ isOpen, onClose, initialView, onOpenSheetTemplateImp
                       ['EL', 'Ellipse'],
                       ['SP', 'Spline'],
                       ['TX', 'Text'],
+                      ['LE', 'Leader'],
                       ['DI', 'Dimension'],
                       ['DL', 'Dimension Linear'],
                       ['DA', 'Dimension Angular'],

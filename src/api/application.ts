@@ -54,7 +54,7 @@ export class ApplicationApi {
     if (!filePath) return;
 
     const project = {
-      version: 2 as const,
+      version: 3 as const,
       name: state.projectName,
       createdAt: new Date().toISOString(),
       modifiedAt: new Date().toISOString(),

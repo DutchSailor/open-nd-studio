@@ -22,6 +22,7 @@ import type {
   EnhancedTitleBlock,
   SheetTemplate,
 } from '../../types/sheet';
+import { CAD_DEFAULT_FONT } from '../../constants/cadDefaults';
 
 import {
   generateId,
@@ -81,7 +82,7 @@ function createTitleBlockFromSVGTemplate(svgTemplateId: string): TitleBlock | nu
     width: 80,
     height: 12,
     fontSize: 10,
-    fontFamily: 'Arial',
+    fontFamily: CAD_DEFAULT_FONT,
     align: 'left' as const,
   }));
 
@@ -133,6 +134,29 @@ function calculateSheetFitViewport(
   return { zoom, offsetX, offsetY };
 }
 
+/**
+ * Calculate initial viewport to fit a drawing boundary to view.
+ * canvasWidth/canvasHeight default to ASSUMED_CANVAS_WIDTH/HEIGHT when not known yet.
+ */
+function calculateDrawingFitViewport(
+  boundary: DrawingBoundary,
+  canvasWidth = ASSUMED_CANVAS_WIDTH,
+  canvasHeight = ASSUMED_CANVAS_HEIGHT
+): Viewport {
+  const availableWidth = canvasWidth - FIT_PADDING * 2;
+  const availableHeight = canvasHeight - FIT_PADDING * 2;
+  const zoomX = availableWidth / boundary.width;
+  const zoomY = availableHeight / boundary.height;
+  const zoom = Math.min(zoomX, zoomY);
+
+  const centerX = boundary.x + boundary.width / 2;
+  const centerY = boundary.y + boundary.height / 2;
+  const offsetX = canvasWidth / 2 - centerX * zoom;
+  const offsetY = canvasHeight / 2 - centerY * zoom;
+
+  return { zoom, offsetX, offsetY };
+}
+
 // ============================================================================
 // State Interface
 // ============================================================================
@@ -172,6 +196,7 @@ export interface ModelState {
   // Text Styles (reusable text formatting presets)
   textStyles: TextStyle[];
   activeTextStyleId: string | null;
+  textStyleManagerOpen: boolean;
 }
 
 // ============================================================================
@@ -266,7 +291,9 @@ export interface ModelActions {
   addTextStyle: (style: TextStyle) => void;
   updateTextStyle: (id: string, updates: Partial<TextStyle>) => void;
   deleteTextStyle: (id: string) => void;
+  duplicateTextStyle: (id: string) => string | undefined;
   applyTextStyleToShape: (shapeId: string, styleId: string) => void;
+  setTextStyleManagerOpen: (open: boolean) => void;
 }
 
 export type ModelSlice = ModelState & ModelActions;
@@ -297,14 +324,45 @@ const defaultLayer: Layer = {
   lineWidth: 1,
 };
 
+// Default A3 landscape sheets
+const defaultSheet1: Sheet = {
+  id: 'sheet-1',
+  name: 'Sheet 1',
+  paperSize: 'A3',
+  orientation: 'landscape',
+  viewports: [],
+  titleBlock: createDefaultTitleBlock(),
+  annotations: [],
+  createdAt: new Date().toISOString(),
+  modifiedAt: new Date().toISOString(),
+};
+
+const defaultSheet2: Sheet = {
+  id: 'sheet-2',
+  name: 'Sheet 2',
+  paperSize: 'A3',
+  orientation: 'portrait',
+  viewports: [],
+  titleBlock: createDefaultTitleBlock(),
+  annotations: [],
+  createdAt: new Date().toISOString(),
+  modifiedAt: new Date().toISOString(),
+};
+
+const defaultSheetViewport1 = calculateSheetFitViewport('A3', 'landscape');
+const defaultSheetViewport2 = calculateSheetFitViewport('A3', 'portrait');
+
 export const initialModelState: ModelState = {
   drawings: [defaultDrawing],
   activeDrawingId: defaultDrawingId,
-  sheets: [],
+  sheets: [defaultSheet1, defaultSheet2],
   activeSheetId: null,
   editorMode: 'drawing',
-  drawingViewports: { [defaultDrawingId]: { offsetX: 0, offsetY: 0, zoom: 1 } },
-  sheetViewports: {},
+  drawingViewports: { [defaultDrawingId]: calculateDrawingFitViewport(DEFAULT_DRAWING_BOUNDARY) },
+  sheetViewports: {
+    'sheet-1': defaultSheetViewport1,
+    'sheet-2': defaultSheetViewport2,
+  },
   shapes: [],
   groups: [],
   layers: [defaultLayer],
@@ -313,6 +371,7 @@ export const initialModelState: ModelState = {
   customSheetTemplates: [],
   textStyles: createDefaultTextStyles(),
   activeTextStyleId: null,
+  textStyleManagerOpen: false,
 };
 
 // ============================================================================
@@ -733,15 +792,12 @@ export const createModelSlice = (
       };
       state.layers.push(newLayer);
 
-      // Initialize viewport centered on boundary
-      const b = newDrawing.boundary;
-      const centerX = b.x + b.width / 2;
-      const centerY = b.y + b.height / 2;
-      state.drawingViewports[id] = {
-        offsetX: state.canvasSize.width / 2 - centerX,
-        offsetY: state.canvasSize.height / 2 - centerY,
-        zoom: 1,
-      };
+      // Initialize viewport zoomed to fit the boundary
+      state.drawingViewports[id] = calculateDrawingFitViewport(
+        newDrawing.boundary,
+        state.canvasSize.width || ASSUMED_CANVAS_WIDTH,
+        state.canvasSize.height || ASSUMED_CANVAS_HEIGHT
+      );
 
       // Switch to the new drawing
       state.activeDrawingId = id;
@@ -923,16 +979,12 @@ export const createModelSlice = (
       if (state.drawingViewports[id]) {
         state.viewport = state.drawingViewports[id];
       } else {
-        // Center on drawing boundary
-        const b = drawing.boundary;
-        const centerX = b.x + b.width / 2;
-        const centerY = b.y + b.height / 2;
-        const zoom = 1;
-        state.viewport = {
-          offsetX: state.canvasSize.width / 2 - centerX * zoom,
-          offsetY: state.canvasSize.height / 2 - centerY * zoom,
-          zoom,
-        };
+        // Zoom to fit drawing boundary
+        state.viewport = calculateDrawingFitViewport(
+          drawing.boundary,
+          state.canvasSize.width || ASSUMED_CANVAS_WIDTH,
+          state.canvasSize.height || ASSUMED_CANVAS_HEIGHT
+        );
       }
 
       // Set active layer to a layer in this drawing
@@ -1658,8 +1710,35 @@ export const createModelSlice = (
       textShape.backgroundMask = style.backgroundMask;
       textShape.backgroundColor = style.backgroundColor;
       textShape.backgroundPadding = style.backgroundPadding;
+      textShape.strikethrough = style.strikethrough ?? false;
+      textShape.textCase = style.textCase;
+      textShape.letterSpacing = style.letterSpacing;
+      textShape.widthFactor = style.widthFactor;
+      textShape.obliqueAngle = style.obliqueAngle;
+      textShape.paragraphSpacing = style.paragraphSpacing;
       textShape.textStyleId = styleId;
 
       state.isModified = true;
+    }),
+
+  duplicateTextStyle: (id) => {
+    const style = get().textStyles.find((s) => s.id === id);
+    if (!style) return undefined;
+    const newId = generateId();
+    set((state) => {
+      state.textStyles.push({
+        ...JSON.parse(JSON.stringify(style)),
+        id: newId,
+        name: `${style.name} (Copy)`,
+        isBuiltIn: false,
+      });
+      state.isModified = true;
+    });
+    return newId;
+  },
+
+  setTextStyleManagerOpen: (open) =>
+    set((state) => {
+      state.textStyleManagerOpen = open;
     }),
 });

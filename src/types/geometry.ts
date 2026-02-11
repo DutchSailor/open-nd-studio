@@ -193,6 +193,11 @@ export interface LeaderConfig {
   color?: string;                     // Leader color (defaults to text color)
 }
 
+// Leader line (individual leader polyline for multi-leader support)
+export interface LeaderLine {
+  points: Point[];   // Waypoints from arrow tip toward text (first = arrow tip)
+}
+
 // Text case transformation
 export type TextCase = 'none' | 'uppercase' | 'lowercase' | 'capitalize';
 
@@ -221,6 +226,7 @@ export interface TextShape extends BaseShape {
   // Leader configuration
   leaderPoints?: Point[];    // Leader line waypoints (from text to geometry)
   leaderConfig?: LeaderConfig; // Leader styling and configuration
+  leaders?: LeaderLine[];     // Multiple leader lines (each has own arrow)
   // Text behavior
   isModelText?: boolean;     // If true, text size is in model units (scales with geometry)
   // Background masking
@@ -257,6 +263,13 @@ export interface TextStyle {
   backgroundMask: boolean;
   backgroundColor: string;
   backgroundPadding: number;
+  // Advanced formatting (optional for backward compat)
+  strikethrough?: boolean;
+  textCase?: TextCase;
+  letterSpacing?: number;     // Character spacing multiplier (1 = normal)
+  widthFactor?: number;       // Horizontal text stretch (1 = normal)
+  obliqueAngle?: number;      // Slant angle in degrees (0 = normal)
+  paragraphSpacing?: number;  // Extra space between paragraphs (multiplier)
   // Metadata
   isBuiltIn?: boolean;        // Built-in styles cannot be deleted
   isProjectStyle?: boolean;   // Project-specific vs User global style
@@ -336,6 +349,7 @@ export type ToolType =
   | 'ellipse'
   | 'spline'
   | 'text'
+  | 'leader'
   | 'dimension'
   // Region tools
   | 'filled-region'

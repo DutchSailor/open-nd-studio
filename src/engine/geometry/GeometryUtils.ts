@@ -517,24 +517,22 @@ function getMeasureCtx(): OffscreenCanvasRenderingContext2D {
   return _measureCtx;
 }
 
-// Reference scale for annotation text (1:50) - must match ShapeRenderer.REFERENCE_SCALE
-const TEXT_REFERENCE_SCALE = 0.02;
-
 /**
  * Get accurate bounding box of a text shape using canvas measurement
  * @param shape - The text shape
  * @param drawingScale - Optional drawing scale (for annotation text scaling)
  */
 export function getTextBounds(shape: TextShape, drawingScale?: number): ShapeBounds | null {
-  const { position, text, fontSize, fontFamily = 'Arial', alignment, verticalAlignment, bold, italic, lineHeight = 1.2, isModelText = false, fixedWidth } = shape;
+  const { position, text, fontSize, fontFamily = 'Osifont', alignment, verticalAlignment, bold, italic, lineHeight = 1.2, isModelText = false, fixedWidth } = shape;
 
   if (!text) return null;
 
   // Calculate effective font size (same logic as ShapeRenderer.drawText)
-  // Annotation text scales relative to reference scale; model text uses fontSize directly
+  // Annotation text: fontSize is in paper mm, divide by drawingScale to get drawing units
+  // Model text uses fontSize directly
   const effectiveFontSize = isModelText || !drawingScale
     ? fontSize
-    : fontSize * (TEXT_REFERENCE_SCALE / drawingScale);
+    : fontSize / drawingScale;
 
   const ctx = getMeasureCtx();
   const fontStyle = `${italic ? 'italic ' : ''}${bold ? 'bold ' : ''}`;
@@ -647,12 +645,51 @@ export function isPointNearText(point: Point, shape: TextShape, tolerance: numbe
     };
   }
 
-  return (
+  // Check if point is within the text bounding box
+  const inTextBounds = (
     localPoint.x >= bounds.minX - tolerance &&
     localPoint.x <= bounds.maxX + tolerance &&
     localPoint.y >= bounds.minY - tolerance &&
     localPoint.y <= bounds.maxY + tolerance
   );
+  if (inTextBounds) return true;
+
+  // Check proximity to leader line segments
+  if (shape.leaderPoints && shape.leaderPoints.length > 0) {
+    // Leader line goes from text position area to arrow tip
+    // The underline spans text width at the bottom; leader connects from underline end to arrow tip
+    const underlineY = bounds.maxY;
+    const underlineLeft = bounds.minX;
+    const underlineRight = bounds.maxX;
+
+    for (const arrowTip of shape.leaderPoints) {
+      // Check underline segment
+      if (isPointNearLine(point, { x: underlineLeft, y: underlineY }, { x: underlineRight, y: underlineY }, tolerance)) {
+        return true;
+      }
+      // Determine which end of underline connects to the arrow
+      const distToLeft = Math.hypot(arrowTip.x - underlineLeft, arrowTip.y - underlineY);
+      const distToRight = Math.hypot(arrowTip.x - underlineRight, arrowTip.y - underlineY);
+      const connectEnd = distToLeft < distToRight
+        ? { x: underlineLeft, y: underlineY }
+        : { x: underlineRight, y: underlineY };
+      // Check leader line from underline end to arrow tip
+      if (isPointNearLine(point, connectEnd, arrowTip, tolerance)) {
+        return true;
+      }
+    }
+  }
+  if (shape.leaders) {
+    for (const leader of shape.leaders) {
+      for (let i = 0; i < leader.points.length - 1; i++) {
+        if (isPointNearLine(point, leader.points[i], leader.points[i + 1], tolerance)) {
+          return true;
+        }
+      }
+    }
+  }
+
+  return false;
 }
 
 /**
@@ -1149,41 +1186,63 @@ export function getShapeBounds(shape: Shape, drawingScale?: number): ShapeBounds
       const textBounds = getTextBounds(shape, drawingScale);
       if (!textBounds) return null;
 
+      let bounds = textBounds;
       const rotation = shape.rotation || 0;
-      if (rotation === 0) {
-        return textBounds;
+
+      if (rotation !== 0) {
+        // Calculate rotated bounding box
+        const cos = Math.cos(rotation);
+        const sin = Math.sin(rotation);
+        const pos = shape.position;
+
+        // Get the four corners of the unrotated text box
+        const corners = [
+          { x: textBounds.minX, y: textBounds.minY },
+          { x: textBounds.maxX, y: textBounds.minY },
+          { x: textBounds.maxX, y: textBounds.maxY },
+          { x: textBounds.minX, y: textBounds.maxY },
+        ];
+
+        // Rotate each corner around the text position
+        const rotatedCorners = corners.map(c => {
+          const dx = c.x - pos.x;
+          const dy = c.y - pos.y;
+          return {
+            x: pos.x + dx * cos - dy * sin,
+            y: pos.y + dx * sin + dy * cos,
+          };
+        });
+
+        bounds = {
+          minX: Math.min(rotatedCorners[0].x, rotatedCorners[1].x, rotatedCorners[2].x, rotatedCorners[3].x),
+          minY: Math.min(rotatedCorners[0].y, rotatedCorners[1].y, rotatedCorners[2].y, rotatedCorners[3].y),
+          maxX: Math.max(rotatedCorners[0].x, rotatedCorners[1].x, rotatedCorners[2].x, rotatedCorners[3].x),
+          maxY: Math.max(rotatedCorners[0].y, rotatedCorners[1].y, rotatedCorners[2].y, rotatedCorners[3].y),
+        };
       }
 
-      // Calculate rotated bounding box
-      const cos = Math.cos(rotation);
-      const sin = Math.sin(rotation);
-      const pos = shape.position;
+      // Expand bounds to include leader line points
+      const allLeaderPoints: Point[] = [];
+      if (shape.leaderPoints) {
+        allLeaderPoints.push(...shape.leaderPoints);
+      }
+      if (shape.leaders) {
+        for (const leader of shape.leaders) {
+          allLeaderPoints.push(...leader.points);
+        }
+      }
+      if (allLeaderPoints.length > 0) {
+        for (const pt of allLeaderPoints) {
+          bounds = {
+            minX: Math.min(bounds.minX, pt.x),
+            minY: Math.min(bounds.minY, pt.y),
+            maxX: Math.max(bounds.maxX, pt.x),
+            maxY: Math.max(bounds.maxY, pt.y),
+          };
+        }
+      }
 
-      // Get the four corners of the unrotated text box
-      const corners = [
-        { x: textBounds.minX, y: textBounds.minY },
-        { x: textBounds.maxX, y: textBounds.minY },
-        { x: textBounds.maxX, y: textBounds.maxY },
-        { x: textBounds.minX, y: textBounds.maxY },
-      ];
-
-      // Rotate each corner around the text position
-      const rotatedCorners = corners.map(c => {
-        const dx = c.x - pos.x;
-        const dy = c.y - pos.y;
-        return {
-          x: pos.x + dx * cos - dy * sin,
-          y: pos.y + dx * sin + dy * cos,
-        };
-      });
-
-      // Find axis-aligned bounding box of rotated corners
-      return {
-        minX: Math.min(rotatedCorners[0].x, rotatedCorners[1].x, rotatedCorners[2].x, rotatedCorners[3].x),
-        minY: Math.min(rotatedCorners[0].y, rotatedCorners[1].y, rotatedCorners[2].y, rotatedCorners[3].y),
-        maxX: Math.max(rotatedCorners[0].x, rotatedCorners[1].x, rotatedCorners[2].x, rotatedCorners[3].x),
-        maxY: Math.max(rotatedCorners[0].y, rotatedCorners[1].y, rotatedCorners[2].y, rotatedCorners[3].y),
-      };
+      return bounds;
     }
     case 'point':
       return {

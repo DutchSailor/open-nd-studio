@@ -176,14 +176,14 @@ export class QuadTree {
   /**
    * Build a QuadTree from an array of shapes, filtering by drawingId.
    */
-  static buildFromShapes(shapes: Shape[], drawingId: string): QuadTree {
+  static buildFromShapes(shapes: Shape[], drawingId: string, drawingScale?: number): QuadTree {
     // Filter visible shapes for this drawing and compute bounds
     const entries: QuadTreeEntry[] = [];
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
 
     for (const shape of shapes) {
       if (!shape.visible || shape.drawingId !== drawingId) continue;
-      const bounds = getShapeBounds(shape);
+      const bounds = getShapeBounds(shape, drawingScale);
       if (!bounds) continue;
 
       entries.push({ id: shape.id, bounds });

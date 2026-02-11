@@ -8,6 +8,8 @@
 import { BaseRenderer } from './BaseRenderer';
 import { COLORS } from '../types';
 import type { ParametricShape, ProfileParametricShape } from '../../../types/parametric';
+import { CAD_DEFAULT_FONT } from '../../../constants/cadDefaults';
+import { PROFILE_TEMPLATES } from '../../../services/parametric/profileTemplates';
 
 export class ParametricRenderer extends BaseRenderer {
   private _showLineweight: boolean = true;
@@ -91,6 +93,30 @@ export class ParametricRenderer extends BaseRenderer {
       }
 
       ctx.stroke();
+    }
+
+    // Draw label above the section
+    if (shape.showLabel !== false) {
+      const template = PROFILE_TEMPLATES[shape.profileType];
+      const labelText = shape.labelText || shape.presetId || template?.name || shape.profileType;
+      const { bounds } = geometry;
+      const centerX = (bounds.minX + bounds.maxX) / 2;
+      const width = bounds.maxX - bounds.minX;
+      const zoom = ctx.getTransform().a / this.dpr;
+      const fontSize = Math.max(10 / zoom, width * 0.15);
+
+      let textColor = shape.style.strokeColor;
+      if (invertColors && textColor === '#ffffff') {
+        textColor = '#000000';
+      }
+
+      ctx.save();
+      ctx.fillStyle = isSelected ? COLORS.selection : isHovered ? COLORS.hover : textColor;
+      ctx.font = `${fontSize}px ${CAD_DEFAULT_FONT}`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'bottom';
+      ctx.fillText(labelText, centerX, bounds.minY - fontSize * 0.3);
+      ctx.restore();
     }
 
     // Draw selection handles if selected

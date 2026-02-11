@@ -101,6 +101,7 @@ export function createProfileShape(
     parameters,
     presetId,
     standard,
+    showLabel: true,
     generatedGeometry,
   };
 }

@@ -15,6 +15,7 @@ import type {
   RevisionTable,
   Revision,
 } from '../../types/sheet';
+import { CAD_DEFAULT_FONT } from '../../constants/cadDefaults';
 
 /**
  * Generate a unique ID for title block templates
@@ -114,7 +115,7 @@ function createFieldsFromTemplate(
           width: cellWidth - 4,
           height: row.height - 4,
           fontSize: cell.fontSize,
-          fontFamily: 'Arial',
+          fontFamily: CAD_DEFAULT_FONT,
           align: cell.alignment,
         });
       }

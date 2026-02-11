@@ -3,6 +3,7 @@
  */
 
 import type { Viewport, Point } from './types';
+import { DEFAULT_DRAWING_BOUNDARY } from './types';
 
 // ============================================================================
 // State Interface
@@ -41,9 +42,16 @@ export type ViewSlice = ViewState & ViewActions;
 // Initial State
 // ============================================================================
 
+// Calculate initial viewport to fit the default drawing boundary
+const _cw = 1200, _ch = 800, _pad = 40;
+const _b = DEFAULT_DRAWING_BOUNDARY;
+const _initZoom = Math.min((_cw - _pad * 2) / _b.width, (_ch - _pad * 2) / _b.height);
+const _initOffsetX = _cw / 2 - (_b.x + _b.width / 2) * _initZoom;
+const _initOffsetY = _ch / 2 - (_b.y + _b.height / 2) * _initZoom;
+
 export const initialViewState: ViewState = {
-  viewport: { offsetX: 0, offsetY: 0, zoom: 1 },
-  canvasSize: { width: 800, height: 600 },
+  viewport: { offsetX: _initOffsetX, offsetY: _initOffsetY, zoom: _initZoom },
+  canvasSize: { width: _cw, height: _ch },
   mousePosition: { x: 0, y: 0 },
   cursor2D: { x: 0, y: 0 },
   cursor2DVisible: true,

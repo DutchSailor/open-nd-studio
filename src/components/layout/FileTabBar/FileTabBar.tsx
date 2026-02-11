@@ -53,7 +53,7 @@ async function saveActiveDocument(): Promise<boolean> {
   try {
     const customRegionTypes = s.filledRegionTypes.filter((t: any) => !t.isBuiltIn);
     const project: ProjectFile = {
-      version: 2,
+      version: 3,
       name: s.projectName,
       createdAt: new Date().toISOString(),
       modifiedAt: new Date().toISOString(),

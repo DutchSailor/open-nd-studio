@@ -6,6 +6,7 @@ import { useCallback, useState } from 'react';
 import { useAppStore } from '../../state/appStore';
 import type { Point } from '../../types/geometry';
 import type { SheetAnnotation } from '../../types/sheet';
+import { CAD_DEFAULT_FONT } from '../../constants/cadDefaults';
 
 export function useAnnotationEditing() {
   const {
@@ -174,7 +175,7 @@ export function useAnnotationEditing() {
           if (text) {
             addTextAnnotation(sheet.id, sheetPos, text, {
               fontSize: 3.5,
-              fontFamily: 'Arial',
+              fontFamily: CAD_DEFAULT_FONT,
               color: '#000000',
             });
           }

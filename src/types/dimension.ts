@@ -74,20 +74,8 @@ export interface DimensionStyle {
   precision: number;
 }
 
-/**
- * Default dimension style
- */
-export const DEFAULT_DIMENSION_STYLE: DimensionStyle = {
-  arrowType: 'tick',        // Diagonal tick marks
-  arrowSize: 2.5,           // Tick mark size
-  extensionLineGap: 1.5,    // Small gap between geometry and extension line
-  extensionLineOvershoot: 2.5, // Extension line extends past dimension line
-  textHeight: 2.5,          // Slightly smaller text
-  textPlacement: 'centered', // Text centered on dimension line
-  lineColor: '#00ffff',     // Cyan - standard dimension color
-  textColor: '#00ffff',
-  precision: 0,             // Show whole numbers by default
-};
+// Re-export DEFAULT_DIMENSION_STYLE from single source of truth
+export { DEFAULT_DIMENSION_STYLE } from '../constants/cadDefaults';
 
 // ============================================================================
 // Dimension Shape

@@ -280,6 +280,9 @@ function StatusMessage() {
       case 'text':
         msg = 'Click to place text';
         break;
+      case 'leader':
+        msg = pts === 0 ? 'Click to place arrow tip' : 'Click to place text';
+        break;
       case 'dimension':
         switch (dimensionMode) {
           case 'aligned': case 'linear':

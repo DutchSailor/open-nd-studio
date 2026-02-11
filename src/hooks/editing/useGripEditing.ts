@@ -13,7 +13,7 @@ import type { Point, Shape, EllipseShape, TextShape, BeamShape, LineShape, Image
 import type { DimensionShape } from '../../types/dimension';
 import type { ParametricShape } from '../../types/parametric';
 import { updateParametricPosition } from '../../services/parametric/parametricService';
-import { getTextBounds, snapToAngle } from '../../engine/geometry/GeometryUtils';
+import { getTextBounds, snapToAngle, isPointNearShape } from '../../engine/geometry/GeometryUtils';
 import { calculateAlignedDimensionGeometry, angleBetweenPoints, calculateDimensionValue, formatDimensionValue } from '../../engine/geometry/DimensionUtils';
 import { findNearestSnapPoint } from '../../engine/geometry/SnapUtils';
 import { applyTracking, type TrackingSettings } from '../../engine/geometry/Tracking';
@@ -247,6 +247,7 @@ function getGripPoints(shape: Shape, drawingScale?: number, zoom?: number): Poin
 
       // Use getTextBounds for accurate bounds calculation (matches renderer)
       const bounds = getTextBounds(textShape, drawingScale);
+      let grips: Point[];
       if (bounds) {
         const centerX = (bounds.minX + bounds.maxX) / 2;
         const midY = (bounds.minY + bounds.maxY) / 2;
@@ -260,7 +261,7 @@ function getGripPoints(shape: Shape, drawingScale?: number, zoom?: number): Poin
           { x: bounds.maxX + 2, y: midY },            // 2: Right resize
           { x: centerX, y: topY - 2 - rotationHandleDistance }, // 3: Rotation handle
         ];
-        return localGrips.map(rotatePoint);
+        grips = localGrips.map(rotatePoint);
       } else {
         // Fallback to simple estimate if bounds calculation fails
         const estimatedWidth = textShape.fixedWidth || (textShape.fontSize * textShape.text.length * 0.6);
@@ -282,8 +283,23 @@ function getGripPoints(shape: Shape, drawingScale?: number, zoom?: number): Poin
           { x: rightX + 2, y: midY },
           { x: centerX, y: midY - rotationHandleDistance },
         ];
-        return localGrips.map(rotatePoint);
+        grips = localGrips.map(rotatePoint);
       }
+      // Grip 4+: Leader waypoints
+      if (textShape.leaderPoints && textShape.leaderPoints.length > 0) {
+        for (const pt of textShape.leaderPoints) {
+          grips.push(pt);
+        }
+      }
+      // Then leaders[] waypoints
+      if (textShape.leaders) {
+        for (const leader of textShape.leaders) {
+          for (const pt of leader.points) {
+            grips.push(pt);
+          }
+        }
+      }
+      return grips;
     }
     case 'dimension': {
       // Dimension grip points:
@@ -382,9 +398,108 @@ function circleToEllipse(shape: Shape): EllipseShape | null {
 
 
 /**
+ * Get a reference point for a shape (used as the anchor for body-drag offset).
+ */
+function getShapeReferencePoint(shape: Shape): Point {
+  switch (shape.type) {
+    case 'line': return shape.start;
+    case 'rectangle': return shape.topLeft;
+    case 'circle': return shape.center;
+    case 'arc': return shape.center;
+    case 'ellipse': return shape.center;
+    case 'polyline':
+    case 'spline':
+    case 'hatch':
+      return shape.points[0] || { x: 0, y: 0 };
+    case 'text': return shape.position;
+    case 'point': return shape.position;
+    case 'beam': return shape.start;
+    case 'image': return shape.position;
+    case 'dimension': return (shape as DimensionShape).points[0] || { x: 0, y: 0 };
+    default: return { x: 0, y: 0 };
+  }
+}
+
+/**
+ * Compute updates to move an entire shape by translating its reference point to newPos.
+ * newPos = the desired new position of the shape's reference point.
+ */
+function computeBodyMoveUpdates(shape: Shape, newPos: Point): Partial<Shape> | null {
+  const ref = getShapeReferencePoint(shape);
+  const dx = newPos.x - ref.x;
+  const dy = newPos.y - ref.y;
+
+  switch (shape.type) {
+    case 'line':
+      return {
+        start: { x: shape.start.x + dx, y: shape.start.y + dy },
+        end: { x: shape.end.x + dx, y: shape.end.y + dy },
+      } as Partial<Shape>;
+
+    case 'rectangle':
+      return {
+        topLeft: { x: shape.topLeft.x + dx, y: shape.topLeft.y + dy },
+      } as Partial<Shape>;
+
+    case 'circle':
+      return { center: { x: shape.center.x + dx, y: shape.center.y + dy } } as Partial<Shape>;
+
+    case 'arc':
+      return { center: { x: shape.center.x + dx, y: shape.center.y + dy } } as Partial<Shape>;
+
+    case 'ellipse':
+      return { center: { x: shape.center.x + dx, y: shape.center.y + dy } } as Partial<Shape>;
+
+    case 'polyline':
+    case 'spline':
+    case 'hatch':
+      return {
+        points: shape.points.map(p => ({ x: p.x + dx, y: p.y + dy })),
+      } as Partial<Shape>;
+
+    case 'text':
+      return {
+        position: { x: shape.position.x + dx, y: shape.position.y + dy },
+        leaderPoints: shape.leaderPoints?.map(p => ({ x: p.x + dx, y: p.y + dy })),
+      } as Partial<Shape>;
+
+    case 'point':
+      return { position: { x: shape.position.x + dx, y: shape.position.y + dy } } as Partial<Shape>;
+
+    case 'beam':
+      return {
+        start: { x: shape.start.x + dx, y: shape.start.y + dy },
+        end: { x: shape.end.x + dx, y: shape.end.y + dy },
+      } as Partial<Shape>;
+
+    case 'image':
+      return {
+        position: { x: shape.position.x + dx, y: shape.position.y + dy },
+      } as Partial<Shape>;
+
+    case 'dimension': {
+      const dim = shape as DimensionShape;
+      return {
+        points: dim.points.map(p => ({ x: p.x + dx, y: p.y + dy })),
+      } as Partial<Shape>;
+    }
+
+    default:
+      return null;
+  }
+}
+
+/**
  * edgeMidpointIndices: if set, the two polyline point indices to move together (for rect edge midpoints).
  */
-function computeGripUpdates(shape: Shape, gripIndex: number, newPos: Point, edgeMidpointIndices?: [number, number]): Partial<Shape> | null {
+function computeGripUpdates(shape: Shape, gripIndex: number, newPos: Point, edgeMidpointIndices?: [number, number], scaleMode?: boolean): Partial<Shape> | null {
+  // Body drag (gripIndex -1): move entire shape by delta from clickOffset
+  // newPos here is the current world mouse position; clickOffset stored the original click position
+  // The caller passes (currentShape, -1, constrainedPos) — we compute delta from the original shape
+  if (gripIndex === -1) {
+    return computeBodyMoveUpdates(shape, newPos);
+  }
+
   switch (shape.type) {
     case 'line':
       if (gripIndex === 0) return { start: newPos } as Partial<Shape>;
@@ -550,12 +665,39 @@ function computeGripUpdates(shape: Shape, gripIndex: number, newPos: Point, edge
     case 'polyline':
     case 'spline': {
       if (edgeMidpointIndices) {
-        // Edge midpoint: move two adjacent points by the same delta
         const [i1, i2] = edgeMidpointIndices;
         const origMid = {
           x: (shape.points[i1].x + shape.points[i2].x) / 2,
           y: (shape.points[i1].y + shape.points[i2].y) / 2,
         };
+
+        if (scaleMode) {
+          // Proportional scale: scale only the two edge vertices relative to the
+          // anchor (centroid of all OTHER vertices). Non-edge vertices stay fixed,
+          // so adjacent edges stretch from the moving end only.
+          const otherPoints = shape.points.filter((_, i) => i !== i1 && i !== i2);
+          if (otherPoints.length === 0) return null;
+          const anchor = {
+            x: otherPoints.reduce((s, p) => s + p.x, 0) / otherPoints.length,
+            y: otherPoints.reduce((s, p) => s + p.y, 0) / otherPoints.length,
+          };
+          const origDist = Math.sqrt(
+            (origMid.x - anchor.x) ** 2 + (origMid.y - anchor.y) ** 2
+          );
+          if (origDist < 1e-10) return null;
+          const newDist = Math.sqrt(
+            (newPos.x - anchor.x) ** 2 + (newPos.y - anchor.y) ** 2
+          );
+          const scale = newDist / origDist;
+          const newPoints = shape.points.map((p, i) =>
+            (i === i1 || i === i2)
+              ? { x: anchor.x + (p.x - anchor.x) * scale, y: anchor.y + (p.y - anchor.y) * scale }
+              : p
+          );
+          return { points: newPoints } as Partial<Shape>;
+        }
+
+        // Edge midpoint: move two adjacent points by the same delta (stretch)
         const dx = newPos.x - origMid.x;
         const dy = newPos.y - origMid.y;
         const newPoints = shape.points.map((p, i) =>
@@ -577,6 +719,33 @@ function computeGripUpdates(shape: Shape, gripIndex: number, newPos: Point, edge
           x: (shape.points[i1].x + shape.points[i2].x) / 2,
           y: (shape.points[i1].y + shape.points[i2].y) / 2,
         };
+
+        if (scaleMode) {
+          // Proportional scale: scale only the two edge vertices relative to the
+          // anchor (centroid of all OTHER vertices). Non-edge vertices stay fixed,
+          // so adjacent edges stretch from the moving end only.
+          const otherPoints = shape.points.filter((_, i) => i !== i1 && i !== i2);
+          if (otherPoints.length === 0) return null;
+          const anchor = {
+            x: otherPoints.reduce((s, p) => s + p.x, 0) / otherPoints.length,
+            y: otherPoints.reduce((s, p) => s + p.y, 0) / otherPoints.length,
+          };
+          const origDist = Math.sqrt(
+            (origMid.x - anchor.x) ** 2 + (origMid.y - anchor.y) ** 2
+          );
+          if (origDist < 1e-10) return null;
+          const newDist = Math.sqrt(
+            (newPos.x - anchor.x) ** 2 + (newPos.y - anchor.y) ** 2
+          );
+          const scale = newDist / origDist;
+          const newPoints = shape.points.map((p, i) =>
+            (i === i1 || i === i2)
+              ? { x: anchor.x + (p.x - anchor.x) * scale, y: anchor.y + (p.y - anchor.y) * scale }
+              : p
+          );
+          return { points: newPoints } as Partial<Shape>;
+        }
+
         const dx = newPos.x - origMid.x;
         const dy = newPos.y - origMid.y;
         const newPoints = shape.points.map((p, i) =>
@@ -827,6 +996,38 @@ function computeGripUpdates(shape: Shape, gripIndex: number, newPos: Point, edge
         const angle = Math.atan2(dx, -dy);
 
         return { rotation: angle } as Partial<Shape>;
+      }
+
+      // Grip 4+: Leader waypoints
+      if (gripIndex >= 4) {
+        const textShape = shape as TextShape;
+        let waypointIdx = gripIndex - 4;
+
+        // First check leaderPoints
+        if (textShape.leaderPoints && waypointIdx < textShape.leaderPoints.length) {
+          const updatedPoints = [...textShape.leaderPoints];
+          updatedPoints[waypointIdx] = { x: newPos.x, y: newPos.y };
+          return { leaderPoints: updatedPoints } as Partial<Shape>;
+        }
+
+        // Adjust index past leaderPoints
+        if (textShape.leaderPoints) {
+          waypointIdx -= textShape.leaderPoints.length;
+        }
+
+        // Then check leaders[]
+        if (textShape.leaders) {
+          const updatedLeaders = textShape.leaders.map(l => ({
+            points: [...l.points],
+          }));
+          for (let li = 0; li < updatedLeaders.length; li++) {
+            if (waypointIdx < updatedLeaders[li].points.length) {
+              updatedLeaders[li].points[waypointIdx] = { x: newPos.x, y: newPos.y };
+              return { leaders: updatedLeaders } as Partial<Shape>;
+            }
+            waypointIdx -= updatedLeaders[li].points.length;
+          }
+        }
       }
 
       return null;
@@ -1162,6 +1363,24 @@ export function useGripEditing() {
         }
       }
 
+      // Third pass: check if click is on the shape body (for drag-to-move)
+      if (isPointNearShape(worldPos, shape, tolerance, drawingScale)) {
+        setCurrentSnapPoint(null);
+        // Use shape's reference point (first meaningful position) as anchor
+        const refPoint = getShapeReferencePoint(shape);
+        dragRef.current = {
+          shapeId,
+          gripIndex: -1, // Special index: body drag (move entire shape)
+          originalShape: JSON.parse(JSON.stringify(shape)),
+          convertedToPolyline: false,
+          originalRectGripIndex: -1,
+          axisConstraint: null,
+          // clickOffset = mouse - refPoint, so adjustedPos = mouse - clickOffset = refPoint's new position
+          clickOffset: { x: worldPos.x - refPoint.x, y: worldPos.y - refPoint.y },
+        };
+        return true;
+      }
+
       return false;
     },
     [selectedShapeIds, shapes, parametricShapes, viewport.zoom, setCurrentSnapPoint, drawingScale]
@@ -1412,7 +1631,8 @@ export function useGripEditing() {
       }
 
       const edgeIndices = drag.polylineMidpointIndices;
-      const updates = computeGripUpdates(currentShape, drag.gripIndex, constrainedPos, edgeIndices);
+      const scaleMode = !!(shiftKey && edgeIndices);
+      const updates = computeGripUpdates(currentShape, drag.gripIndex, constrainedPos, edgeIndices, scaleMode);
       if (updates) {
         useAppStore.setState((state) => {
           const idx = state.shapes.findIndex(s => s.id === drag.shapeId);

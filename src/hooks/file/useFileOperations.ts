@@ -156,7 +156,7 @@ export function useFileOperations() {
       // Collect non-built-in filled region types for saving with project
       const customRegionTypes = s.filledRegionTypes.filter(t => !t.isBuiltIn);
       const project: ProjectFile = {
-        version: 2,
+        version: 3,
         name: s.projectName,
         createdAt: new Date().toISOString(),
         modifiedAt: new Date().toISOString(),
@@ -203,7 +203,7 @@ export function useFileOperations() {
     try {
       const customRegionTypes = s.filledRegionTypes.filter(t => !t.isBuiltIn);
       const project: ProjectFile = {
-        version: 2,
+        version: 3,
         name: s.projectName,
         createdAt: new Date().toISOString(),
         modifiedAt: new Date().toISOString(),

@@ -25,6 +25,7 @@ import type {
   TextStyle,
 } from '../../types/geometry';
 import type { StateCreator } from 'zustand';
+import { CAD_DEFAULT_FONT } from '../../constants/cadDefaults';
 
 // Re-export types for convenience
 export type {
@@ -69,6 +70,7 @@ export type DrawingPreview =
   | { type: 'text'; position: Point }
   | { type: 'dimension'; dimensionType: DimensionType; points: Point[]; dimensionLineOffset: number; linearDirection?: 'horizontal' | 'vertical'; value: string }
   | { type: 'hatch'; points: Point[]; currentPoint: Point }
+  | { type: 'leader'; points: Point[]; currentPoint: Point; textPosition?: Point }
   | { type: 'beam'; start: Point; end: Point; flangeWidth: number; showCenterline: boolean }
   | { type: 'modifyPreview'; shapes: Shape[] }
   | { type: 'mirrorAxis'; start: Point; end: Point; shapes: Shape[] }
@@ -178,14 +180,14 @@ export const defaultStyle: ShapeStyle = {
 
 // Default drawing boundary (in drawing units - typically mm or a unitless coordinate system)
 export const DEFAULT_DRAWING_BOUNDARY: DrawingBoundary = {
-  x: -500,
-  y: -500,
-  width: 1000,
-  height: 1000,
+  x: -5000,
+  y: -5000,
+  width: 10000,
+  height: 10000,
 };
 
-// Default drawing scale (1:50 = 0.02, means 1000 drawing units = 20mm on sheet)
-export const DEFAULT_DRAWING_SCALE = 0.02;
+// Default drawing scale (1:100 = 0.01, means 10000 drawing units = 100mm on sheet)
+export const DEFAULT_DRAWING_SCALE = 0.01;
 
 // Legacy alias for backward compatibility
 export const DEFAULT_DRAFT_BOUNDARY = DEFAULT_DRAWING_BOUNDARY;
@@ -257,13 +259,17 @@ export const getShapeBounds = (shape: Shape): { minX: number; minY: number; maxX
         maxX: Math.max(...xs),
         maxY: Math.max(...ys),
       };
-    case 'text':
+    case 'text': {
+      // For annotation text, fontSize is in paper mm — scale up by 1/DEFAULT_DRAWING_SCALE
+      // to approximate drawing units. Model text uses fontSize directly.
+      const effectiveSize = shape.isModelText ? shape.fontSize : shape.fontSize / DEFAULT_DRAWING_SCALE;
       return {
         minX: shape.position.x,
-        minY: shape.position.y - shape.fontSize,
-        maxX: shape.position.x + shape.text.length * shape.fontSize * 0.6,
+        minY: shape.position.y - effectiveSize,
+        maxX: shape.position.x + shape.text.length * effectiveSize * 0.6,
         maxY: shape.position.y,
       };
+    }
     case 'point':
       return {
         minX: shape.position.x,
@@ -325,30 +331,30 @@ export const getShapeBounds = (shape: Shape): { minX: number; minY: number; maxX
   }
 };
 
-// Default title block fields
+// Default title block fields — professional engineering-style layout
+// 170mm x 36mm, positioned 10mm from right and bottom paper edges (flush with drawing frame)
 export const createDefaultTitleBlock = (): TitleBlock => ({
   visible: true,
   x: 10,
   y: 10,
-  width: 180,
-  height: 60,
+  width: 170,
+  height: 36,
   fields: [
-    // Row 1: Project info
-    { id: 'project', label: 'Project', value: '', x: 5, y: 5, width: 85, height: 12, fontSize: 11, fontFamily: 'Arial', align: 'left' },
-    { id: 'client', label: 'Client', value: '', x: 95, y: 5, width: 80, height: 12, fontSize: 10, fontFamily: 'Arial', align: 'left' },
-    // Row 2: Drawing title
-    { id: 'title', label: 'Drawing Title', value: '', x: 5, y: 20, width: 120, height: 12, fontSize: 12, fontFamily: 'Arial', align: 'left' },
-    { id: 'number', label: 'Drawing No.', value: '', x: 130, y: 20, width: 45, height: 12, fontSize: 10, fontFamily: 'Arial', align: 'left' },
-    // Row 3: Details
-    { id: 'scale', label: 'Scale', value: '1:100', x: 5, y: 35, width: 30, height: 10, fontSize: 10, fontFamily: 'Arial', align: 'left' },
-    { id: 'date', label: 'Date', value: '', x: 40, y: 35, width: 35, height: 10, fontSize: 10, fontFamily: 'Arial', align: 'left' },
-    { id: 'drawn', label: 'Drawn', value: '', x: 80, y: 35, width: 30, height: 10, fontSize: 10, fontFamily: 'Arial', align: 'left' },
-    { id: 'checked', label: 'Checked', value: '', x: 115, y: 35, width: 30, height: 10, fontSize: 10, fontFamily: 'Arial', align: 'left' },
-    { id: 'approved', label: 'Approved', value: '', x: 150, y: 35, width: 25, height: 10, fontSize: 10, fontFamily: 'Arial', align: 'left' },
-    // Row 4: Sheet info and revision
-    { id: 'sheet', label: 'Sheet', value: '1 of 1', x: 5, y: 48, width: 40, height: 10, fontSize: 10, fontFamily: 'Arial', align: 'left' },
-    { id: 'revision', label: 'Revision', value: '', x: 50, y: 48, width: 30, height: 10, fontSize: 10, fontFamily: 'Arial', align: 'left' },
-    { id: 'status', label: 'Status', value: 'DRAFT', x: 130, y: 48, width: 45, height: 10, fontSize: 10, fontFamily: 'Arial', align: 'left' },
+    // Row 1 (0–14mm): Drawing title (prominent) | Drawing No + Revision
+    { id: 'title', label: 'Drawing Title', value: '', x: 3, y: 2, width: 117, height: 12, fontSize: 14, fontFamily: CAD_DEFAULT_FONT, align: 'left' },
+    { id: 'number', label: 'Drawing No.', value: '', x: 126, y: 1, width: 41, height: 7, fontSize: 10, fontFamily: CAD_DEFAULT_FONT, align: 'left' },
+    { id: 'revision', label: 'Rev', value: '-', x: 126, y: 8, width: 41, height: 5, fontSize: 9, fontFamily: CAD_DEFAULT_FONT, align: 'left' },
+    // Row 2 (14–25mm): Project | Client | Scale | Sheet
+    { id: 'project', label: 'Project', value: '', x: 3, y: 16, width: 57, height: 9, fontSize: 10, fontFamily: CAD_DEFAULT_FONT, align: 'left' },
+    { id: 'client', label: 'Client', value: '', x: 66, y: 16, width: 54, height: 9, fontSize: 10, fontFamily: CAD_DEFAULT_FONT, align: 'left' },
+    { id: 'scale', label: 'Scale', value: '1:100', x: 126, y: 16, width: 19, height: 9, fontSize: 10, fontFamily: CAD_DEFAULT_FONT, align: 'left' },
+    { id: 'sheet', label: 'Sheet', value: '1 of 1', x: 151, y: 16, width: 16, height: 9, fontSize: 10, fontFamily: CAD_DEFAULT_FONT, align: 'left' },
+    // Row 3 (25–36mm): Drawn | Date | Checked | Approved | Status
+    { id: 'drawn', label: 'Drawn', value: '', x: 3, y: 27, width: 32, height: 7, fontSize: 9, fontFamily: CAD_DEFAULT_FONT, align: 'left' },
+    { id: 'date', label: 'Date', value: '', x: 41, y: 27, width: 24, height: 7, fontSize: 9, fontFamily: CAD_DEFAULT_FONT, align: 'left' },
+    { id: 'checked', label: 'Checked', value: '', x: 71, y: 27, width: 29, height: 7, fontSize: 9, fontFamily: CAD_DEFAULT_FONT, align: 'left' },
+    { id: 'approved', label: 'Approved', value: '', x: 106, y: 27, width: 29, height: 7, fontSize: 9, fontFamily: CAD_DEFAULT_FONT, align: 'left' },
+    { id: 'status', label: 'Status', value: 'DRAFT', x: 141, y: 27, width: 26, height: 7, fontSize: 9, fontFamily: CAD_DEFAULT_FONT, align: 'left' },
   ],
 });
 
@@ -366,7 +372,7 @@ export const createDefaultTextStyles = (): TextStyle[] => [
   {
     id: 'annotation-small',
     name: '2.5mm Annotation',
-    fontFamily: 'Arial',
+    fontFamily: 'Osifont',
     fontSize: 2.5,
     bold: false,
     italic: false,
@@ -374,7 +380,7 @@ export const createDefaultTextStyles = (): TextStyle[] => [
     color: '#ffffff',
     alignment: 'left',
     verticalAlignment: 'top',
-    lineHeight: 1.2,
+    lineHeight: 1.4,
     isModelText: false,
     backgroundMask: false,
     backgroundColor: '#1a1a2e',
@@ -384,7 +390,7 @@ export const createDefaultTextStyles = (): TextStyle[] => [
   {
     id: 'annotation-medium',
     name: '3.5mm Annotation',
-    fontFamily: 'Arial',
+    fontFamily: 'Osifont',
     fontSize: 3.5,
     bold: false,
     italic: false,
@@ -392,7 +398,7 @@ export const createDefaultTextStyles = (): TextStyle[] => [
     color: '#ffffff',
     alignment: 'left',
     verticalAlignment: 'top',
-    lineHeight: 1.2,
+    lineHeight: 1.4,
     isModelText: false,
     backgroundMask: false,
     backgroundColor: '#1a1a2e',
@@ -402,7 +408,7 @@ export const createDefaultTextStyles = (): TextStyle[] => [
   {
     id: 'annotation-large',
     name: '5mm Annotation',
-    fontFamily: 'Arial',
+    fontFamily: 'Osifont',
     fontSize: 5,
     bold: false,
     italic: false,
@@ -410,7 +416,7 @@ export const createDefaultTextStyles = (): TextStyle[] => [
     color: '#ffffff',
     alignment: 'left',
     verticalAlignment: 'top',
-    lineHeight: 1.2,
+    lineHeight: 1.4,
     isModelText: false,
     backgroundMask: false,
     backgroundColor: '#1a1a2e',
@@ -420,7 +426,7 @@ export const createDefaultTextStyles = (): TextStyle[] => [
   {
     id: 'title-text',
     name: 'Title (7mm Bold)',
-    fontFamily: 'Arial',
+    fontFamily: 'Osifont',
     fontSize: 7,
     bold: true,
     italic: false,
@@ -428,7 +434,7 @@ export const createDefaultTextStyles = (): TextStyle[] => [
     color: '#ffffff',
     alignment: 'left',
     verticalAlignment: 'top',
-    lineHeight: 1.2,
+    lineHeight: 1.4,
     isModelText: false,
     backgroundMask: false,
     backgroundColor: '#1a1a2e',
@@ -438,7 +444,7 @@ export const createDefaultTextStyles = (): TextStyle[] => [
   {
     id: 'model-text-small',
     name: 'Model Text (100mm)',
-    fontFamily: 'Arial',
+    fontFamily: 'Osifont',
     fontSize: 100,
     bold: false,
     italic: false,
@@ -446,7 +452,7 @@ export const createDefaultTextStyles = (): TextStyle[] => [
     color: '#ffffff',
     alignment: 'left',
     verticalAlignment: 'top',
-    lineHeight: 1.2,
+    lineHeight: 1.4,
     isModelText: true,
     backgroundMask: false,
     backgroundColor: '#1a1a2e',
@@ -456,7 +462,7 @@ export const createDefaultTextStyles = (): TextStyle[] => [
   {
     id: 'model-text-large',
     name: 'Model Text (500mm)',
-    fontFamily: 'Arial',
+    fontFamily: 'Osifont',
     fontSize: 500,
     bold: false,
     italic: false,
@@ -464,7 +470,7 @@ export const createDefaultTextStyles = (): TextStyle[] => [
     color: '#ffffff',
     alignment: 'left',
     verticalAlignment: 'top',
-    lineHeight: 1.2,
+    lineHeight: 1.4,
     isModelText: true,
     backgroundMask: false,
     backgroundColor: '#1a1a2e',

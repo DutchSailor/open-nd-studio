@@ -11,6 +11,7 @@ import { BaseRenderer } from '../core/BaseRenderer';
 import { MM_TO_PIXELS, COLORS } from '../types';
 import { getTemplateById } from '../../../services/template/titleBlockService';
 import { loadCustomSVGTemplates, renderSVGTitleBlock } from '../../../services/export/svgTitleBlockService';
+import { CAD_DEFAULT_FONT } from '../../../constants/cadDefaults';
 
 export class TitleBlockRenderer extends BaseRenderer {
   private logoImageCache: Map<string, HTMLImageElement> = new Map();
@@ -281,13 +282,13 @@ export class TitleBlockRenderer extends BaseRenderer {
     // Draw label (smaller, gray)
     const labelFontSize = Math.max(6, fontSize - 2);
     ctx.fillStyle = COLORS.titleBlockLabel;
-    ctx.font = `${labelFontSize}px Arial`;
+    ctx.font = `${labelFontSize}px ${CAD_DEFAULT_FONT}`;
     ctx.fillText(field.label, textX, y + padding);
 
     // Draw value (larger, below label)
     const valueFontSize = fontSize;
     ctx.fillStyle = COLORS.titleBlockValue;
-    ctx.font = `${isBold ? 'bold ' : ''}${valueFontSize}px Arial`;
+    ctx.font = `${isBold ? 'bold ' : ''}${valueFontSize}px ${CAD_DEFAULT_FONT}`;
     const value = field.value || '';
     ctx.fillText(value, textX, y + padding + labelFontSize + 2);
 
@@ -378,7 +379,7 @@ export class TitleBlockRenderer extends BaseRenderer {
 
     // Draw header text
     ctx.fillStyle = '#000000';
-    ctx.font = 'bold 8px Arial';
+    ctx.font = `bold 8px ${CAD_DEFAULT_FONT}`;
     ctx.textBaseline = 'middle';
 
     let colX = tbX;
@@ -398,7 +399,7 @@ export class TitleBlockRenderer extends BaseRenderer {
     }
 
     // Draw revision rows (newest at top)
-    ctx.font = '8px Arial';
+    ctx.font = `8px ${CAD_DEFAULT_FONT}`;
     const revisionsToShow = revisionTable.revisions.slice(-numRevisions).reverse();
 
     for (let i = 0; i < revisionsToShow.length; i++) {
@@ -444,6 +445,11 @@ export class TitleBlockRenderer extends BaseRenderer {
 
   /**
    * Draw title block internal grid lines (legacy)
+   *
+   * Layout (170mm x 36mm):
+   *  Row 1 (14mm):  Drawing Title       | Drawing No. / Rev
+   *  Row 2 (11mm):  Project  | Client    | Scale | Sheet
+   *  Row 3 (11mm):  Drawn | Date | Checked | Approved | Status
    */
   private drawTitleBlockGrid(
     tbX: number,
@@ -452,44 +458,49 @@ export class TitleBlockRenderer extends BaseRenderer {
     tbHeight: number
   ): void {
     const ctx = this.ctx;
+    const mm = MM_TO_PIXELS;
 
+    // --- Horizontal dividers ---
     ctx.lineWidth = 0.5;
     ctx.strokeStyle = COLORS.titleBlockBorder;
     ctx.beginPath();
 
-    // Horizontal dividers - 4 rows
-    const rowHeights = [15, 15, 15, 15]; // mm
-    let currentY = tbY;
-    for (let i = 0; i < rowHeights.length - 1; i++) {
-      currentY += rowHeights[i] * MM_TO_PIXELS;
-      ctx.moveTo(tbX, currentY);
-      ctx.lineTo(tbX + tbWidth, currentY);
+    const row1H = 14 * mm;
+    const row2H = 11 * mm;
+
+    // Line between Row 1 and Row 2
+    ctx.moveTo(tbX, tbY + row1H);
+    ctx.lineTo(tbX + tbWidth, tbY + row1H);
+
+    // Line between Row 2 and Row 3
+    ctx.moveTo(tbX, tbY + row1H + row2H);
+    ctx.lineTo(tbX + tbWidth, tbY + row1H + row2H);
+
+    // --- Vertical dividers ---
+
+    // Row 1: Title | Drawing No + Rev  (split at 123mm)
+    const r1Split = 123 * mm;
+    ctx.moveTo(tbX + r1Split, tbY);
+    ctx.lineTo(tbX + r1Split, tbY + row1H);
+
+    // Sub-split inside Drawing No cell: No / Rev (horizontal line at 7.5mm)
+    ctx.moveTo(tbX + r1Split, tbY + 7.5 * mm);
+    ctx.lineTo(tbX + tbWidth, tbY + 7.5 * mm);
+
+    // Row 2: Project | Client | Scale | Sheet  (splits at 63, 123, 148mm)
+    const r2Y = tbY + row1H;
+    for (const xMm of [63, 123, 148]) {
+      ctx.moveTo(tbX + xMm * mm, r2Y);
+      ctx.lineTo(tbX + xMm * mm, r2Y + row2H);
     }
 
-    // Vertical dividers - adaptive based on fields
-    // First row split
-    const col1Width = 90 * MM_TO_PIXELS; // Project column
-    ctx.moveTo(tbX + col1Width, tbY);
-    ctx.lineTo(tbX + col1Width, tbY + 15 * MM_TO_PIXELS);
-
-    // Second row split
-    const col2Width = 125 * MM_TO_PIXELS; // Title column
-    ctx.moveTo(tbX + col2Width, tbY + 15 * MM_TO_PIXELS);
-    ctx.lineTo(tbX + col2Width, tbY + 30 * MM_TO_PIXELS);
-
-    // Third row splits (5 columns for Scale/Date/Drawn/Checked/Approved)
-    const smallColWidth = tbWidth / 5;
-    for (let i = 1; i < 5; i++) {
-      const x = tbX + smallColWidth * i;
-      ctx.moveTo(x, tbY + 30 * MM_TO_PIXELS);
-      ctx.lineTo(x, tbY + 45 * MM_TO_PIXELS);
+    // Row 3: Drawn | Date | Checked | Approved | Status  (splits at 38, 68, 103, 138mm)
+    const r3Y = tbY + row1H + row2H;
+    const r3H = tbHeight - row1H - row2H;
+    for (const xMm of [38, 68, 103, 138]) {
+      ctx.moveTo(tbX + xMm * mm, r3Y);
+      ctx.lineTo(tbX + xMm * mm, r3Y + r3H);
     }
-
-    // Fourth row splits (Sheet/Revision | Status)
-    ctx.moveTo(tbX + 80 * MM_TO_PIXELS, tbY + 45 * MM_TO_PIXELS);
-    ctx.lineTo(tbX + 80 * MM_TO_PIXELS, tbY + tbHeight);
-    ctx.moveTo(tbX + 125 * MM_TO_PIXELS, tbY + 45 * MM_TO_PIXELS);
-    ctx.lineTo(tbX + 125 * MM_TO_PIXELS, tbY + tbHeight);
 
     ctx.stroke();
   }
@@ -512,12 +523,12 @@ export class TitleBlockRenderer extends BaseRenderer {
 
       // Draw label (smaller, gray)
       ctx.fillStyle = COLORS.titleBlockLabel;
-      ctx.font = `${Math.max(7, (field.fontSize || 8) - 2)}px ${field.fontFamily || 'Arial'}`;
+      ctx.font = `${Math.max(7, (field.fontSize || 8) - 2)}px ${field.fontFamily || CAD_DEFAULT_FONT}`;
       ctx.fillText(field.label, fieldX, fieldY);
 
       // Draw value (larger, black, below label)
       ctx.fillStyle = COLORS.titleBlockValue;
-      ctx.font = `bold ${field.fontSize || 10}px ${field.fontFamily || 'Arial'}`;
+      ctx.font = `bold ${field.fontSize || 10}px ${field.fontFamily || CAD_DEFAULT_FONT}`;
       const value = field.value || '';
       ctx.fillText(value, fieldX, fieldY + 10);
     }

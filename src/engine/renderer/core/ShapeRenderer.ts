@@ -14,6 +14,7 @@ import { drawSplinePath } from '../../geometry/SplineUtils';
 import { bulgeToArc, bulgeArcMidpoint } from '../../geometry/GeometryUtils';
 import { svgToImage } from '../../../services/export/svgPatternService';
 import { getGripHover } from '../gripHoverState';
+import { CAD_DEFAULT_FONT } from '../../../constants/cadDefaults';
 
 export class ShapeRenderer extends BaseRenderer {
   private dimensionRenderer: DimensionRenderer;
@@ -23,13 +24,13 @@ export class ShapeRenderer extends BaseRenderer {
   private svgLoadingPromises: Map<string, Promise<HTMLImageElement | null>> = new Map();
   // Drawing scale for annotation text scaling (default 1:50 = 0.02)
   private drawingScale: number = 0.02;
-  // Reference scale - text looks the same as before at this scale
-  private static readonly REFERENCE_SCALE = 0.02; // 1:50
   // Live preview: temporarily override pattern for selected hatch shapes
   private previewPatternId: string | null = null;
   private previewSelectedIds: Set<string> = new Set();
-  // Display lineweight: when false, all lines render at 1px
+  // Display lineweight: when false, all lines render at 1px screen width
   private _showLineweight: boolean = true;
+  // Current viewport zoom (needed to compute 1-screen-pixel width in world coords)
+  private _currentZoom: number = 1;
   // Cache for loaded image elements (keyed by shape ID)
   private imageCache: Map<string, HTMLImageElement> = new Map();
 
@@ -56,10 +57,18 @@ export class ShapeRenderer extends BaseRenderer {
   }
 
   /**
-   * Get the effective stroke width (respects showLineweight toggle)
+   * Set the current viewport zoom so line widths can be computed correctly.
+   */
+  setZoom(zoom: number): void {
+    this._currentZoom = zoom;
+  }
+
+  /**
+   * Get the effective stroke width (respects showLineweight toggle).
+   * When lineweight display is off, returns 1 screen pixel in world coords.
    */
   private getLineWidth(strokeWidth: number): number {
-    return this._showLineweight ? strokeWidth : 1;
+    return this._showLineweight ? strokeWidth : 1 / this._currentZoom;
   }
 
   /**
@@ -514,6 +523,57 @@ export class ShapeRenderer extends BaseRenderer {
         break;
       }
 
+      case 'leader': {
+        // Draw leader preview: arrow tip → diagonal line → landing line under text area
+        if (preview.points.length > 0) {
+          const arrowTip = preview.points[0];
+          const textPos = preview.currentPoint;
+
+          // Scale sizes proportionally to annotation text (paper mm → drawing units)
+          const previewScaleFactor = 1 / this.drawingScale;
+          const previewLineWeight = 0.18 * previewScaleFactor;
+          const previewArrowSize = 2.5 * previewScaleFactor;
+          const previewLandingWidth = 7.5 * previewScaleFactor; // 3x default font size
+          const previewTextSize = 2.5 * previewScaleFactor;
+
+          ctx.lineWidth = previewLineWeight;
+
+          // Draw diagonal line from text area to arrow tip
+          ctx.beginPath();
+          ctx.moveTo(textPos.x, textPos.y);
+          ctx.lineTo(arrowTip.x, arrowTip.y);
+          ctx.stroke();
+
+          // Draw filled arrow at the arrow tip
+          const arrowAngle = Math.atan2(arrowTip.y - textPos.y, arrowTip.x - textPos.x);
+          ctx.beginPath();
+          ctx.moveTo(arrowTip.x, arrowTip.y);
+          ctx.lineTo(
+            arrowTip.x - previewArrowSize * Math.cos(arrowAngle - 0.35),
+            arrowTip.y - previewArrowSize * Math.sin(arrowAngle - 0.35)
+          );
+          ctx.lineTo(
+            arrowTip.x - previewArrowSize * Math.cos(arrowAngle + 0.35),
+            arrowTip.y - previewArrowSize * Math.sin(arrowAngle + 0.35)
+          );
+          ctx.closePath();
+          ctx.fill();
+
+          // Draw horizontal landing line (text underline placeholder)
+          ctx.beginPath();
+          ctx.moveTo(textPos.x, textPos.y);
+          ctx.lineTo(textPos.x + previewLandingWidth, textPos.y);
+          ctx.stroke();
+
+          // Draw "T" text indicator above the landing line
+          ctx.save();
+          ctx.font = `${previewTextSize}px sans-serif`;
+          ctx.fillText('T', textPos.x + previewTextSize * 0.2, textPos.y - previewTextSize * 0.2);
+          ctx.restore();
+        }
+        break;
+      }
+
       case 'modifyPreview':
         ctx.save();
         ctx.globalAlpha = 0.5;
@@ -810,7 +870,7 @@ export class ShapeRenderer extends BaseRenderer {
 
     // --- Prepare text metrics for gap calculation ---
     const displayText = length.toFixed(2);
-    ctx.font = `${fontSize}px Arial`;
+    ctx.font = `${fontSize}px ${CAD_DEFAULT_FONT}`;
     const textMetrics = ctx.measureText(displayText);
     const textGap = textMetrics.width + textPadding * 2;
     const halfGap = textGap / 2;
@@ -1076,12 +1136,11 @@ export class ShapeRenderer extends BaseRenderer {
     }
 
     // Calculate effective font size:
-    // - Annotation text (default): scales relative to reference scale (1:50)
-    //   At 1:50, text looks the same as before. At 1:100, text appears 2x larger (model is smaller)
+    // - Annotation text (default): fontSize is in paper mm, divide by drawingScale to get drawing units
     // - Model text: uses fontSize directly in model units
     const effectiveFontSize = isModelText
       ? fontSize
-      : fontSize * (ShapeRenderer.REFERENCE_SCALE / this.drawingScale);
+      : fontSize / this.drawingScale;
 
     // Build font string
     const fontStyle = `${italic ? 'italic ' : ''}${bold ? 'bold ' : ''}`;
@@ -1205,7 +1264,7 @@ export class ShapeRenderer extends BaseRenderer {
           totalHeight += paragraphExtra;
         }
       }
-      const padding = backgroundPadding * (isModelText ? 1 : (ShapeRenderer.REFERENCE_SCALE / this.drawingScale));
+      const padding = backgroundPadding * (isModelText ? 1 : (1 / this.drawingScale));
 
       // Calculate background rectangle position based on alignment
       let bgX = position.x - padding;
@@ -1358,7 +1417,8 @@ export class ShapeRenderer extends BaseRenderer {
     ctx.restore();
 
     // Draw leader lines if present
-    if (shape.leaderPoints && shape.leaderPoints.length > 0) {
+    if ((shape.leaderPoints && shape.leaderPoints.length > 0) ||
+        (shape.leaders && shape.leaders.length > 0)) {
       ctx.save();
       const leaderConfig = shape.leaderConfig;
       let leaderColor = leaderConfig?.color || color || shape.style.strokeColor;
@@ -1367,108 +1427,131 @@ export class ShapeRenderer extends BaseRenderer {
       }
       ctx.strokeStyle = leaderColor;
       ctx.fillStyle = leaderColor;
-      ctx.lineWidth = leaderConfig?.lineWeight ?? 1;
+      // Leader line and arrow sizes are proportional to effective font size
+      // so they remain visible and well-proportioned at any scale/zoom.
+      // lineWeight as fraction of font size (default ~7%), arrowSize as fraction (~100%)
+      const configLineWeight = leaderConfig?.lineWeight ?? 0.18;
+      const configArrowSize = leaderConfig?.arrowSize ?? 2.5;
+      // Scale the same way as fontSize: paper mm → drawing units
+      const leaderScaleFactor = isModelText ? 1 : (1 / this.drawingScale);
+      ctx.lineWidth = configLineWeight * leaderScaleFactor;
       ctx.setLineDash([]);
 
-      // Draw landing line (shoulder) if enabled
+      const arrowType = leaderConfig?.arrowType ?? 'filled-arrow';
+      const arrowSize = configArrowSize * leaderScaleFactor;
       const hasLanding = leaderConfig?.hasLanding ?? true;
-      const landingLength = leaderConfig?.landingLength ?? 5;
-      let leaderStartX = position.x;
-      let leaderStartY = position.y;
 
-      if (hasLanding && landingLength > 0) {
-        // Determine landing direction based on first leader point
-        const firstPt = shape.leaderPoints[0];
-        const landingDir = firstPt.x > position.x ? 1 : -1;
-        const landingEndX = position.x + landingDir * landingLength;
+      // Calculate text width for the landing (underline) line
+      // Re-set the font to measure correctly (ctx.restore was called above)
+      const ldrFontStyle = `${italic ? 'italic ' : ''}${bold ? 'bold ' : ''}`;
+      ctx.font = `${ldrFontStyle}${effectiveFontSize}px ${fontFamily}`;
 
+      let textWidth = 0;
+      const displayLines = text.split('\n');
+      for (const dl of displayLines) {
+        const w = ctx.measureText(dl).width * widthFactor;
+        if (w > textWidth) textWidth = w;
+      }
+      // Minimum landing width when text is empty
+      const minLandingWidth = effectiveFontSize * 3;
+      const landingWidth = Math.max(textWidth, minLandingWidth);
+
+      // Landing line Y: at the bottom of the text block
+      const totalTextHeight = Math.max(displayLines.length, 1) * effectiveFontSize * lineHeight;
+      const landingY = position.y + totalTextHeight;
+
+      // Landing line X range: from text left edge to text left + landingWidth
+      let landingLeftX = position.x;
+      if (alignment === 'center') {
+        landingLeftX = position.x - landingWidth / 2;
+      } else if (alignment === 'right') {
+        landingLeftX = position.x - landingWidth;
+      }
+      const landingRightX = landingLeftX + landingWidth;
+
+      // Draw the landing (underline) line under the text
+      if (hasLanding) {
         ctx.beginPath();
-        ctx.moveTo(position.x, position.y);
-        ctx.lineTo(landingEndX, position.y);
+        ctx.moveTo(landingLeftX, landingY);
+        ctx.lineTo(landingRightX, landingY);
         ctx.stroke();
-
-        leaderStartX = landingEndX;
       }
 
-      // Draw main leader line
-      ctx.beginPath();
-      ctx.moveTo(leaderStartX, leaderStartY);
-      for (const pt of shape.leaderPoints) {
-        ctx.lineTo(pt.x, pt.y);
-      }
-      ctx.stroke();
-
-      // Draw arrow/terminator at the last leader point
-      if (shape.leaderPoints.length >= 1) {
-        const lastPt = shape.leaderPoints[shape.leaderPoints.length - 1];
-        const prevPt = shape.leaderPoints.length > 1
-          ? shape.leaderPoints[shape.leaderPoints.length - 2]
-          : { x: leaderStartX, y: leaderStartY };
-        const arrowAngle = Math.atan2(lastPt.y - prevPt.y, lastPt.x - prevPt.x);
-        const arrowType = leaderConfig?.arrowType ?? 'arrow';
-        const arrowSize = leaderConfig?.arrowSize ?? 6;
-
+      // Helper to draw an arrow terminator at a point
+      const drawArrow = (tip: { x: number; y: number }, prev: { x: number; y: number }) => {
+        const angle = Math.atan2(tip.y - prev.y, tip.x - prev.x);
         switch (arrowType) {
           case 'arrow':
-            // Open arrow
             ctx.beginPath();
-            ctx.moveTo(lastPt.x, lastPt.y);
-            ctx.lineTo(
-              lastPt.x - arrowSize * Math.cos(arrowAngle - 0.4),
-              lastPt.y - arrowSize * Math.sin(arrowAngle - 0.4)
-            );
-            ctx.moveTo(lastPt.x, lastPt.y);
-            ctx.lineTo(
-              lastPt.x - arrowSize * Math.cos(arrowAngle + 0.4),
-              lastPt.y - arrowSize * Math.sin(arrowAngle + 0.4)
-            );
+            ctx.moveTo(tip.x, tip.y);
+            ctx.lineTo(tip.x - arrowSize * Math.cos(angle - 0.4), tip.y - arrowSize * Math.sin(angle - 0.4));
+            ctx.moveTo(tip.x, tip.y);
+            ctx.lineTo(tip.x - arrowSize * Math.cos(angle + 0.4), tip.y - arrowSize * Math.sin(angle + 0.4));
             ctx.stroke();
             break;
-
           case 'filled-arrow':
-            // Filled arrow triangle
             ctx.beginPath();
-            ctx.moveTo(lastPt.x, lastPt.y);
-            ctx.lineTo(
-              lastPt.x - arrowSize * Math.cos(arrowAngle - 0.35),
-              lastPt.y - arrowSize * Math.sin(arrowAngle - 0.35)
-            );
-            ctx.lineTo(
-              lastPt.x - arrowSize * Math.cos(arrowAngle + 0.35),
-              lastPt.y - arrowSize * Math.sin(arrowAngle + 0.35)
-            );
+            ctx.moveTo(tip.x, tip.y);
+            ctx.lineTo(tip.x - arrowSize * Math.cos(angle - 0.35), tip.y - arrowSize * Math.sin(angle - 0.35));
+            ctx.lineTo(tip.x - arrowSize * Math.cos(angle + 0.35), tip.y - arrowSize * Math.sin(angle + 0.35));
             ctx.closePath();
             ctx.fill();
             break;
-
           case 'dot':
-            // Filled dot
             ctx.beginPath();
-            ctx.arc(lastPt.x, lastPt.y, arrowSize / 2, 0, Math.PI * 2);
+            ctx.arc(tip.x, tip.y, arrowSize / 2, 0, Math.PI * 2);
             ctx.fill();
             break;
-
-          case 'slash':
-            // Diagonal slash mark
-            const slashLen = arrowSize / 1.5;
-            const perpAngle = arrowAngle + Math.PI / 2;
+          case 'slash': {
+            const sLen = arrowSize / 1.5;
+            const pAngle = angle + Math.PI / 2;
             ctx.beginPath();
-            ctx.moveTo(
-              lastPt.x + slashLen * Math.cos(perpAngle),
-              lastPt.y + slashLen * Math.sin(perpAngle)
-            );
-            ctx.lineTo(
-              lastPt.x - slashLen * Math.cos(perpAngle),
-              lastPt.y - slashLen * Math.sin(perpAngle)
-            );
+            ctx.moveTo(tip.x + sLen * Math.cos(pAngle), tip.y + sLen * Math.sin(pAngle));
+            ctx.lineTo(tip.x - sLen * Math.cos(pAngle), tip.y - sLen * Math.sin(pAngle));
             ctx.stroke();
             break;
-
+          }
           case 'none':
-            // No terminator
             break;
         }
+      };
+
+      // Helper to draw a single leader line from a set of waypoints
+      const drawLeaderLine = (leaderPts: { x: number; y: number }[]) => {
+        if (leaderPts.length === 0) return;
+        // Arrow tip is the last point in leaderPoints
+        const arrowTip = leaderPts[leaderPts.length - 1];
+        // Pick connection side: leader connects to the closer end of the landing line
+        const connectX = (arrowTip.x < (landingLeftX + landingRightX) / 2) ? landingLeftX : landingRightX;
+        const connectPt = { x: connectX, y: landingY };
+
+        // Draw line from landing endpoint through waypoints to arrow tip
+        ctx.beginPath();
+        ctx.moveTo(connectPt.x, connectPt.y);
+        for (const pt of leaderPts) {
+          ctx.lineTo(pt.x, pt.y);
+        }
+        ctx.stroke();
+
+        // Draw arrow terminator at the tip
+        const prevPt = leaderPts.length > 1
+          ? leaderPts[leaderPts.length - 2]
+          : connectPt;
+        drawArrow(arrowTip, prevPt);
+      };
+
+      // Draw primary leader (leaderPoints)
+      if (shape.leaderPoints && shape.leaderPoints.length > 0) {
+        drawLeaderLine(shape.leaderPoints);
       }
+
+      // Draw additional leaders (leaders[] array)
+      if (shape.leaders) {
+        for (const leader of shape.leaders) {
+          drawLeaderLine(leader.points);
+        }
+      }
+
       ctx.restore();
     }
 
@@ -1499,7 +1582,7 @@ export class ShapeRenderer extends BaseRenderer {
     // Calculate effective font size (same as drawText)
     const effectiveFontSize = isModelText
       ? fontSize
-      : fontSize * (ShapeRenderer.REFERENCE_SCALE / this.drawingScale);
+      : fontSize / this.drawingScale;
 
     // Set font and baseline to match drawText rendering
     const fontStyle = `${italic ? 'italic ' : ''}${bold ? 'bold ' : ''}`;
@@ -1660,6 +1743,102 @@ export class ShapeRenderer extends BaseRenderer {
     ctx.moveTo(arrowTipX, arrowTipY);
     ctx.lineTo(arrowTipX + arrowHeadSize * 0.5, arrowTipY - arrowHeadSize);
     ctx.stroke();
+
+    // Draw leader line selection highlights and grip handles
+    if ((shape.leaderPoints && shape.leaderPoints.length > 0) ||
+        (shape.leaders && shape.leaders.length > 0)) {
+      // Undo the rotation transform for leader drawing (leaders are in world space)
+      ctx.restore();
+      ctx.save();
+
+      const leaderConfig = shape.leaderConfig;
+      const hasLanding = leaderConfig?.hasLanding ?? true;
+
+      // Recalculate landing geometry (same as drawText)
+      const ldrFontStyle = `${italic ? 'italic ' : ''}${bold ? 'bold ' : ''}`;
+      ctx.font = `${ldrFontStyle}${effectiveFontSize}px ${fontFamily}`;
+
+      let textWidth = 0;
+      const ldrLines = text.split('\n');
+      for (const dl of ldrLines) {
+        const w = ctx.measureText(dl).width;
+        if (w > textWidth) textWidth = w;
+      }
+      const minLandingWidth = effectiveFontSize * 3;
+      const landingWidth = Math.max(textWidth, minLandingWidth);
+      const totalTextHeight = Math.max(ldrLines.length, 1) * effectiveFontSize * (lineHeight);
+      const landingY = position.y + totalTextHeight;
+
+      let landingLeftX = position.x;
+      if (alignment === 'center') landingLeftX = position.x - landingWidth / 2;
+      else if (alignment === 'right') landingLeftX = position.x - landingWidth;
+      const landingRightX = landingLeftX + landingWidth;
+
+      // Draw selection highlight over leader lines
+      // Use a width slightly thicker than the actual leader line so the highlight is visible
+      const selScaleFactor = shape.isModelText ? 1 : (1 / this.drawingScale);
+      const selLineWidth = (shape.leaderConfig?.lineWeight ?? 0.18) * selScaleFactor;
+      ctx.strokeStyle = COLORS.selection;
+      ctx.lineWidth = Math.max(selLineWidth * 1.5, 2 / zoom);
+      ctx.setLineDash([]);
+
+      const highlightLeader = (leaderPts: { x: number; y: number }[]) => {
+        if (leaderPts.length === 0) return;
+        const arrowTip = leaderPts[leaderPts.length - 1];
+        const connectX = (arrowTip.x < (landingLeftX + landingRightX) / 2) ? landingLeftX : landingRightX;
+        const connectPt = { x: connectX, y: landingY };
+
+        // Highlight leader line
+        ctx.beginPath();
+        ctx.moveTo(connectPt.x, connectPt.y);
+        for (const pt of leaderPts) {
+          ctx.lineTo(pt.x, pt.y);
+        }
+        ctx.stroke();
+      };
+
+      // Highlight landing line
+      if (hasLanding) {
+        ctx.beginPath();
+        ctx.moveTo(landingLeftX, landingY);
+        ctx.lineTo(landingRightX, landingY);
+        ctx.stroke();
+      }
+
+      // Highlight primary leader
+      if (shape.leaderPoints && shape.leaderPoints.length > 0) {
+        highlightLeader(shape.leaderPoints);
+      }
+      // Highlight additional leaders
+      if (shape.leaders) {
+        for (const leader of shape.leaders) {
+          highlightLeader(leader.points);
+        }
+      }
+
+      // Draw grip squares at leader waypoints
+      ctx.fillStyle = COLORS.selectionHandle;
+      ctx.strokeStyle = COLORS.selectionHandleStroke;
+      ctx.lineWidth = 1 / zoom;
+
+      const drawGrip = (pt: { x: number; y: number }) => {
+        ctx.fillRect(pt.x - handleSize / 2, pt.y - handleSize / 2, handleSize, handleSize);
+        ctx.strokeRect(pt.x - handleSize / 2, pt.y - handleSize / 2, handleSize, handleSize);
+      };
+
+      if (shape.leaderPoints) {
+        for (const pt of shape.leaderPoints) {
+          drawGrip(pt);
+        }
+      }
+      if (shape.leaders) {
+        for (const leader of shape.leaders) {
+          for (const pt of leader.points) {
+            drawGrip(pt);
+          }
+        }
+      }
+    }
 
     ctx.restore();
   }
@@ -2297,7 +2476,7 @@ export class ShapeRenderer extends BaseRenderer {
         textColor = '#000000';
       }
       ctx.fillStyle = textColor;
-      ctx.font = `${fontSize}px Arial`;
+      ctx.font = `${fontSize}px ${CAD_DEFAULT_FONT}`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
 

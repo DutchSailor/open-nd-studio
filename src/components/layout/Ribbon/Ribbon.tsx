@@ -380,6 +380,7 @@ export const Ribbon = memo(function Ribbon({ onOpenBackstage }: RibbonProps) {
     openSectionDialog,
     openBeamDialog,
     setPatternManagerOpen,
+    setTextStyleManagerOpen,
 
     // Draw order
     bringToFront,
@@ -395,6 +396,8 @@ export const Ribbon = memo(function Ribbon({ onOpenBackstage }: RibbonProps) {
     extensionRibbonTabs,
     extensionRibbonButtons,
   } = useAppStore();
+
+  const isSheetMode = editorMode !== 'drawing';
 
   const builtInTabs: { id: RibbonTab; label: string }[] = [
     { id: 'home', label: 'Home' },
@@ -475,7 +478,7 @@ export const Ribbon = memo(function Ribbon({ onOpenBackstage }: RibbonProps) {
                 icon={<ClipboardPaste size={24} />}
                 label="Paste"
                 onClick={() => pasteShapes()}
-                disabled={!hasClipboardContent()}
+                disabled={isSheetMode || !hasClipboardContent()}
                 shortcut="Ctrl+V"
               />
               <RibbonButtonStack>
@@ -483,21 +486,21 @@ export const Ribbon = memo(function Ribbon({ onOpenBackstage }: RibbonProps) {
                   icon={<Scissors size={14} />}
                   label="Cut"
                   onClick={cutSelectedShapes}
-                  disabled={selectedShapeIds.length === 0}
+                  disabled={isSheetMode || selectedShapeIds.length === 0}
                   shortcut="Ctrl+X"
                 />
                 <RibbonSmallButton
                   icon={<Copy size={14} />}
                   label="Copy"
                   onClick={copySelectedShapes}
-                  disabled={selectedShapeIds.length === 0}
+                  disabled={isSheetMode || selectedShapeIds.length === 0}
                   shortcut="Ctrl+C"
                 />
                 <RibbonSmallButton
                   icon={<Trash2 size={14} />}
                   label="Delete"
                   onClick={deleteSelectedShapes}
-                  disabled={selectedShapeIds.length === 0}
+                  disabled={isSheetMode || selectedShapeIds.length === 0}
                   shortcut="Del"
                 />
               </RibbonButtonStack>
@@ -523,16 +526,19 @@ export const Ribbon = memo(function Ribbon({ onOpenBackstage }: RibbonProps) {
                   icon={<CheckSquare size={14} />}
                   label="Select All"
                   onClick={selectAll}
+                  disabled={isSheetMode}
                 />
                 <RibbonSmallButton
                   icon={<XSquare size={14} />}
                   label="Deselect"
                   onClick={deselectAll}
+                  disabled={isSheetMode}
                 />
                 <RibbonSmallButton
                   icon={<Search size={14} />}
                   label="Find/Replace"
                   onClick={() => setFindReplaceDialogOpen(true)}
+                  disabled={isSheetMode}
                   shortcut="Ctrl+H"
                 />
               </RibbonButtonStack>
@@ -546,6 +552,7 @@ export const Ribbon = memo(function Ribbon({ onOpenBackstage }: RibbonProps) {
                   label="Line"
                   onClick={() => switchToDrawingTool('line')}
                   active={activeTool === 'line'}
+                  disabled={isSheetMode}
                   shortcut="LI"
                 />
                 <RibbonMediumButton
@@ -553,6 +560,7 @@ export const Ribbon = memo(function Ribbon({ onOpenBackstage }: RibbonProps) {
                   label="Polyline"
                   onClick={() => switchToDrawingTool('polyline')}
                   active={activeTool === 'polyline'}
+                  disabled={isSheetMode}
                   shortcut="PL"
                 />
               </RibbonMediumButtonStack>
@@ -562,6 +570,7 @@ export const Ribbon = memo(function Ribbon({ onOpenBackstage }: RibbonProps) {
                   label="Rectangle"
                   onClick={() => switchToDrawingTool('rectangle')}
                   active={activeTool === 'rectangle'}
+                  disabled={isSheetMode}
                   shortcut="RC"
                 />
                 <RibbonMediumButton
@@ -569,6 +578,7 @@ export const Ribbon = memo(function Ribbon({ onOpenBackstage }: RibbonProps) {
                   label="Circle"
                   onClick={() => switchToDrawingTool('circle')}
                   active={activeTool === 'circle'}
+                  disabled={isSheetMode}
                   shortcut="CI"
                 />
               </RibbonMediumButtonStack>
@@ -578,6 +588,7 @@ export const Ribbon = memo(function Ribbon({ onOpenBackstage }: RibbonProps) {
                   label="Arc"
                   onClick={() => switchToDrawingTool('arc')}
                   active={activeTool === 'arc'}
+                  disabled={isSheetMode}
                   shortcut="AR"
                 />
                 <RibbonMediumButton
@@ -585,6 +596,7 @@ export const Ribbon = memo(function Ribbon({ onOpenBackstage }: RibbonProps) {
                   label="Ellipse"
                   onClick={() => switchToDrawingTool('ellipse')}
                   active={activeTool === 'ellipse'}
+                  disabled={isSheetMode}
                   shortcut="EL"
                 />
               </RibbonMediumButtonStack>
@@ -594,6 +606,7 @@ export const Ribbon = memo(function Ribbon({ onOpenBackstage }: RibbonProps) {
                   label="Spline"
                   onClick={() => switchToDrawingTool('spline')}
                   active={activeTool === 'spline'}
+                  disabled={isSheetMode}
                   shortcut="SP"
                 />
                 <RibbonMediumButton
@@ -601,6 +614,7 @@ export const Ribbon = memo(function Ribbon({ onOpenBackstage }: RibbonProps) {
                   label="Filled Region"
                   onClick={() => switchToDrawingTool('hatch')}
                   active={activeTool === 'hatch'}
+                  disabled={isSheetMode}
                 />
               </RibbonMediumButtonStack>
               <RibbonMediumButtonStack>
@@ -609,6 +623,7 @@ export const Ribbon = memo(function Ribbon({ onOpenBackstage }: RibbonProps) {
                   label="Text"
                   onClick={() => switchToDrawingTool('text')}
                   active={activeTool === 'text'}
+                  disabled={isSheetMode}
                   shortcut="TX"
                 />
                 <RibbonMediumButton
@@ -616,6 +631,7 @@ export const Ribbon = memo(function Ribbon({ onOpenBackstage }: RibbonProps) {
                   label="Image"
                   onClick={() => switchToDrawingTool('image')}
                   active={activeTool === 'image'}
+                  disabled={isSheetMode}
                   shortcut="IM"
                 />
               </RibbonMediumButtonStack>
@@ -631,6 +647,7 @@ export const Ribbon = memo(function Ribbon({ onOpenBackstage }: RibbonProps) {
                   switchToDrawingTool('dimension');
                 }}
                 active={activeTool === 'dimension' && dimensionMode === 'aligned'}
+                disabled={isSheetMode}
                 shortcut="DI"
               />
               <RibbonButtonStack>
@@ -642,6 +659,7 @@ export const Ribbon = memo(function Ribbon({ onOpenBackstage }: RibbonProps) {
                     switchToDrawingTool('dimension');
                   }}
                   active={activeTool === 'dimension' && dimensionMode === 'linear'}
+                  disabled={isSheetMode}
                   shortcut="DL"
                 />
                 <RibbonSmallButton
@@ -652,6 +670,7 @@ export const Ribbon = memo(function Ribbon({ onOpenBackstage }: RibbonProps) {
                     switchToDrawingTool('dimension');
                   }}
                   active={activeTool === 'dimension' && dimensionMode === 'angular'}
+                  disabled={isSheetMode}
                   shortcut="DA"
                 />
               </RibbonButtonStack>
@@ -664,6 +683,7 @@ export const Ribbon = memo(function Ribbon({ onOpenBackstage }: RibbonProps) {
                     switchToDrawingTool('dimension');
                   }}
                   active={activeTool === 'dimension' && dimensionMode === 'radius'}
+                  disabled={isSheetMode}
                   shortcut="DR"
                 />
                 <RibbonSmallButton
@@ -674,6 +694,7 @@ export const Ribbon = memo(function Ribbon({ onOpenBackstage }: RibbonProps) {
                     switchToDrawingTool('dimension');
                   }}
                   active={activeTool === 'dimension' && dimensionMode === 'diameter'}
+                  disabled={isSheetMode}
                   shortcut="DD"
                 />
               </RibbonButtonStack>
@@ -681,8 +702,10 @@ export const Ribbon = memo(function Ribbon({ onOpenBackstage }: RibbonProps) {
                 <RibbonSmallButton
                   icon={<LeaderIcon size={14} />}
                   label="Leader"
-                  onClick={() => {}}
-                  disabled={true}
+                  onClick={() => switchToDrawingTool('leader')}
+                  active={activeTool === 'leader'}
+                  disabled={isSheetMode}
+                  shortcut="LE"
                 />
                 <RibbonSmallButton
                   icon={<TableIcon size={14} />}
@@ -697,6 +720,13 @@ export const Ribbon = memo(function Ribbon({ onOpenBackstage }: RibbonProps) {
                   disabled={true}
                 />
               </RibbonButtonStack>
+              <RibbonButton
+                icon={<Type size={24} />}
+                label="Text Styles"
+                onClick={() => setTextStyleManagerOpen(true)}
+                disabled={isSheetMode}
+                tooltip="Manage text styles"
+              />
             </RibbonGroup>
 
             {/* Modify Group */}
@@ -707,6 +737,7 @@ export const Ribbon = memo(function Ribbon({ onOpenBackstage }: RibbonProps) {
                   label="Move"
                   onClick={() => switchToolAndCancelCommand('move')}
                   active={activeTool === 'move'}
+                  disabled={isSheetMode}
                   shortcut="MV"
                 />
                 <RibbonSmallButton
@@ -714,6 +745,7 @@ export const Ribbon = memo(function Ribbon({ onOpenBackstage }: RibbonProps) {
                   label="Copy"
                   onClick={() => switchToolAndCancelCommand('copy')}
                   active={activeTool === 'copy'}
+                  disabled={isSheetMode}
                   shortcut="CO"
                 />
                 <RibbonSmallButton
@@ -721,6 +753,7 @@ export const Ribbon = memo(function Ribbon({ onOpenBackstage }: RibbonProps) {
                   label="Rotate"
                   onClick={() => switchToolAndCancelCommand('rotate')}
                   active={activeTool === 'rotate'}
+                  disabled={isSheetMode}
                   shortcut="RO"
                 />
               </RibbonButtonStack>
@@ -730,6 +763,7 @@ export const Ribbon = memo(function Ribbon({ onOpenBackstage }: RibbonProps) {
                   label="Mirror"
                   onClick={() => switchToolAndCancelCommand('mirror')}
                   active={activeTool === 'mirror'}
+                  disabled={isSheetMode}
                   shortcut="MM"
                 />
                 <RibbonSmallButton
@@ -737,12 +771,14 @@ export const Ribbon = memo(function Ribbon({ onOpenBackstage }: RibbonProps) {
                   label="Array"
                   onClick={() => switchToolAndCancelCommand('array')}
                   active={activeTool === 'array'}
+                  disabled={isSheetMode}
                 />
                 <RibbonSmallButton
                   icon={<ScaleIcon size={14} />}
                   label="Scale"
                   onClick={() => switchToolAndCancelCommand('scale')}
                   active={activeTool === 'scale'}
+                  disabled={isSheetMode}
                   shortcut="RE"
                 />
               </RibbonButtonStack>
@@ -782,6 +818,7 @@ export const Ribbon = memo(function Ribbon({ onOpenBackstage }: RibbonProps) {
                   label="Chamfer"
                   onClick={() => switchToolAndCancelCommand('chamfer')}
                   active={activeTool === 'chamfer'}
+                  disabled={isSheetMode}
                 />
                 <RibbonSmallButton
                   icon={<SplitIcon size={14} />}
@@ -845,13 +882,13 @@ export const Ribbon = memo(function Ribbon({ onOpenBackstage }: RibbonProps) {
                   icon={<ArrowUpToLine size={14} />}
                   label="Bring Front"
                   onClick={bringToFront}
-                  disabled={selectedShapeIds.length === 0}
+                  disabled={isSheetMode || selectedShapeIds.length === 0}
                 />
                 <RibbonSmallButton
                   icon={<ArrowUp size={14} />}
                   label="Bring Fwd"
                   onClick={bringForward}
-                  disabled={selectedShapeIds.length === 0}
+                  disabled={isSheetMode || selectedShapeIds.length === 0}
                 />
               </RibbonButtonStack>
               <RibbonButtonStack>
@@ -859,13 +896,13 @@ export const Ribbon = memo(function Ribbon({ onOpenBackstage }: RibbonProps) {
                   icon={<ArrowDown size={14} />}
                   label="Send Bwd"
                   onClick={sendBackward}
-                  disabled={selectedShapeIds.length === 0}
+                  disabled={isSheetMode || selectedShapeIds.length === 0}
                 />
                 <RibbonSmallButton
                   icon={<ArrowDownToLine size={14} />}
                   label="Send Back"
                   onClick={sendToBack}
-                  disabled={selectedShapeIds.length === 0}
+                  disabled={isSheetMode || selectedShapeIds.length === 0}
                 />
               </RibbonButtonStack>
             </RibbonGroup>
@@ -881,6 +918,7 @@ export const Ribbon = memo(function Ribbon({ onOpenBackstage }: RibbonProps) {
                 icon={<HatchIcon size={24} />}
                 label="Pattern Manager"
                 onClick={() => setPatternManagerOpen(true)}
+                disabled={isSheetMode}
                 tooltip="Manage hatch patterns"
               />
               <RibbonButton
@@ -902,7 +940,7 @@ export const Ribbon = memo(function Ribbon({ onOpenBackstage }: RibbonProps) {
                 icon={<Trash2 size={24} />}
                 label="Delete"
                 onClick={deleteSelectedShapes}
-                disabled={selectedShapeIds.length === 0}
+                disabled={isSheetMode || selectedShapeIds.length === 0}
               />
             </RibbonGroup>
             {renderExtensionButtonsForTab('modify')}
@@ -917,7 +955,7 @@ export const Ribbon = memo(function Ribbon({ onOpenBackstage }: RibbonProps) {
                 icon={<SteelSectionIcon size={24} />}
                 label="Section"
                 onClick={openSectionDialog}
-                disabled={editorMode !== 'drawing'}
+                disabled={isSheetMode}
                 tooltip="Insert structural profile section"
                 shortcut="SE"
               />
@@ -928,7 +966,7 @@ export const Ribbon = memo(function Ribbon({ onOpenBackstage }: RibbonProps) {
                 icon={<BeamIcon size={24} />}
                 label="Beam"
                 onClick={openBeamDialog}
-                disabled={editorMode !== 'drawing'}
+                disabled={isSheetMode}
                 tooltip="Draw structural beam in plan view"
                 shortcut="BE"
               />

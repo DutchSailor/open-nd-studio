@@ -18,6 +18,7 @@ import type {
   SheetRevisionCloud,
 } from '../../types/sheet';
 import { generateId } from './types';
+import { CAD_DEFAULT_FONT } from '../../constants/cadDefaults';
 
 // Re-export annotation types for convenience
 export type {
@@ -228,7 +229,7 @@ export const createAnnotationSlice = (
       position,
       content,
       fontSize: options.fontSize ?? 3.5,
-      fontFamily: options.fontFamily ?? 'Arial',
+      fontFamily: options.fontFamily ?? CAD_DEFAULT_FONT,
       rotation: options.rotation ?? 0,
       alignment: options.alignment ?? 'left',
       color: options.color ?? '#000000',

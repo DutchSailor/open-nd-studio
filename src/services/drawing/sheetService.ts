@@ -18,6 +18,7 @@ import type {
   PaperSize,
   PaperOrientation,
 } from '../../types/geometry';
+import { CAD_DEFAULT_FONT } from '../../constants/cadDefaults';
 
 /**
  * Standard paper sizes in mm
@@ -77,18 +78,18 @@ export function generateViewportId(): string {
  */
 function createDefaultTitleBlockFields(): TitleBlockField[] {
   return [
-    { id: 'project', label: 'Project', value: '', x: 5, y: 3, width: 85, height: 12, fontSize: 10, fontFamily: 'Arial', align: 'left' },
-    { id: 'client', label: 'Client', value: '', x: 95, y: 3, width: 80, height: 12, fontSize: 10, fontFamily: 'Arial', align: 'left' },
-    { id: 'title', label: 'Drawing Title', value: '', x: 5, y: 18, width: 120, height: 12, fontSize: 12, fontFamily: 'Arial', align: 'left' },
-    { id: 'number', label: 'Drawing No.', value: '', x: 130, y: 18, width: 45, height: 12, fontSize: 10, fontFamily: 'Arial', align: 'left' },
-    { id: 'scale', label: 'Scale', value: 'As Noted', x: 5, y: 33, width: 30, height: 12, fontSize: 9, fontFamily: 'Arial', align: 'left' },
-    { id: 'date', label: 'Date', value: new Date().toISOString().split('T')[0], x: 40, y: 33, width: 30, height: 12, fontSize: 9, fontFamily: 'Arial', align: 'left' },
-    { id: 'drawnBy', label: 'Drawn', value: '', x: 75, y: 33, width: 30, height: 12, fontSize: 9, fontFamily: 'Arial', align: 'left' },
-    { id: 'checkedBy', label: 'Checked', value: '', x: 110, y: 33, width: 30, height: 12, fontSize: 9, fontFamily: 'Arial', align: 'left' },
-    { id: 'approvedBy', label: 'Approved', value: '', x: 145, y: 33, width: 30, height: 12, fontSize: 9, fontFamily: 'Arial', align: 'left' },
-    { id: 'sheetNo', label: 'Sheet', value: '1', x: 5, y: 48, width: 75, height: 12, fontSize: 10, fontFamily: 'Arial', align: 'left' },
-    { id: 'revision', label: 'Revision', value: '-', x: 85, y: 48, width: 40, height: 12, fontSize: 10, fontFamily: 'Arial', align: 'left' },
-    { id: 'status', label: 'Status', value: 'Draft', x: 130, y: 48, width: 45, height: 12, fontSize: 10, fontFamily: 'Arial', align: 'left' },
+    { id: 'project', label: 'Project', value: '', x: 5, y: 3, width: 85, height: 12, fontSize: 10, fontFamily: CAD_DEFAULT_FONT, align: 'left' },
+    { id: 'client', label: 'Client', value: '', x: 95, y: 3, width: 80, height: 12, fontSize: 10, fontFamily: CAD_DEFAULT_FONT, align: 'left' },
+    { id: 'title', label: 'Drawing Title', value: '', x: 5, y: 18, width: 120, height: 12, fontSize: 12, fontFamily: CAD_DEFAULT_FONT, align: 'left' },
+    { id: 'number', label: 'Drawing No.', value: '', x: 130, y: 18, width: 45, height: 12, fontSize: 10, fontFamily: CAD_DEFAULT_FONT, align: 'left' },
+    { id: 'scale', label: 'Scale', value: 'As Noted', x: 5, y: 33, width: 30, height: 12, fontSize: 9, fontFamily: CAD_DEFAULT_FONT, align: 'left' },
+    { id: 'date', label: 'Date', value: new Date().toISOString().split('T')[0], x: 40, y: 33, width: 30, height: 12, fontSize: 9, fontFamily: CAD_DEFAULT_FONT, align: 'left' },
+    { id: 'drawnBy', label: 'Drawn', value: '', x: 75, y: 33, width: 30, height: 12, fontSize: 9, fontFamily: CAD_DEFAULT_FONT, align: 'left' },
+    { id: 'checkedBy', label: 'Checked', value: '', x: 110, y: 33, width: 30, height: 12, fontSize: 9, fontFamily: CAD_DEFAULT_FONT, align: 'left' },
+    { id: 'approvedBy', label: 'Approved', value: '', x: 145, y: 33, width: 30, height: 12, fontSize: 9, fontFamily: CAD_DEFAULT_FONT, align: 'left' },
+    { id: 'sheetNo', label: 'Sheet', value: '1', x: 5, y: 48, width: 75, height: 12, fontSize: 10, fontFamily: CAD_DEFAULT_FONT, align: 'left' },
+    { id: 'revision', label: 'Revision', value: '-', x: 85, y: 48, width: 40, height: 12, fontSize: 10, fontFamily: CAD_DEFAULT_FONT, align: 'left' },
+    { id: 'status', label: 'Status', value: 'Draft', x: 130, y: 48, width: 45, height: 12, fontSize: 10, fontFamily: CAD_DEFAULT_FONT, align: 'left' },
   ];
 }
 

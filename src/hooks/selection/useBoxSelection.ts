@@ -50,7 +50,7 @@ interface Edge { x1: number; y1: number; x2: number; y2: number; }
 /**
  * Decompose a shape into line segment edges for precise intersection testing.
  */
-function getShapeEdges(shape: Shape): Edge[] {
+function getShapeEdges(shape: Shape, drawingScale?: number): Edge[] {
   switch (shape.type) {
     case 'line':
       return [{ x1: shape.start.x, y1: shape.start.y, x2: shape.end.x, y2: shape.end.y }];
@@ -157,61 +157,85 @@ function getShapeEdges(shape: Shape): Edge[] {
     case 'text': {
       // Get text bounds and rotation
       const textShape = shape as TextShape;
-      const textBounds = getShapeBounds(shape);
-      if (!textBounds) return [];
+      const rawTextBounds = getTextBounds(textShape, drawingScale);
+      if (!rawTextBounds) return [];
 
+      const edges: { x1: number; y1: number; x2: number; y2: number }[] = [];
       const rotation = textShape.rotation || 0;
       const pos = textShape.position;
 
       if (rotation === 0) {
         // Unrotated text - use bounds directly
         const corners = [
-          { x: textBounds.minX, y: textBounds.minY },
-          { x: textBounds.maxX, y: textBounds.minY },
-          { x: textBounds.maxX, y: textBounds.maxY },
-          { x: textBounds.minX, y: textBounds.maxY },
+          { x: rawTextBounds.minX, y: rawTextBounds.minY },
+          { x: rawTextBounds.maxX, y: rawTextBounds.minY },
+          { x: rawTextBounds.maxX, y: rawTextBounds.maxY },
+          { x: rawTextBounds.minX, y: rawTextBounds.maxY },
         ];
-        return [
+        edges.push(
           { x1: corners[0].x, y1: corners[0].y, x2: corners[1].x, y2: corners[1].y },
           { x1: corners[1].x, y1: corners[1].y, x2: corners[2].x, y2: corners[2].y },
           { x1: corners[2].x, y1: corners[2].y, x2: corners[3].x, y2: corners[3].y },
           { x1: corners[3].x, y1: corners[3].y, x2: corners[0].x, y2: corners[0].y },
+        );
+      } else {
+        const cos = Math.cos(rotation);
+        const sin = Math.sin(rotation);
+
+        const localCorners = [
+          { x: rawTextBounds.minX, y: rawTextBounds.minY },
+          { x: rawTextBounds.maxX, y: rawTextBounds.minY },
+          { x: rawTextBounds.maxX, y: rawTextBounds.maxY },
+          { x: rawTextBounds.minX, y: rawTextBounds.maxY },
         ];
+
+        const rotatedCorners = localCorners.map(c => {
+          const dx = c.x - pos.x;
+          const dy = c.y - pos.y;
+          return {
+            x: pos.x + dx * cos - dy * sin,
+            y: pos.y + dx * sin + dy * cos,
+          };
+        });
+
+        edges.push(
+          { x1: rotatedCorners[0].x, y1: rotatedCorners[0].y, x2: rotatedCorners[1].x, y2: rotatedCorners[1].y },
+          { x1: rotatedCorners[1].x, y1: rotatedCorners[1].y, x2: rotatedCorners[2].x, y2: rotatedCorners[2].y },
+          { x1: rotatedCorners[2].x, y1: rotatedCorners[2].y, x2: rotatedCorners[3].x, y2: rotatedCorners[3].y },
+          { x1: rotatedCorners[3].x, y1: rotatedCorners[3].y, x2: rotatedCorners[0].x, y2: rotatedCorners[0].y },
+        );
       }
 
-      // For rotated text, getShapeBounds already returns the axis-aligned bounding box
-      // of the rotated text. We need to get the actual rotated corners from the
-      // original (unrotated) text bounds.
-      const unrotatedBounds = getTextBounds(textShape);
-      if (!unrotatedBounds) return [];
+      // Add leader line edges for box selection
+      if (textShape.leaderPoints && textShape.leaderPoints.length > 0) {
+        const underlineY = rawTextBounds.maxY;
+        const underlineLeft = rawTextBounds.minX;
+        const underlineRight = rawTextBounds.maxX;
 
-      const cos = Math.cos(rotation);
-      const sin = Math.sin(rotation);
+        // Underline edge
+        edges.push({ x1: underlineLeft, y1: underlineY, x2: underlineRight, y2: underlineY });
 
-      // Get corners of unrotated text box
-      const localCorners = [
-        { x: unrotatedBounds.minX, y: unrotatedBounds.minY },
-        { x: unrotatedBounds.maxX, y: unrotatedBounds.minY },
-        { x: unrotatedBounds.maxX, y: unrotatedBounds.maxY },
-        { x: unrotatedBounds.minX, y: unrotatedBounds.maxY },
-      ];
+        for (const arrowTip of textShape.leaderPoints) {
+          const distToLeft = Math.hypot(arrowTip.x - underlineLeft, arrowTip.y - underlineY);
+          const distToRight = Math.hypot(arrowTip.x - underlineRight, arrowTip.y - underlineY);
+          const connectEnd = distToLeft < distToRight
+            ? { x: underlineLeft, y: underlineY }
+            : { x: underlineRight, y: underlineY };
+          edges.push({ x1: connectEnd.x, y1: connectEnd.y, x2: arrowTip.x, y2: arrowTip.y });
+        }
+      }
+      if (textShape.leaders) {
+        for (const leader of textShape.leaders) {
+          for (let i = 0; i < leader.points.length - 1; i++) {
+            edges.push({
+              x1: leader.points[i].x, y1: leader.points[i].y,
+              x2: leader.points[i + 1].x, y2: leader.points[i + 1].y,
+            });
+          }
+        }
+      }
 
-      // Rotate corners around text position
-      const rotatedCorners = localCorners.map(c => {
-        const dx = c.x - pos.x;
-        const dy = c.y - pos.y;
-        return {
-          x: pos.x + dx * cos - dy * sin,
-          y: pos.y + dx * sin + dy * cos,
-        };
-      });
-
-      return [
-        { x1: rotatedCorners[0].x, y1: rotatedCorners[0].y, x2: rotatedCorners[1].x, y2: rotatedCorners[1].y },
-        { x1: rotatedCorners[1].x, y1: rotatedCorners[1].y, x2: rotatedCorners[2].x, y2: rotatedCorners[2].y },
-        { x1: rotatedCorners[2].x, y1: rotatedCorners[2].y, x2: rotatedCorners[3].x, y2: rotatedCorners[3].y },
-        { x1: rotatedCorners[3].x, y1: rotatedCorners[3].y, x2: rotatedCorners[0].x, y2: rotatedCorners[0].y },
-      ];
+      return edges;
     }
 
     default:
@@ -233,7 +257,7 @@ function shapeCrossesRect(shape: Shape, minX: number, minY: number, maxX: number
   }
 
   // Helper: get edges of a shape as line segments for precise crossing test
-  const edges = getShapeEdges(shape);
+  const edges = getShapeEdges(shape, drawingScale);
   if (edges.length > 0) {
     // Check if any edge crosses the selection rectangle
     for (const edge of edges) {

@@ -272,13 +272,16 @@ function getShapeBoundsSimple(shape: Shape): { minX: number; minY: number; maxX:
         maxX: Math.max(...shape.points.map(p => p.x)),
         maxY: Math.max(...shape.points.map(p => p.y)),
       };
-    case 'text':
+    case 'text': {
+      // For annotation text, fontSize is in paper mm — approximate drawing units
+      const effectiveSize = shape.isModelText ? shape.fontSize : shape.fontSize / 0.02;
       return {
         minX: shape.position.x,
-        minY: shape.position.y - shape.fontSize,
-        maxX: shape.position.x + shape.text.length * shape.fontSize * 0.6,
+        minY: shape.position.y - effectiveSize,
+        maxX: shape.position.x + shape.text.length * effectiveSize * 0.6,
         maxY: shape.position.y,
       };
+    }
     case 'point':
       return {
         minX: shape.position.x,

@@ -20,6 +20,7 @@ const TOOL_DISPLAY_NAMES: Record<ToolType, string> = {
   'ellipse': 'Ellipse',
   'spline': 'Spline',
   'text': 'Text',
+  'leader': 'Leader',
   'dimension': 'Dimension',
   'filled-region': 'Filled Region',
   'insulation': 'Insulation',

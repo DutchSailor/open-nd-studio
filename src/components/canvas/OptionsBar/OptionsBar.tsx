@@ -1,7 +1,7 @@
 import { memo, useCallback, useState, useRef, useEffect } from 'react';
 import { useAppStore } from '../../../state/appStore';
 import type { DimensionType } from '../../../types/dimension';
-import type { HatchPatternType } from '../../../types/geometry';
+import type { HatchPatternType, LeaderArrowType } from '../../../types/geometry';
 import { BUILTIN_PATTERNS } from '../../../types/hatch';
 import { PatternPreview } from '../../editors/PatternManager/PatternPreview';
 
@@ -370,13 +370,73 @@ function DimensionOptions() {
 function TextOptions() {
   const defaultTextStyle = useAppStore((s) => s.defaultTextStyle);
   const updateDefaultTextStyle = useAppStore((s) => s.updateDefaultTextStyle);
+  const textStyles = useAppStore((s) => s.textStyles);
+  const activeTextStyleId = useAppStore((s) => s.activeTextStyleId);
+  const setActiveTextStyle = useAppStore((s) => s.setActiveTextStyle);
+  const setTextStyleManagerOpen = useAppStore((s) => s.setTextStyleManagerOpen);
+
+  const annotationStyles = textStyles.filter(s => !s.isModelText);
+  const modelStyles = textStyles.filter(s => s.isModelText);
+
+  const handleStyleChange = (styleId: string) => {
+    if (styleId === '__manage__') {
+      setTextStyleManagerOpen(true);
+      return;
+    }
+    if (styleId === '') {
+      setActiveTextStyle(null);
+      return;
+    }
+    setActiveTextStyle(styleId);
+    // Sync the selected style's properties to defaultTextStyle
+    const style = textStyles.find(s => s.id === styleId);
+    if (style) {
+      updateDefaultTextStyle({
+        fontFamily: style.fontFamily,
+        fontSize: style.fontSize,
+        bold: style.bold,
+        italic: style.italic,
+        underline: style.underline,
+        alignment: style.alignment,
+        color: style.color,
+      });
+    }
+  };
 
   return (
     <>
+      {/* Text Style selector */}
+      <label className="flex items-center gap-1">
+        <span className="text-cad-text-dim">Style:</span>
+        <select
+          className="bg-cad-bg border border-cad-border text-cad-text px-1 py-0 text-xs h-5 outline-none focus:border-cad-accent max-w-[140px]"
+          value={activeTextStyleId || ''}
+          onChange={(e) => handleStyleChange(e.target.value)}
+        >
+          <option value="">-- Custom --</option>
+          {annotationStyles.length > 0 && (
+            <optgroup label="Annotation Text">
+              {annotationStyles.map(s => (
+                <option key={s.id} value={s.id}>{s.name}</option>
+              ))}
+            </optgroup>
+          )}
+          {modelStyles.length > 0 && (
+            <optgroup label="Model Text">
+              {modelStyles.map(s => (
+                <option key={s.id} value={s.id}>{s.name}</option>
+              ))}
+            </optgroup>
+          )}
+          <option value="__manage__">Manage Styles...</option>
+        </select>
+      </label>
+      <Separator />
       <OptionSelect
         label="Font"
         value={defaultTextStyle.fontFamily}
         options={[
+          { value: 'Osifont', label: 'Osifont' },
           { value: 'Arial', label: 'Arial' },
           { value: 'Times New Roman', label: 'Times' },
           { value: 'Courier New', label: 'Courier' },
@@ -387,9 +447,9 @@ function TextOptions() {
       />
       <Separator />
       <OptionNumberInput
-        label="Size"
+        label="Text Height"
         value={defaultTextStyle.fontSize}
-        onChange={(v) => updateDefaultTextStyle({ fontSize: v ?? 10 })}
+        onChange={(v) => updateDefaultTextStyle({ fontSize: v ?? 2.5 })}
         min={1}
         step={1}
         width="w-10"
@@ -797,6 +857,51 @@ function HatchOptions() {
 }
 
 /**
+ * Leader tool options
+ */
+function LeaderOptions() {
+  const defaultLeaderConfig = useAppStore((s) => s.defaultLeaderConfig);
+  const updateDefaultLeaderConfig = useAppStore((s) => s.updateDefaultLeaderConfig);
+
+  return (
+    <>
+      <OptionSelect<LeaderArrowType>
+        label="Arrow"
+        value={defaultLeaderConfig.arrowType}
+        options={[
+          { value: 'filled-arrow', label: 'Filled Arrow' },
+          { value: 'arrow', label: 'Open Arrow' },
+          { value: 'dot', label: 'Dot' },
+          { value: 'slash', label: 'Slash' },
+          { value: 'none', label: 'None' },
+        ]}
+        onChange={(v) => updateDefaultLeaderConfig({ arrowType: v })}
+      />
+      <OptionNumberInput
+        label="Arrow Size"
+        value={defaultLeaderConfig.arrowSize}
+        min={0.5}
+        step={0.5}
+        onChange={(v) => updateDefaultLeaderConfig({ arrowSize: v ?? 2.5 })}
+      />
+      <OptionCheckbox
+        label="Underline"
+        checked={defaultLeaderConfig.hasLanding}
+        onChange={(v) => updateDefaultLeaderConfig({ hasLanding: v })}
+      />
+      {Separator()}
+      <OptionNumberInput
+        label="Line Weight"
+        value={defaultLeaderConfig.lineWeight}
+        min={0.05}
+        step={0.05}
+        onChange={(v) => updateDefaultLeaderConfig({ lineWeight: v ?? 0.18 })}
+      />
+    </>
+  );
+}
+
+/**
  * Options Bar - Always visible below the Ribbon.
  * Shows per-tool settings based on the active tool.
  */
@@ -825,6 +930,8 @@ export const OptionsBar = memo(function OptionsBar() {
         return <DimensionOptions />;
       case 'text':
         return <TextOptions />;
+      case 'leader':
+        return <LeaderOptions />;
       case 'move':
         return <MoveOptions />;
       case 'copy':
