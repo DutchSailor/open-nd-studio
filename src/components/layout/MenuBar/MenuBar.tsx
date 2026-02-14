@@ -172,6 +172,7 @@ export const MenuBar = memo(function MenuBar({ onSendFeedback }: MenuBarProps) {
 
   const undo = useAppStore(s => s.undo);
   const redo = useAppStore(s => s.redo);
+  const openSettings = useAppStore(s => s.openSettings);
 
   const { handleNew, handleOpen, handleSave, handleSaveAs, handlePrint } = useFileOperations();
 
@@ -183,6 +184,31 @@ export const MenuBar = memo(function MenuBar({ onSendFeedback }: MenuBarProps) {
       <div className="flex items-center gap-0.5 px-2">
         <img src="/logo.svg" alt="Open 2D Studio" className="w-5 h-5" draggable={false} />
         <div className="w-px h-4 bg-cad-border mx-0.5" />
+        {/* Undo / Redo — most used, so placed first */}
+        <button
+          onClick={undo}
+          disabled={!canUndo}
+          className={`p-1.5 rounded transition-colors cursor-default ${canUndo ? 'hover:bg-cad-border text-cad-text-dim hover:text-cad-text' : 'text-cad-text-dim opacity-40 !cursor-not-allowed'}`}
+          title="Undo (Ctrl+Z)"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M3 7v6h6"/>
+            <path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/>
+          </svg>
+        </button>
+        <button
+          onClick={redo}
+          disabled={!canRedo}
+          className={`p-1.5 rounded transition-colors cursor-default ${canRedo ? 'hover:bg-cad-border text-cad-text-dim hover:text-cad-text' : 'text-cad-text-dim opacity-40 !cursor-not-allowed'}`}
+          title="Redo (Ctrl+Y)"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M21 7v6h-6"/>
+            <path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3l3 2.7"/>
+          </svg>
+        </button>
+        <div className="w-px h-4 bg-cad-border mx-0.5" />
+        {/* File operations */}
         <button onClick={handleNew} className={qatBtn} title="New (Ctrl+N)">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
@@ -220,26 +246,11 @@ export const MenuBar = memo(function MenuBar({ onSendFeedback }: MenuBarProps) {
           </svg>
         </button>
         <div className="w-px h-4 bg-cad-border mx-0.5" />
-        <button
-          onClick={undo}
-          disabled={!canUndo}
-          className={`p-1.5 rounded transition-colors cursor-default ${canUndo ? 'hover:bg-cad-border text-cad-text-dim hover:text-cad-text' : 'text-cad-text-dim opacity-40 !cursor-not-allowed'}`}
-          title="Undo (Ctrl+Z)"
-        >
+        {/* Settings */}
+        <button onClick={() => openSettings()} className={qatBtn} title="Settings">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M3 7v6h6"/>
-            <path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/>
-          </svg>
-        </button>
-        <button
-          onClick={redo}
-          disabled={!canRedo}
-          className={`p-1.5 rounded transition-colors cursor-default ${canRedo ? 'hover:bg-cad-border text-cad-text-dim hover:text-cad-text' : 'text-cad-text-dim opacity-40 !cursor-not-allowed'}`}
-          title="Redo (Ctrl+Y)"
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M21 7v6h-6"/>
-            <path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3l3 2.7"/>
+            <circle cx="12" cy="12" r="3"/>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
           </svg>
         </button>
       </div>

@@ -4,6 +4,8 @@
 
 import { useEffect, useRef } from 'react';
 import type { CustomHatchPattern, LineFamily } from '../../../types/hatch';
+import { isSvgHatchPattern } from '../../../types/hatch';
+import { svgToImage } from '../../../services/export/svgPatternService';
 
 interface PatternPreviewProps {
   pattern: CustomHatchPattern;
@@ -17,6 +19,10 @@ interface PatternPreviewProps {
 /**
  * Renders a single line family within the preview bounds
  */
+/** Max number of lines/dots per family to prevent freezing at extreme scales */
+const MAX_LINES = 500;
+const MAX_DOTS = 10000;
+
 function renderLineFamily(
   ctx: CanvasRenderingContext2D,
   family: LineFamily,
@@ -29,7 +35,7 @@ function renderLineFamily(
   // Skip if no spacing defined
   if (deltaY <= 0) return;
 
-  const spacing = deltaY * patternScale;
+  const spacing = Math.max(1, deltaY * patternScale);
   const lineWidth = (strokeWidth || 1) * patternScale;
   const angleRad = (angle * Math.PI) / 180;
 
@@ -38,7 +44,7 @@ function renderLineFamily(
 
   // Calculate how many lines we need to cover the preview area
   const diagonal = Math.sqrt(bounds.width * bounds.width + bounds.height * bounds.height);
-  const numLines = Math.ceil(diagonal / spacing) + 2;
+  const numLines = Math.min(MAX_LINES, Math.ceil(diagonal / spacing) + 2);
 
   // Center point of the preview
   const cx = bounds.width / 2;
@@ -62,9 +68,9 @@ function renderLineFamily(
     const scaledDashes = dashPattern.map(d => Math.abs(d) * patternScale);
     ctx.setLineDash(scaledDashes);
   } else if (dashPattern && dashPattern.length === 1 && dashPattern[0] === 0) {
-    // Dots pattern - draw circles instead of lines
-    ctx.restore();
+    // Dots pattern - draw circles instead of lines (keep clip active)
     renderDots(ctx, bounds, spacing, color, patternScale);
+    ctx.restore();
     return;
   }
 
@@ -100,11 +106,14 @@ function renderDots(
   scale: number
 ): void {
   const dotRadius = Math.max(1, scale);
+  const safeSpacing = Math.max(1, spacing);
 
   ctx.fillStyle = color;
 
-  for (let x = spacing / 2; x < bounds.width; x += spacing) {
-    for (let y = spacing / 2; y < bounds.height; y += spacing) {
+  let count = 0;
+  for (let x = safeSpacing / 2; x < bounds.width; x += safeSpacing) {
+    for (let y = safeSpacing / 2; y < bounds.height; y += safeSpacing) {
+      if (++count > MAX_DOTS) return;
       ctx.beginPath();
       ctx.arc(x, y, dotRadius, 0, Math.PI * 2);
       ctx.fill();
@@ -130,8 +139,48 @@ export function PatternPreview({
     if (!ctx) return;
 
     // Clear canvas
+    ctx.clearRect(0, 0, width, height);
     ctx.fillStyle = backgroundColor;
     ctx.fillRect(0, 0, width, height);
+
+    // Handle SVG-based patterns
+    if (isSvgHatchPattern(pattern)) {
+      let cancelled = false;
+      svgToImage(pattern.svgTile).then(img => {
+        if (cancelled) return;
+        // Create a tiled pattern from the SVG image
+        const tileCanvas = document.createElement('canvas');
+        const tileW = pattern.tileWidth * scale;
+        const tileH = pattern.tileHeight * scale;
+        tileCanvas.width = Math.max(1, tileW);
+        tileCanvas.height = Math.max(1, tileH);
+        const tileCtx = tileCanvas.getContext('2d');
+        if (!tileCtx) return;
+
+        tileCtx.drawImage(img, 0, 0, tileW, tileH);
+        const canvasPattern = ctx.createPattern(tileCanvas, 'repeat');
+        if (canvasPattern) {
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, width, height);
+          ctx.fillStyle = canvasPattern;
+          ctx.fillRect(0, 0, width, height);
+        }
+
+        // Draw border
+        ctx.strokeStyle = lineColor;
+        ctx.lineWidth = 1;
+        ctx.globalAlpha = 0.3;
+        ctx.strokeRect(0, 0, width, height);
+        ctx.globalAlpha = 1;
+      }).catch(() => {
+        // Fallback: show placeholder
+        ctx.fillStyle = '#666';
+        ctx.font = '10px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('SVG', width / 2, height / 2 + 3);
+      });
+      return () => { cancelled = true; };
+    }
 
     // Handle solid fill
     if (pattern.id === 'solid' || pattern.lineFamilies.length === 0) {

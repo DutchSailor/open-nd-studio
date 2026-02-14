@@ -3,7 +3,7 @@
  */
 
 import type { Shape, DrawingPreview, CurrentStyle, Viewport } from '../types';
-import type { HatchShape, HatchPatternType, BeamShape, ImageShape } from '../../../types/geometry';
+import type { HatchShape, HatchPatternType, BeamShape, ImageShape, BlockDefinition, BlockInstanceShape } from '../../../types/geometry';
 import type { CustomHatchPattern, LineFamily, SvgHatchPattern } from '../../../types/hatch';
 import { BUILTIN_PATTERNS, isSvgHatchPattern } from '../../../types/hatch';
 import { BaseRenderer } from './BaseRenderer';
@@ -29,10 +29,14 @@ export class ShapeRenderer extends BaseRenderer {
   private previewSelectedIds: Set<string> = new Set();
   // Display lineweight: when false, all lines render at 1px screen width
   private _showLineweight: boolean = true;
+  // Whether to display rotation gizmo handles on selected shapes
+  private _showRotationGizmo: boolean = true;
   // Current viewport zoom (needed to compute 1-screen-pixel width in world coords)
   private _currentZoom: number = 1;
   // Cache for loaded image elements (keyed by shape ID)
   private imageCache: Map<string, HTMLImageElement> = new Map();
+  // Block definitions for rendering block instances
+  private blockDefinitions: Map<string, BlockDefinition> = new Map();
 
   constructor(ctx: CanvasRenderingContext2D, width: number = 0, height: number = 0, dpr?: number) {
     super(ctx, width, height, dpr);
@@ -57,10 +61,27 @@ export class ShapeRenderer extends BaseRenderer {
   }
 
   /**
+   * Set whether to display rotation gizmo handles on selected shapes
+   */
+  setShowRotationGizmo(show: boolean): void {
+    this._showRotationGizmo = show;
+  }
+
+  /**
    * Set the current viewport zoom so line widths can be computed correctly.
    */
   setZoom(zoom: number): void {
     this._currentZoom = zoom;
+  }
+
+  /**
+   * Set block definitions for rendering block instances
+   */
+  setBlockDefinitions(defs: BlockDefinition[]): void {
+    this.blockDefinitions.clear();
+    for (const def of defs) {
+      this.blockDefinitions.set(def.id, def);
+    }
   }
 
   /**
@@ -202,6 +223,9 @@ export class ShapeRenderer extends BaseRenderer {
       case 'image':
         this.drawImage(shape as ImageShape);
         break;
+      case 'block-instance':
+        this.drawBlockInstance(shape as BlockInstanceShape, isSelected, isHovered, invertColors);
+        break;
       default:
         break;
     }
@@ -273,6 +297,9 @@ export class ShapeRenderer extends BaseRenderer {
         break;
       case 'image':
         this.drawImage(shape as ImageShape);
+        break;
+      case 'block-instance':
+        this.drawBlockInstance(shape as BlockInstanceShape, false, false, invertColors);
         break;
     }
 
@@ -1704,45 +1731,12 @@ export class ShapeRenderer extends BaseRenderer {
     // Draw axis arrows on move handle
     this.drawAxisArrows({ x: centerX, y: midY }, zoom);
 
-    // Draw rotation handle above the text box
-    const rotationHandleDistance = 25 / zoom; // Distance from top of box to rotation handle
-    const rotationHandleY = topY - 2 - rotationHandleDistance;
-    const rotationHandleRadius = handleSize * 0.6;
-
-    // Draw connecting line from top center to rotation handle
-    ctx.strokeStyle = COLORS.selection;
-    ctx.lineWidth = 1 / zoom;
-    ctx.beginPath();
-    ctx.moveTo(centerX, topY - 2);
-    ctx.lineTo(centerX, rotationHandleY);
-    ctx.stroke();
-
-    // Draw circular rotation handle
-    ctx.fillStyle = '#90EE90'; // Light green for rotation
-    ctx.strokeStyle = COLORS.selectionHandleStroke;
-    ctx.beginPath();
-    ctx.arc(centerX, rotationHandleY, rotationHandleRadius, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
-
-    // Draw rotation arrow icon inside the handle
-    ctx.strokeStyle = '#006400'; // Dark green
-    ctx.lineWidth = 1.5 / zoom;
-    const iconRadius = rotationHandleRadius * 0.6;
-    ctx.beginPath();
-    ctx.arc(centerX, rotationHandleY, iconRadius, -Math.PI * 0.7, Math.PI * 0.3);
-    ctx.stroke();
-    // Arrowhead
-    const arrowTipAngle = Math.PI * 0.3;
-    const arrowTipX = centerX + iconRadius * Math.cos(arrowTipAngle);
-    const arrowTipY = rotationHandleY + iconRadius * Math.sin(arrowTipAngle);
-    const arrowHeadSize = 3 / zoom;
-    ctx.beginPath();
-    ctx.moveTo(arrowTipX, arrowTipY);
-    ctx.lineTo(arrowTipX - arrowHeadSize, arrowTipY - arrowHeadSize);
-    ctx.moveTo(arrowTipX, arrowTipY);
-    ctx.lineTo(arrowTipX + arrowHeadSize * 0.5, arrowTipY - arrowHeadSize);
-    ctx.stroke();
+    // Draw rotation handle above the text box (guarded by rotation gizmo toggle)
+    if (this._showRotationGizmo) {
+      const rotationHandleDistance = 25 / zoom;
+      const rotationHandleY = topY - 2 - rotationHandleDistance;
+      this.drawRotationGizmo(centerX, topY - 2, centerX, rotationHandleY, zoom);
+    }
 
     // Draw leader line selection highlights and grip handles
     if ((shape.leaderPoints && shape.leaderPoints.length > 0) ||
@@ -1843,6 +1837,117 @@ export class ShapeRenderer extends BaseRenderer {
     ctx.restore();
   }
 
+  /**
+   * Draw the rotation gizmo: a connecting line from shape top edge to a green circle with curved arrow icon.
+   */
+  private drawRotationGizmo(topX: number, topY: number, handleX: number, handleY: number, zoom: number): void {
+    const ctx = this.ctx;
+    const handleSize = 6 / zoom;
+    const rotationHandleRadius = handleSize * 0.6;
+
+    // Draw connecting line from top center to rotation handle
+    ctx.strokeStyle = COLORS.selection;
+    ctx.lineWidth = 1 / zoom;
+    ctx.beginPath();
+    ctx.moveTo(topX, topY);
+    ctx.lineTo(handleX, handleY);
+    ctx.stroke();
+
+    // Draw circular rotation handle
+    ctx.fillStyle = '#90EE90'; // Light green for rotation
+    ctx.strokeStyle = COLORS.selectionHandleStroke;
+    ctx.beginPath();
+    ctx.arc(handleX, handleY, rotationHandleRadius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+
+    // Draw rotation arrow icon inside the handle
+    ctx.strokeStyle = '#006400'; // Dark green
+    ctx.lineWidth = 1.5 / zoom;
+    const iconRadius = rotationHandleRadius * 0.6;
+    ctx.beginPath();
+    ctx.arc(handleX, handleY, iconRadius, -Math.PI * 0.7, Math.PI * 0.3);
+    ctx.stroke();
+    // Arrowhead
+    const arrowTipAngle = Math.PI * 0.3;
+    const arrowTipX = handleX + iconRadius * Math.cos(arrowTipAngle);
+    const arrowTipY = handleY + iconRadius * Math.sin(arrowTipAngle);
+    const arrowHeadSize = 3 / zoom;
+    ctx.beginPath();
+    ctx.moveTo(arrowTipX, arrowTipY);
+    ctx.lineTo(arrowTipX - arrowHeadSize, arrowTipY - arrowHeadSize);
+    ctx.moveTo(arrowTipX, arrowTipY);
+    ctx.lineTo(arrowTipX + arrowHeadSize * 0.5, arrowTipY - arrowHeadSize);
+    ctx.stroke();
+  }
+
+  /**
+   * Compute the rotation gizmo anchor (top edge center) and handle (above shape) positions.
+   * Returns null for shapes that don't support the gizmo.
+   */
+  private getRotationGizmoPoints(shape: Shape, zoom: number): { topX: number; topY: number; handleX: number; handleY: number } | null {
+    const dist = 25 / zoom;
+
+    switch (shape.type) {
+      case 'rectangle': {
+        const tl = shape.topLeft;
+        const w = shape.width;
+        const rot = shape.rotation || 0;
+        const cos = Math.cos(rot);
+        const sin = Math.sin(rot);
+        // Top-center in local space → world
+        const topX = tl.x + (w / 2) * cos;
+        const topY = tl.y + (w / 2) * sin;
+        // Handle above the top-center: local (w/2, -dist) → world
+        const handleX = tl.x + (w / 2) * cos - (-dist) * sin;
+        const handleY = tl.y + (w / 2) * sin + (-dist) * cos;
+        return { topX, topY, handleX, handleY };
+      }
+      case 'ellipse': {
+        const cx = shape.center.x;
+        const cy = shape.center.y;
+        const rot = shape.rotation || 0;
+        const cos = Math.cos(rot);
+        const sin = Math.sin(rot);
+        // Top at local (0, -radiusY) → world
+        const topX = cx - (-shape.radiusY) * sin;
+        const topY = cy + (-shape.radiusY) * cos;
+        // Handle at local (0, -radiusY - dist) → world
+        const handleX = cx - (-shape.radiusY - dist) * sin;
+        const handleY = cy + (-shape.radiusY - dist) * cos;
+        return { topX, topY, handleX, handleY };
+      }
+      case 'image': {
+        const pos = shape.position;
+        const w = shape.width;
+        const rot = shape.rotation || 0;
+        const cos = Math.cos(rot);
+        const sin = Math.sin(rot);
+        // Top-center in local space (w/2, 0) → world
+        const topX = pos.x + (w / 2) * cos;
+        const topY = pos.y + (w / 2) * sin;
+        // Handle at local (w/2, -dist) → world
+        const handleX = pos.x + (w / 2) * cos - (-dist) * sin;
+        const handleY = pos.y + (w / 2) * sin + (-dist) * cos;
+        return { topX, topY, handleX, handleY };
+      }
+      case 'block-instance': {
+        const pos = shape.position;
+        const rot = shape.rotation || 0;
+        const cos = Math.cos(rot);
+        const sin = Math.sin(rot);
+        return {
+          topX: pos.x,
+          topY: pos.y,
+          handleX: pos.x - (-dist) * sin,
+          handleY: pos.y + (-dist) * cos,
+        };
+      }
+      default:
+        return null;
+    }
+  }
+
   private drawSelectionHandles(shape: Shape): void {
     const ctx = this.ctx;
     // Keep handles at a constant screen-pixel size, but never smaller than the shape's stroke
@@ -1876,6 +1981,14 @@ export class ShapeRenderer extends BaseRenderer {
         // Determine which axis is hovered for highlighting
         const hoveredAxis = (hover && hover.shapeId === shape.id && hover.gripIndex === i) ? hover.axis : null;
         this.drawAxisArrows(point, zoom, angle, hoveredAxis);
+      }
+    }
+
+    // Draw rotation gizmo for rotatable shapes
+    if (this._showRotationGizmo) {
+      const gizmo = this.getRotationGizmoPoints(shape, zoom);
+      if (gizmo) {
+        this.drawRotationGizmo(gizmo.topX, gizmo.topY, gizmo.handleX, gizmo.handleY, zoom);
       }
     }
   }
@@ -2141,9 +2254,41 @@ export class ShapeRenderer extends BaseRenderer {
           toWorld(w / 2, h / 2),
         ];
       }
+      case 'block-instance': {
+        // Show handles at the instance position (center grip)
+        const bi = shape as BlockInstanceShape;
+        return [bi.position];
+      }
       default:
         return [];
     }
+  }
+
+  private drawBlockInstance(shape: BlockInstanceShape, isSelected: boolean, isHovered: boolean, invertColors: boolean): void {
+    const def = this.blockDefinitions.get(shape.blockDefinitionId);
+    if (!def) return;
+
+    const ctx = this.ctx;
+    ctx.save();
+
+    // Apply instance transform: translate to position, rotate, scale, offset by base point
+    ctx.translate(shape.position.x, shape.position.y);
+    ctx.rotate(shape.rotation);
+    ctx.scale(shape.scaleX, shape.scaleY);
+    ctx.translate(-def.basePoint.x, -def.basePoint.y);
+
+    // Draw each child entity
+    for (const entity of def.entities) {
+      if (!entity.visible) continue;
+      if (isSelected || isHovered) {
+        // When instance is selected/hovered, draw children with selection/hover color
+        this.drawShape(entity, isSelected, isHovered, invertColors, true);
+      } else {
+        this.drawShapeSimple(entity, invertColors);
+      }
+    }
+
+    ctx.restore();
   }
 
   private drawImage(shape: ImageShape): void {

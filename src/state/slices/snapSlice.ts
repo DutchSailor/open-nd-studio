@@ -31,7 +31,6 @@ export interface SnapState {
   activeSnaps: SnapType[];
   snapTolerance: number;
   currentSnapPoint: SnapPoint | null;
-  snapSettingsOpen: boolean;
 
   // Tracking settings
   trackingEnabled: boolean;
@@ -63,7 +62,6 @@ export interface SnapActions {
   toggleSnapType: (snapType: SnapType) => void;
   setSnapTolerance: (tolerance: number) => void;
   setCurrentSnapPoint: (snapPoint: SnapPoint | null) => void;
-  setSnapSettingsOpen: (open: boolean) => void;
   toggleTracking: () => void;
   togglePolarTracking: () => void;
   toggleOrthoMode: () => void;
@@ -90,7 +88,6 @@ export const initialSnapState: SnapState = {
   activeSnaps: ['endpoint', 'midpoint', 'center', 'intersection', 'origin'],
   snapTolerance: 10,
   currentSnapPoint: null,
-  snapSettingsOpen: false,
   trackingEnabled: true,
   polarTrackingEnabled: true,
   orthoMode: false,
@@ -150,11 +147,6 @@ export const createSnapSlice = (
   setCurrentSnapPoint: (snapPoint) =>
     set((state) => {
       state.currentSnapPoint = snapPoint;
-    }),
-
-  setSnapSettingsOpen: (open) =>
-    set((state) => {
-      state.snapSettingsOpen = open;
     }),
 
   toggleTracking: () =>

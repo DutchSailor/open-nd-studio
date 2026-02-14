@@ -202,6 +202,16 @@ export function transformShape(shape: Shape, transform: PointTransform, newId?: 
       cloned.rotation = imgNewRot;
       break;
     }
+    case 'block-instance': {
+      const oldPos = cloned.position;
+      cloned.position = transform(oldPos);
+      // Derive rotation change from transform by probing a nearby point
+      const probe = { x: oldPos.x + 1, y: oldPos.y };
+      const probeT = transform(probe);
+      const angleChange = Math.atan2(probeT.y - cloned.position.y, probeT.x - cloned.position.x);
+      cloned.rotation = (cloned.rotation || 0) + angleChange;
+      break;
+    }
   }
 
   return cloned;

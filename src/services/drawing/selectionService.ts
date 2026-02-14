@@ -7,7 +7,7 @@
  * - Filtering selection by layer, type, or other criteria
  */
 
-import type { Shape, Point, Layer } from '../../types/geometry';
+import type { Shape, Point, Layer, BlockDefinition } from '../../types/geometry';
 import { isPointNearShape, getShapeBounds } from '../../engine/geometry/GeometryUtils';
 
 /**
@@ -30,7 +30,8 @@ export interface SelectionBox {
 export function findShapeAtPoint(
   point: Point,
   shapes: Shape[],
-  tolerance: number = 5
+  tolerance: number = 5,
+  blockDefinitions?: Map<string, BlockDefinition>,
 ): Shape | null {
   // Search in reverse order (topmost shapes first)
   for (let i = shapes.length - 1; i >= 0; i--) {
@@ -38,7 +39,7 @@ export function findShapeAtPoint(
     if (!shape.visible) continue;
     if (shape.locked) continue;
 
-    if (isPointNearShape(point, shape, tolerance)) {
+    if (isPointNearShape(point, shape, tolerance, undefined, blockDefinitions)) {
       return shape;
     }
   }
@@ -51,11 +52,12 @@ export function findShapeAtPoint(
 export function findShapesAtPoint(
   point: Point,
   shapes: Shape[],
-  tolerance: number = 5
+  tolerance: number = 5,
+  blockDefinitions?: Map<string, BlockDefinition>,
 ): Shape[] {
   return shapes.filter(shape => {
     if (!shape.visible || shape.locked) return false;
-    return isPointNearShape(point, shape, tolerance);
+    return isPointNearShape(point, shape, tolerance, undefined, blockDefinitions);
   });
 }
 
@@ -64,7 +66,8 @@ export function findShapesAtPoint(
  */
 export function selectShapesByBox(
   shapes: Shape[],
-  box: SelectionBox
+  box: SelectionBox,
+  blockDefinitions?: Map<string, BlockDefinition>,
 ): Shape[] {
   const minX = Math.min(box.start.x, box.end.x);
   const maxX = Math.max(box.start.x, box.end.x);
@@ -74,7 +77,7 @@ export function selectShapesByBox(
   return shapes.filter(shape => {
     if (!shape.visible || shape.locked) return false;
 
-    const bounds = getShapeBounds(shape);
+    const bounds = getShapeBounds(shape, undefined, blockDefinitions);
     if (!bounds) return false;
 
     if (box.mode === 'window') {

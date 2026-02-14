@@ -17,13 +17,87 @@ export interface SvgParseResult {
 }
 
 /** Parsed pattern element data */
-interface ParsedSvgPattern {
+export interface ParsedSvgPattern {
   id: string;
   name: string;
   width: number;
   height: number;
   svgContent: string;
   viewBox?: string;
+  tileRotation?: number;
+}
+
+/** Result of parsing SVG patterns (raw parsed data before ID generation) */
+export interface SvgPatternsParseResult {
+  parsed: ParsedSvgPattern[];
+  errors: string[];
+  warnings: string[];
+}
+
+/**
+ * Collect all <pattern> elements from both <defs> and directly under <svg>
+ */
+function collectPatternElements(doc: Document): SVGPatternElement[] {
+  const defsPatterns = doc.querySelectorAll('defs pattern');
+  const rootPatterns = doc.querySelectorAll('svg > pattern');
+
+  // Merge, deduplicate by id
+  const seen = new Set<string>();
+  const result: SVGPatternElement[] = [];
+
+  const addPattern = (el: Element) => {
+    const id = el.getAttribute('id') || '';
+    if (!seen.has(id)) {
+      seen.add(id);
+      result.push(el as SVGPatternElement);
+    }
+  };
+
+  defsPatterns.forEach(addPattern);
+  rootPatterns.forEach(addPattern);
+
+  return result;
+}
+
+/**
+ * Parse an SVG file and return raw parsed pattern data (before ID generation)
+ */
+export function parseSVGPatterns(content: string): SvgPatternsParseResult {
+  const parsed: ParsedSvgPattern[] = [];
+  const errors: string[] = [];
+  const warnings: string[] = [];
+
+  try {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(content, 'image/svg+xml');
+
+    const parseError = doc.querySelector('parsererror');
+    if (parseError) {
+      errors.push(`SVG parsing error: ${parseError.textContent?.slice(0, 100) || 'Invalid SVG'}`);
+      return { parsed, errors, warnings };
+    }
+
+    const svgElement = doc.querySelector('svg');
+    if (!svgElement) {
+      errors.push('No SVG element found in file');
+      return { parsed, errors, warnings };
+    }
+
+    const patternElements = collectPatternElements(doc);
+
+    patternElements.forEach((patternEl, index) => {
+      const p = parsePatternElement(patternEl, index);
+      if (p) {
+        parsed.push(p);
+      } else {
+        warnings.push(`Could not parse pattern element at index ${index}`);
+      }
+    });
+  } catch (err) {
+    errors.push(`Failed to parse SVG: ${err instanceof Error ? err.message : 'Unknown error'}`);
+  }
+
+  return { parsed, errors, warnings };
 }
 
 /**
@@ -51,13 +125,12 @@ export function parseSVGFile(content: string, filename?: string): SvgParseResult
       return { patterns, errors, warnings };
     }
 
-    // Look for pattern elements in defs
-    const patternElements = doc.querySelectorAll('defs pattern');
+    // Look for pattern elements in <defs> and directly under <svg>
+    const patternElements = collectPatternElements(doc);
 
     if (patternElements.length > 0) {
-      // Extract patterns from <defs>
       patternElements.forEach((patternEl, index) => {
-        const parsed = parsePatternElement(patternEl as SVGPatternElement, index);
+        const parsed = parsePatternElement(patternEl, index);
         if (parsed) {
           patterns.push(createSvgPattern(parsed));
         } else {
@@ -82,6 +155,27 @@ export function parseSVGFile(content: string, filename?: string): SvgParseResult
 }
 
 /**
+ * Parse patternTransform attribute (e.g. "rotate(45 0 0) scale(0.75 0.75)")
+ */
+function parsePatternTransform(attr: string | null): { rotation: number; scaleX: number; scaleY: number } {
+  const result = { rotation: 0, scaleX: 1, scaleY: 1 };
+  if (!attr) return result;
+
+  const rotateMatch = attr.match(/rotate\(\s*([-\d.]+)/);
+  if (rotateMatch) {
+    result.rotation = parseFloat(rotateMatch[1]);
+  }
+
+  const scaleMatch = attr.match(/scale\(\s*([-\d.]+)(?:\s+([-\d.]+))?\s*\)/);
+  if (scaleMatch) {
+    result.scaleX = parseFloat(scaleMatch[1]);
+    result.scaleY = scaleMatch[2] ? parseFloat(scaleMatch[2]) : result.scaleX;
+  }
+
+  return result;
+}
+
+/**
  * Parse a <pattern> element
  */
 function parsePatternElement(patternEl: SVGPatternElement, index: number): ParsedSvgPattern | null {
@@ -103,6 +197,11 @@ function parsePatternElement(patternEl: SVGPatternElement, index: number): Parse
     return null;
   }
 
+  // Parse patternTransform for rotation and scale
+  const transform = parsePatternTransform(patternEl.getAttribute('patternTransform'));
+  width *= transform.scaleX;
+  height *= transform.scaleY;
+
   // Get the inner content as SVG
   const innerContent = patternEl.innerHTML;
   if (!innerContent.trim()) {
@@ -120,6 +219,7 @@ function parsePatternElement(patternEl: SVGPatternElement, index: number): Parse
     height,
     svgContent,
     viewBox,
+    tileRotation: transform.rotation !== 0 ? transform.rotation : undefined,
   };
 }
 
@@ -180,11 +280,11 @@ function parseSvgAsTile(svgElement: SVGSVGElement, filename?: string): SvgHatchP
 /**
  * Create an SvgHatchPattern from parsed data
  */
-function createSvgPattern(parsed: ParsedSvgPattern): SvgHatchPattern {
+export function createSvgPattern(parsed: ParsedSvgPattern): SvgHatchPattern {
   return {
     id: generatePatternId(parsed.name),
     name: parsed.name,
-    description: `SVG pattern tile (${parsed.width}x${parsed.height})`,
+    description: `SVG pattern tile (${parsed.width.toFixed(1)}x${parsed.height.toFixed(1)})`,
     scaleType: 'drafting',
     source: 'imported',
     sourceFormat: 'svg',
@@ -192,6 +292,7 @@ function createSvgPattern(parsed: ParsedSvgPattern): SvgHatchPattern {
     svgTile: parsed.svgContent,
     tileWidth: parsed.width,
     tileHeight: parsed.height,
+    tileRotation: parsed.tileRotation,
     createdAt: new Date().toISOString(),
     modifiedAt: new Date().toISOString(),
   };

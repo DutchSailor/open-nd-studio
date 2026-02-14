@@ -4,7 +4,7 @@
 
 import { useCallback, useRef, useMemo } from 'react';
 import { useAppStore, type SelectionBox } from '../../state/appStore';
-import type { Point, Shape, TextShape } from '../../types/geometry';
+import type { Point, Shape, TextShape, BlockDefinition } from '../../types/geometry';
 import { getShapeBounds, getTextBounds, screenToWorld } from '../../engine/geometry/GeometryUtils';
 
 /**
@@ -247,8 +247,8 @@ function getShapeEdges(shape: Shape, drawingScale?: number): Edge[] {
  * Test if a shape's actual geometry intersects or is contained in a rectangle (for crossing selection).
  * Falls back to bounding box overlap for shapes where edge decomposition isn't available.
  */
-function shapeCrossesRect(shape: Shape, minX: number, minY: number, maxX: number, maxY: number, drawingScale?: number): boolean {
-  const bounds = getShapeBounds(shape, drawingScale);
+function shapeCrossesRect(shape: Shape, minX: number, minY: number, maxX: number, maxY: number, drawingScale?: number, blockDefinitions?: Map<string, BlockDefinition>): boolean {
+  const bounds = getShapeBounds(shape, drawingScale, blockDefinitions);
   if (!bounds) return false;
 
   // Quick reject: if bounding boxes don't overlap at all, no intersection possible
@@ -295,6 +295,7 @@ export function useBoxSelection() {
     editorMode,
     activeDrawingId,
     drawings,
+    blockDefinitions: blockDefinitionsArray,
   } = useAppStore();
 
   // Get the active drawing's scale for text hit detection
@@ -302,6 +303,13 @@ export function useBoxSelection() {
     const drawing = drawings.find(d => d.id === activeDrawingId);
     return drawing?.scale ?? 0.02; // Default to 1:50
   }, [drawings, activeDrawingId]);
+
+  // Build Map for efficient block definition lookups
+  const blockDefinitionsMap = useMemo(() => {
+    const map = new Map<string, BlockDefinition>();
+    for (const def of blockDefinitionsArray) map.set(def.id, def);
+    return map;
+  }, [blockDefinitionsArray]);
 
   /**
    * Start box selection
@@ -369,7 +377,7 @@ export function useBoxSelection() {
         if (!shape.visible || shape.locked) continue;
         if (shape.drawingId !== activeDrawingId) continue;  // Only select shapes in active drawing
 
-        const bounds = getShapeBounds(shape, activeDrawingScale);
+        const bounds = getShapeBounds(shape, activeDrawingScale, blockDefinitionsMap);
         if (!bounds) continue;
 
         if (box.mode === 'window') {
@@ -396,7 +404,7 @@ export function useBoxSelection() {
         } else {
           // Crossing selection: shape can be inside or crossing
           // Use precise geometry test to avoid false positives from bounding box overlap
-          if (shapeCrossesRect(shape, minX, minY, maxX, maxY, activeDrawingScale)) {
+          if (shapeCrossesRect(shape, minX, minY, maxX, maxY, activeDrawingScale, blockDefinitionsMap)) {
             selectedIds.push(shape.id);
           }
         }
@@ -429,7 +437,7 @@ export function useBoxSelection() {
 
       return selectedIds;
     },
-    [viewport, shapes, parametricShapes, activeDrawingId, activeDrawingScale]
+    [viewport, shapes, parametricShapes, activeDrawingId, activeDrawingScale, blockDefinitionsMap]
   );
 
   /**

@@ -43,7 +43,7 @@ export interface ShapeGroup {
 /** @deprecated Use drawingId instead */
 export type BaseShapeWithDraftId = BaseShape & { draftId?: string };
 
-export type ShapeType = 'line' | 'rectangle' | 'circle' | 'arc' | 'polyline' | 'ellipse' | 'spline' | 'text' | 'point' | 'dimension' | 'hatch' | 'beam' | 'image';
+export type ShapeType = 'line' | 'rectangle' | 'circle' | 'arc' | 'polyline' | 'ellipse' | 'spline' | 'text' | 'point' | 'dimension' | 'hatch' | 'beam' | 'image' | 'block-instance';
 
 export type HatchPatternType = 'solid' | 'diagonal' | 'crosshatch' | 'horizontal' | 'vertical' | 'dots' | 'custom';
 
@@ -275,6 +275,25 @@ export interface TextStyle {
   isProjectStyle?: boolean;   // Project-specific vs User global style
 }
 
+// Block definition — a named collection of child shapes with a base point
+export interface BlockDefinition {
+  id: string;
+  name: string;
+  basePoint: Point;        // insertion base point (DXF coords, Y-inverted)
+  entities: Shape[];       // child shapes in block-local coordinates
+  drawingId: string;
+}
+
+// Block instance — a reference to a block definition placed in the drawing
+export interface BlockInstanceShape extends BaseShape {
+  type: 'block-instance';
+  blockDefinitionId: string;
+  position: Point;          // world insertion point
+  rotation: number;         // radians
+  scaleX: number;
+  scaleY: number;
+}
+
 // Forward declaration for DimensionShape (defined in dimension.ts)
 import type { DimensionShape } from './dimension';
 
@@ -292,7 +311,8 @@ export type Shape =
   | DimensionShape
   | HatchShape
   | BeamShape
-  | ImageShape;
+  | ImageShape
+  | BlockInstanceShape;
 
 // Layer type
 export interface Layer {

@@ -4,7 +4,7 @@
  * Provides O(log n) point and area queries instead of O(n) linear scans.
  */
 
-import type { Point, Shape } from '../../types/geometry';
+import type { Point, Shape, BlockDefinition } from '../../types/geometry';
 import type { ShapeBounds } from '../geometry/GeometryUtils';
 import { getShapeBounds } from '../geometry/GeometryUtils';
 
@@ -176,14 +176,14 @@ export class QuadTree {
   /**
    * Build a QuadTree from an array of shapes, filtering by drawingId.
    */
-  static buildFromShapes(shapes: Shape[], drawingId: string, drawingScale?: number): QuadTree {
+  static buildFromShapes(shapes: Shape[], drawingId: string, drawingScale?: number, blockDefinitions?: Map<string, BlockDefinition>): QuadTree {
     // Filter visible shapes for this drawing and compute bounds
     const entries: QuadTreeEntry[] = [];
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
 
     for (const shape of shapes) {
       if (!shape.visible || shape.drawingId !== drawingId) continue;
-      const bounds = getShapeBounds(shape, drawingScale);
+      const bounds = getShapeBounds(shape, drawingScale, blockDefinitions);
       if (!bounds) continue;
 
       entries.push({ id: shape.id, bounds });

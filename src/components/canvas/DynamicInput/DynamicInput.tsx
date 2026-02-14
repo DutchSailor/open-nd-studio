@@ -48,6 +48,7 @@ export function DynamicInput() {
     directDistanceAngle,
     dynamicInputEnabled,
     unitSettings,
+    moveAxisLock,
   } = useAppStore();
 
   const [focusedField, setFocusedField] = useState<0 | 1 | -1>(-1); // -1 = none, 0 = field1, 1 = field2
@@ -95,15 +96,27 @@ export function DynamicInput() {
     const basePoint = drawingPoints[0];
     const worldMX = (mousePosition.x - viewport.offsetX) / viewport.zoom;
     const worldMY = (mousePosition.y - viewport.offsetY) / viewport.zoom;
-    const dirX = worldMX - basePoint.x;
-    const dirY = worldMY - basePoint.y;
-    const dirLen = Math.hypot(dirX, dirY);
-    if (dirLen < 0.001) return;
 
-    const ux = dirX / dirLen;
-    const uy = dirY / dirLen;
-    const dx = ux * dist;
-    const dy = uy * dist;
+    let dx: number, dy: number;
+    if (moveAxisLock === 'x') {
+      // Constrained to X axis — sign from mouse offset
+      dx = dist * Math.sign(worldMX - basePoint.x || 1);
+      dy = 0;
+    } else if (moveAxisLock === 'y') {
+      // Constrained to Y axis — sign from mouse offset
+      dx = 0;
+      dy = dist * Math.sign(worldMY - basePoint.y || 1);
+    } else {
+      // Free direction from mouse
+      const dirX = worldMX - basePoint.x;
+      const dirY = worldMY - basePoint.y;
+      const dirLen = Math.hypot(dirX, dirY);
+      if (dirLen < 0.001) return;
+      const ux = dirX / dirLen;
+      const uy = dirY / dirLen;
+      dx = ux * dist;
+      dy = uy * dist;
+    }
     const transform = translateTransform(dx, dy);
 
     const state = useAppStore.getState();
@@ -125,7 +138,7 @@ export function DynamicInput() {
       state.clearDrawingPoints();
       state.setDrawingPreview(null);
     }
-  }, [isModifyMode, drawingPoints, mousePosition, viewport, activeTool]);
+  }, [isModifyMode, drawingPoints, mousePosition, viewport, activeTool, moveAxisLock]);
 
   // Execute rotate with typed angle, direction from mouse position
   const executeRotateWithAngle = useCallback((angleDeg: number) => {
@@ -535,6 +548,42 @@ export function DynamicInput() {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [showDynamicInput, focusedField, field1Text, field2Text, activeTool, applyValues, setLockedDistance, setLockedAngle]);
+
+  // Live preview: as user types a distance in modify mode, update the ghost preview
+  useEffect(() => {
+    if (!isModifyMode || focusedField !== 0 || !field1Text) return;
+    const dist = Number(field1Text);
+    if (isNaN(dist) || dist === 0) return;
+
+    const basePoint = drawingPoints[0];
+    const state = useAppStore.getState();
+    const worldMX = (mousePosition.x - viewport.offsetX) / viewport.zoom;
+    const worldMY = (mousePosition.y - viewport.offsetY) / viewport.zoom;
+
+    let dx: number, dy: number;
+    if (state.moveAxisLock === 'x') {
+      dx = dist * Math.sign(worldMX - basePoint.x || 1);
+      dy = 0;
+    } else if (state.moveAxisLock === 'y') {
+      dx = 0;
+      dy = dist * Math.sign(worldMY - basePoint.y || 1);
+    } else {
+      const dirX = worldMX - basePoint.x;
+      const dirY = worldMY - basePoint.y;
+      const dirLen = Math.hypot(dirX, dirY);
+      if (dirLen < 0.001) return;
+      dx = (dirX / dirLen) * dist;
+      dy = (dirY / dirLen) * dist;
+    }
+
+    const transform = translateTransform(dx, dy);
+    const idSet = new Set(state.selectedShapeIds);
+    const selected = state.shapes.filter((s) => idSet.has(s.id));
+    if (selected.length === 0) return;
+
+    const ghosts = selected.map((s) => transformShape(s, transform));
+    state.setDrawingPreview({ type: 'modifyPreview', shapes: ghosts });
+  }, [isModifyMode, focusedField, field1Text, drawingPoints, mousePosition, viewport]);
 
   if (!showDynamicInput) return null;
 

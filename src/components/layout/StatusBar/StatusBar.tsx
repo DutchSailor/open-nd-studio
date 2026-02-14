@@ -225,6 +225,7 @@ function StatusMessage() {
   const selectedCount = useAppStore(s => s.selectedShapeIds.length);
   const scaleMode = useAppStore(s => s.scaleMode);
   const arrayMode = useAppStore(s => s.arrayMode);
+  const moveAxisLock = useAppStore(s => s.moveAxisLock);
 
   const pts = drawingPoints.length;
 
@@ -296,16 +297,20 @@ function StatusMessage() {
           case 'arc-length': msg = pts === 0 ? 'Click an arc' : 'Position dimension'; break;
         }
         break;
-      case 'move':
+      case 'move': {
+        const axisTag = moveAxisLock === 'x' ? ' [X axis]' : moveAxisLock === 'y' ? ' [Y axis]' : '';
         if (selectedCount === 0) msg = 'Select elements to move';
         else if (pts === 0) msg = 'Click base point';
-        else msg = 'Click destination point';
+        else msg = 'Click destination point' + axisTag;
         break;
-      case 'copy':
+      }
+      case 'copy': {
+        const axisTag = moveAxisLock === 'x' ? ' [X axis]' : moveAxisLock === 'y' ? ' [Y axis]' : '';
         if (selectedCount === 0) msg = 'Select elements to copy';
         else if (pts === 0) msg = 'Click base point';
-        else msg = 'Click destination (right-click to finish)';
+        else msg = 'Click destination (right-click to finish)' + axisTag;
         break;
+      }
       case 'rotate':
         if (selectedCount === 0) msg = 'Select elements to rotate';
         else if (pts === 0) msg = 'Click center of rotation';
@@ -389,11 +394,7 @@ export const StatusBar = memo(function StatusBar() {
   const toggleOrthoMode = useAppStore(s => s.toggleOrthoMode);
   const toggleObjectTracking = useAppStore(s => s.toggleObjectTracking);
   const toggleSnap = useAppStore(s => s.toggleSnap);
-  const setSnapSettingsOpen = useAppStore(s => s.setSnapSettingsOpen);
-  const dynamicInputEnabled = useAppStore(s => s.dynamicInputEnabled);
-  const toggleDynamicInput = useAppStore(s => s.toggleDynamicInput);
-  const showLineweight = useAppStore(s => s.showLineweight);
-  const toggleShowLineweight = useAppStore(s => s.toggleShowLineweight);
+  const openSettings = useAppStore(s => s.openSettings);
   const terminalOpen = useAppStore(s => s.terminalOpen);
   const toggleTerminal = useAppStore(s => s.toggleTerminal);
   const setTerminalOpen = useAppStore(s => s.setTerminalOpen);
@@ -573,7 +574,7 @@ export const StatusBar = memo(function StatusBar() {
           onClick={toggleSnap}
           onContextMenu={(e) => {
             e.preventDefault();
-            setSnapSettingsOpen(true);
+            openSettings('drawing-aids');
           }}
           className={`px-2 py-0.5 text-xs font-medium rounded transition-colors cursor-default ${
             snapEnabled
@@ -618,26 +619,15 @@ export const StatusBar = memo(function StatusBar() {
           OTRACK
         </button>
         <button
-          onClick={toggleDynamicInput}
-          className={`px-2 py-0.5 text-xs font-medium rounded transition-colors cursor-default ${
-            dynamicInputEnabled
-              ? 'bg-purple-600 text-white hover:bg-purple-500'
-              : 'bg-cad-bg text-cad-text-dim hover:bg-cad-hover'
-          }`}
-          title="Position Info - show position info while drawing [F12]"
+          onClick={() => openSettings()}
+          className="flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded transition-colors cursor-default bg-cad-bg text-cad-text-dim hover:bg-cad-hover hover:text-cad-text"
+          title="Settings"
         >
-          POS
-        </button>
-        <button
-          onClick={toggleShowLineweight}
-          className={`px-2 py-0.5 text-xs font-medium rounded transition-colors cursor-default ${
-            showLineweight
-              ? 'bg-teal-600 text-white hover:bg-teal-500'
-              : 'bg-cad-bg text-cad-text-dim hover:bg-cad-hover'
-          }`}
-          title="Display Lineweight - show actual line weights"
-        >
-          LWT
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="3"/>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+          </svg>
+          Settings
         </button>
       </div>
 

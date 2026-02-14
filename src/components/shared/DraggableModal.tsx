@@ -15,6 +15,9 @@ interface DraggableModalProps {
   children: ReactNode;
   footer?: ReactNode;
   zIndex?: number;
+  resizable?: boolean;
+  minWidth?: number;
+  minHeight?: number;
 }
 
 export function DraggableModal({
@@ -27,18 +30,25 @@ export function DraggableModal({
   children,
   footer,
   zIndex = 50,
+  resizable = false,
+  minWidth = 300,
+  minHeight = 200,
 }: DraggableModalProps) {
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
+  const [isResizing, setIsResizing] = useState(false);
+  const [size, setSize] = useState({ width: width, height: height || 400 });
   const dragStartRef = useRef({ x: 0, y: 0 });
+  const resizeStartRef = useRef({ x: 0, y: 0, w: 0, h: 0 });
   const modalRef = useRef<HTMLDivElement>(null);
 
-  // Reset position when modal opens
+  // Reset position and size when modal opens
   useEffect(() => {
     if (isOpen) {
       setPosition({ x: 0, y: 0 });
+      setSize({ width: width, height: height || 400 });
     }
-  }, [isOpen]);
+  }, [isOpen, width, height]);
 
   // Close on Escape key
   useEffect(() => {
@@ -57,18 +67,35 @@ export function DraggableModal({
   }, [position]);
 
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
+    if (isResizing) {
+      const newW = Math.max(minWidth, resizeStartRef.current.w + (e.clientX - resizeStartRef.current.x));
+      const newH = Math.max(minHeight, resizeStartRef.current.h + (e.clientY - resizeStartRef.current.y));
+      setSize({ width: newW, height: newH });
+      return;
+    }
     if (!isDragging) return;
     setPosition({
       x: e.clientX - dragStartRef.current.x,
       y: e.clientY - dragStartRef.current.y,
     });
-  }, [isDragging]);
+  }, [isDragging, isResizing, minWidth, minHeight]);
 
   const handleMouseUp = useCallback(() => {
     setIsDragging(false);
+    setIsResizing(false);
   }, []);
 
+  const handleResizeMouseDown = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    setIsResizing(true);
+    resizeStartRef.current = { x: e.clientX, y: e.clientY, w: size.width, h: size.height };
+  }, [size]);
+
   if (!isOpen) return null;
+
+  const currentWidth = resizable ? size.width : width;
+  const currentHeight = resizable ? size.height : height;
 
   return (
     <div
@@ -80,10 +107,10 @@ export function DraggableModal({
     >
       <div
         ref={modalRef}
-        className="bg-cad-surface border border-cad-border shadow-xl flex flex-col"
+        className="bg-cad-surface border border-cad-border shadow-xl flex flex-col relative"
         style={{
-          width,
-          height,
+          width: currentWidth,
+          height: currentHeight,
           transform: `translate(${position.x}px, ${position.y}px)`,
         }}
         onClick={(e) => e.stopPropagation()}
@@ -107,7 +134,7 @@ export function DraggableModal({
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-hidden">
+        <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
           {children}
         </div>
 
@@ -115,6 +142,19 @@ export function DraggableModal({
         {footer && (
           <div className="px-3 py-2 border-t border-cad-border flex justify-end gap-2">
             {footer}
+          </div>
+        )}
+
+        {/* Resize handle */}
+        {resizable && (
+          <div
+            onMouseDown={handleResizeMouseDown}
+            className="absolute bottom-0 right-0 w-4 h-4 cursor-nwse-resize"
+            style={{ touchAction: 'none' }}
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" className="text-cad-text-dim">
+              <path d="M14 14L14 8M14 14L8 14M10 14L14 10" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" />
+            </svg>
           </div>
         )}
       </div>

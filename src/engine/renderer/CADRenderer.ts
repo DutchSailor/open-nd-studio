@@ -12,7 +12,7 @@
  * - Future extensibility
  */
 
-import type { Shape, Viewport, SnapPoint, DrawingBoundary, Sheet, Drawing, SheetViewport, Layer } from '../../types/geometry';
+import type { Shape, Viewport, SnapPoint, DrawingBoundary, Sheet, Drawing, SheetViewport, Layer, BlockDefinition } from '../../types/geometry';
 import type { DrawingPreview, SelectionBox } from '../../state/appStore';
 import type { TrackingLine } from '../geometry/Tracking';
 import type { IPoint } from '../geometry/Point';
@@ -68,6 +68,10 @@ interface RenderOptions {
   cursor2DVisible?: boolean;
   /** Whether to display actual line weights (false = all lines 1px thin) */
   showLineweight?: boolean;
+  /** Block definitions for rendering block instances */
+  blockDefinitions?: BlockDefinition[];
+  /** Whether to show rotation gizmo handles on selected shapes */
+  showRotationGizmo?: boolean;
 }
 
 // Interface for sheet mode rendering (supports both new and legacy property names)
@@ -96,6 +100,14 @@ interface SheetModeRenderOptions {
   };
   /** Whether to display actual line weights (false = all lines 1px thin) */
   showLineweight?: boolean;
+  /** Viewport move preview: ghost position offset (dx, dy in mm) for keyboard move */
+  viewportMovePreview?: { viewportId: string; dx: number; dy: number } | null;
+  /** ID of title block field being hovered for highlight */
+  hoveredTitleBlockFieldId?: string | null;
+  /** ID of title block field being edited for highlight */
+  editingTitleBlockFieldId?: string | null;
+  /** Custom title block templates (for resolving templateId on enhanced title blocks) */
+  customTitleBlockTemplates?: import('../../types/sheet').TitleBlockTemplate[];
 }
 
 export class CADRenderer {
@@ -160,6 +172,8 @@ export class CADRenderer {
       cursor2D: options.cursor2D,
       cursor2DVisible: options.cursor2DVisible,
       showLineweight: options.showLineweight,
+      blockDefinitions: options.blockDefinitions,
+      showRotationGizmo: options.showRotationGizmo,
     };
 
     this.drawingRenderer.render(drawingOptions);
@@ -185,6 +199,10 @@ export class CADRenderer {
       placementPreview: options.placementPreview,
       customPatterns: options.customPatterns,
       showLineweight: options.showLineweight,
+      viewportMovePreview: options.viewportMovePreview,
+      hoveredTitleBlockFieldId: options.hoveredTitleBlockFieldId,
+      editingTitleBlockFieldId: options.editingTitleBlockFieldId,
+      customTitleBlockTemplates: options.customTitleBlockTemplates,
     };
 
     this.sheetRenderer.render(sheetOptions);

@@ -191,6 +191,10 @@ export interface DocumentState {
   textEditingContent: string;
   defaultTextStyle: DefaultTextStyle;
 
+  // Title block inline editing
+  titleBlockEditingFieldId: string | null;
+  hoveredTitleBlockFieldId: string | null;
+
   // Drawing placement
   isPlacing: boolean;
   placingDrawingId: string | null;
@@ -225,6 +229,9 @@ export interface DocumentState {
 
   // Unit settings
   unitSettings: import('../units/types').UnitSettings;
+
+  // Block definitions (for DXF blocks / block instances)
+  blockDefinitions: import('../types/geometry').BlockDefinition[];
 }
 
 // ============================================================================
@@ -329,6 +336,11 @@ export interface DocumentActions {
   setTextEditingContent: (content: string) => void;
   updateDefaultTextStyle: (style: Partial<DefaultTextStyle>) => void;
 
+  // Title block inline editing actions
+  startTitleBlockFieldEditing: (fieldId: string) => void;
+  endTitleBlockFieldEditing: () => void;
+  setHoveredTitleBlockFieldId: (fieldId: string | null) => void;
+
   // Boundary actions
   selectBoundary: () => void;
   deselectBoundary: () => void;
@@ -344,6 +356,11 @@ export interface DocumentActions {
   updateViewportDrag: (sheetPos: Point) => void;
   endViewportDrag: () => void;
   cancelViewportDrag: () => void;
+  // Keyboard-initiated viewport move (G key)
+  startViewportMove: (basePoint: Point) => void;
+  updateViewportMove: (sheetPos: Point) => void;
+  commitViewportMove: () => void;
+  cancelViewportMove: () => void;
 
   // Crop region actions
   enableCropRegion: (viewportId: string) => void;
@@ -489,6 +506,9 @@ export function createEmptyDocumentState(projectName = 'Untitled'): DocumentStat
       isDragging: false,
       dragStart: null,
       originalViewport: null,
+      isMoving: false,
+      moveBasePoint: null,
+      moveSnappedPos: null,
     },
     cropRegionEditState: {
       isEditing: false,
@@ -506,6 +526,8 @@ export function createEmptyDocumentState(projectName = 'Untitled'): DocumentStat
     annotationEditState: { ...initialAnnotationEditState },
     textEditingId: null,
     textEditingContent: '',
+    titleBlockEditingFieldId: null,
+    hoveredTitleBlockFieldId: null,
     defaultTextStyle: {
       fontFamily: CAD_DEFAULT_FONT,
       fontSize: 10,
@@ -563,6 +585,8 @@ export function createEmptyDocumentState(projectName = 'Untitled'): DocumentStat
       numberFormat: 'period',
       showUnitSuffix: false,
     },
+
+    blockDefinitions: [],
   };
 }
 
@@ -1487,6 +1511,19 @@ export function createDocumentStoreInstance(initial?: Partial<DocumentState>): S
         set((state) => { state.defaultTextStyle = { ...state.defaultTextStyle, ...style }; }),
 
       // ======================================================================
+      // Title Block Inline Editing Actions
+      // ======================================================================
+
+      startTitleBlockFieldEditing: (fieldId) =>
+        set((state) => { state.titleBlockEditingFieldId = fieldId; }),
+
+      endTitleBlockFieldEditing: () =>
+        set((state) => { state.titleBlockEditingFieldId = null; }),
+
+      setHoveredTitleBlockFieldId: (fieldId) =>
+        set((state) => { state.hoveredTitleBlockFieldId = fieldId; }),
+
+      // ======================================================================
       // Boundary Actions
       // ======================================================================
 
@@ -1652,6 +1689,58 @@ export function createDocumentStoreInstance(initial?: Partial<DocumentState>): S
           state.viewportEditState.isDragging = false;
           state.viewportEditState.dragStart = null;
           state.viewportEditState.originalViewport = null;
+        }),
+
+      // Keyboard-initiated viewport move (G key)
+      startViewportMove: (basePoint) =>
+        set((state) => {
+          const { selectedViewportId } = state.viewportEditState;
+          if (!selectedViewportId || !state.activeSheetId) return;
+          const sheet = state.sheets.find((s) => s.id === state.activeSheetId);
+          if (!sheet) return;
+          const viewport = sheet.viewports.find((vp) => vp.id === selectedViewportId);
+          if (!viewport || viewport.locked) return;
+          state.viewportEditState.isMoving = true;
+          state.viewportEditState.moveBasePoint = basePoint;
+          state.viewportEditState.moveSnappedPos = null;
+        }),
+
+      updateViewportMove: (sheetPos) =>
+        set((state) => {
+          const { selectedViewportId, moveBasePoint, isMoving } = state.viewportEditState;
+          if (!isMoving || !selectedViewportId || !moveBasePoint || !state.activeSheetId) return;
+          const sheet = state.sheets.find((s) => s.id === state.activeSheetId);
+          if (!sheet) return;
+          const viewport = sheet.viewports.find((vp) => vp.id === selectedViewportId);
+          if (!viewport) return;
+          const dx = sheetPos.x - moveBasePoint.x;
+          const dy = sheetPos.y - moveBasePoint.y;
+          // Simple move without snap in document store (snap is in viewportEditSlice)
+          state.viewportEditState.moveSnappedPos = { x: viewport.x + dx, y: viewport.y + dy };
+        }),
+
+      commitViewportMove: () =>
+        set((state) => {
+          const { selectedViewportId, moveSnappedPos } = state.viewportEditState;
+          if (!selectedViewportId || !moveSnappedPos || !state.activeSheetId) return;
+          const sheet = state.sheets.find((s) => s.id === state.activeSheetId);
+          if (!sheet) return;
+          const viewport = sheet.viewports.find((vp) => vp.id === selectedViewportId);
+          if (!viewport || viewport.locked) return;
+          viewport.x = moveSnappedPos.x;
+          viewport.y = moveSnappedPos.y;
+          sheet.modifiedAt = new Date().toISOString();
+          state.viewportEditState.isMoving = false;
+          state.viewportEditState.moveBasePoint = null;
+          state.viewportEditState.moveSnappedPos = null;
+          state.isModified = true;
+        }),
+
+      cancelViewportMove: () =>
+        set((state) => {
+          state.viewportEditState.isMoving = false;
+          state.viewportEditState.moveBasePoint = null;
+          state.viewportEditState.moveSnappedPos = null;
         }),
 
       // ======================================================================

@@ -52,7 +52,7 @@ export function Toolbar() {
     undo,
     redo,
     setPrintDialogOpen,
-    setSnapSettingsOpen,
+    openSettings,
   } = useAppStore();
 
   const canUndo = useAppStore(s => s.canUndo());
@@ -134,7 +134,7 @@ export function Toolbar() {
       <ToolButton
         icon={<Settings size={18} />}
         label="Object Snap Settings"
-        onClick={() => setSnapSettingsOpen(true)}
+        onClick={() => openSettings()}
       />
 
     </div>

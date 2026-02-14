@@ -21,6 +21,7 @@ import type {
   SplineShape,
   PointShape,
   ShapeStyle,
+  BlockInstanceShape,
 } from '../../types/geometry';
 import { getShapeBounds, type ShapeBounds } from '../../engine/geometry/GeometryUtils';
 
@@ -241,6 +242,35 @@ export function createPointShape(
 }
 
 /**
+ * Create a block instance shape
+ */
+export function createBlockInstanceShape(
+  blockDefinitionId: string,
+  position: Point,
+  layerId: string,
+  drawingId: string,
+  style: Partial<ShapeStyle> = {},
+  rotation: number = 0,
+  scaleX: number = 1,
+  scaleY: number = 1,
+): BlockInstanceShape {
+  return {
+    id: generateShapeId(),
+    type: 'block-instance',
+    layerId,
+    drawingId,
+    style: { ...DEFAULT_STYLE, ...style },
+    visible: true,
+    locked: false,
+    blockDefinitionId,
+    position,
+    rotation,
+    scaleX,
+    scaleY,
+  };
+}
+
+/**
  * Clone a shape with a new ID
  */
 export function cloneShape(shape: Shape, offset: Point = { x: 0, y: 0 }): Shape {
@@ -291,6 +321,10 @@ export function translateShape(shape: Shape, offset: Point): void {
       break;
     case 'point':
     case 'image':
+      shape.position.x += offset.x;
+      shape.position.y += offset.y;
+      break;
+    case 'block-instance':
       shape.position.x += offset.x;
       shape.position.y += offset.y;
       break;
@@ -348,6 +382,10 @@ export function rotateShape(shape: Shape, center: Point, angle: number): void {
       shape.position = rotatePoint(shape.position, center, angle);
       shape.rotation = (shape.rotation || 0) + angle;
       break;
+    case 'block-instance':
+      shape.position = rotatePoint(shape.position, center, angle);
+      shape.rotation = (shape.rotation || 0) + angle;
+      break;
   }
 }
 
@@ -395,6 +433,11 @@ export function scaleShape(shape: Shape, center: Point, scaleX: number, scaleY: 
       shape.position = scale(shape.position);
       shape.width *= scaleX;
       shape.height *= scaleY;
+      break;
+    case 'block-instance':
+      shape.position = scale(shape.position);
+      shape.scaleX *= scaleX;
+      shape.scaleY *= scaleY;
       break;
   }
 }
@@ -459,6 +502,10 @@ export function mirrorShape(shape: Shape, p1: Point, p2: Point): void {
       shape.position = mirrorPoint(shape.position);
       shape.rotation = -(shape.rotation || 0);
       break;
+    case 'block-instance':
+      shape.position = mirrorPoint(shape.position);
+      shape.rotation = -(shape.rotation || 0);
+      break;
   }
 }
 
@@ -475,6 +522,8 @@ export function getShapeCenter(shape: Shape): Point {
       case 'ellipse':
         return { ...shape.center };
       case 'point':
+        return { ...shape.position };
+      case 'block-instance':
         return { ...shape.position };
       default:
         return { x: 0, y: 0 };

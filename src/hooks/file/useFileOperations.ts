@@ -59,14 +59,18 @@ export function useFileOperations() {
 
         // Now parse DXF using the new document's layer/drawing IDs
         const newState = useAppStore.getState();
-        const shapes = parseDXF(content, newState.activeLayerId, newState.activeDrawingId);
+        const { shapes, blockDefinitions } = parseDXF(content, newState.activeLayerId, newState.activeDrawingId);
         if (shapes.length === 0) {
-          await showInfo('No supported entities found in the DXF file.\n\nSupported entities: LINE, CIRCLE, ARC, ELLIPSE, POLYLINE, LWPOLYLINE, SPLINE, TEXT, MTEXT, POINT, SOLID, 3DFACE, TRACE');
+          await showInfo('No supported entities found in the DXF file.\n\nSupported entities: LINE, CIRCLE, ARC, ELLIPSE, POLYLINE, LWPOLYLINE, SPLINE, TEXT, MTEXT, POINT, SOLID, 3DFACE, TRACE, INSERT');
           return;
         }
 
-        // Add the parsed shapes to the new document
-        useAppStore.getState().addShapes(shapes);
+        // Add the parsed shapes and block definitions to the new document
+        const store = useAppStore.getState();
+        store.addShapes(shapes);
+        if (blockDefinitions.length > 0) {
+          store.addBlockDefinitions(blockDefinitions);
+        }
 
         // Detect and apply DXF units
         const dxfUnit = parseDXFInsUnits(content);
@@ -132,6 +136,10 @@ export function useFileOperations() {
       if (project.unitSettings) {
         useAppStore.getState().setUnitSettings(project.unitSettings);
       }
+      // Restore block definitions (backward compatible)
+      if (project.blockDefinitions && project.blockDefinitions.length > 0) {
+        useAppStore.getState().addBlockDefinitions(project.blockDefinitions);
+      }
 
       // Close the previous empty untitled tab
       if (isEmptyUntitled) {
@@ -181,6 +189,7 @@ export function useFileOperations() {
           erpnext: { ...s.projectInfo.erpnext, apiSecret: '' },
         },
         unitSettings: s.unitSettings,
+        blockDefinitions: s.blockDefinitions.length > 0 ? s.blockDefinitions : undefined,
       };
 
       await writeProjectFile(filePath, project);
@@ -228,6 +237,7 @@ export function useFileOperations() {
           erpnext: { ...s.projectInfo.erpnext, apiSecret: '' },
         },
         unitSettings: s.unitSettings,
+        blockDefinitions: s.blockDefinitions.length > 0 ? s.blockDefinitions : undefined,
       };
 
       await writeProjectFile(filePath, project);
@@ -260,11 +270,11 @@ export function useFileOperations() {
         const customPatterns = [...s.userPatterns, ...s.projectPatterns];
         content = exportToIFC(s.shapes, s.layers, customPatterns);
       } else if (extension === 'dxf') {
-        content = exportToDXF(s.shapes, s.unitSettings);
+        content = exportToDXF(s.shapes, s.unitSettings, s.blockDefinitions);
       } else if (extension === 'json') {
         content = JSON.stringify({ shapes: s.shapes, layers: s.layers }, null, 2);
       } else {
-        content = exportToSVG(s.shapes);
+        content = exportToSVG(s.shapes, undefined, undefined, s.blockDefinitions);
       }
 
       await writeTextFile(filePath, content);
@@ -280,7 +290,7 @@ export function useFileOperations() {
     const filePath = await showExportDialog('svg', s.projectName);
     if (!filePath) return;
     try {
-      await writeTextFile(filePath, exportToSVG(s.shapes));
+      await writeTextFile(filePath, exportToSVG(s.shapes, undefined, undefined, s.blockDefinitions));
       await showInfo(`Exported successfully to ${filePath}`);
     } catch (err) { await showError(`Failed to export: ${err}`); }
   }, []);
@@ -291,7 +301,7 @@ export function useFileOperations() {
     const filePath = await showExportDialog('dxf', s.projectName);
     if (!filePath) return;
     try {
-      await writeTextFile(filePath, exportToDXF(s.shapes, s.unitSettings));
+      await writeTextFile(filePath, exportToDXF(s.shapes, s.unitSettings, s.blockDefinitions));
       await showInfo(`Exported successfully to ${filePath}`);
     } catch (err) { await showError(`Failed to export: ${err}`); }
   }, []);
@@ -326,20 +336,23 @@ export function useFileOperations() {
     try {
       const content = await readTextFile(filePath);
       const s = useAppStore.getState();
-      const shapes = parseDXF(content, s.activeLayerId, s.activeDrawingId);
+      const { shapes, blockDefinitions } = parseDXF(content, s.activeLayerId, s.activeDrawingId);
       if (shapes.length === 0) {
-        await showInfo('No supported entities found in the DXF file.\n\nSupported entities: LINE, CIRCLE, ARC, ELLIPSE, POLYLINE, LWPOLYLINE, SPLINE, TEXT, MTEXT, POINT, SOLID, 3DFACE, TRACE');
+        await showInfo('No supported entities found in the DXF file.\n\nSupported entities: LINE, CIRCLE, ARC, ELLIPSE, POLYLINE, LWPOLYLINE, SPLINE, TEXT, MTEXT, POINT, SOLID, 3DFACE, TRACE, INSERT');
         return;
       }
 
       addShapes(shapes);
+      if (blockDefinitions.length > 0) {
+        useAppStore.getState().addBlockDefinitions(blockDefinitions);
+      }
 
       // Detect and apply DXF units
       const dxfUnit = parseDXFInsUnits(content);
       if (dxfUnit) {
         useAppStore.getState().setLengthUnit(dxfUnit);
       }
-      logger.info(`Imported DXF: ${shapes.length} entities`, 'File');
+      logger.info(`Imported DXF: ${shapes.length} entities (${blockDefinitions.length} block definitions)`, 'File');
     } catch (err) {
       await showError(`Failed to import DXF: ${err}`);
     }

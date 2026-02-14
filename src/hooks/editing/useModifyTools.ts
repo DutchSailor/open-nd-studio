@@ -45,6 +45,7 @@ export function useModifyTools() {
   // Modify options
   const modifyCopy = useAppStore((s) => s.modifyCopy);
   const modifyMultiple = useAppStore((s) => s.modifyMultiple);
+  const moveAxisLock = useAppStore((s) => s.moveAxisLock);
   const scaleMode = useAppStore((s) => s.scaleMode);
   const scaleFactor = useAppStore((s) => s.scaleFactor);
   const filletRadius = useAppStore((s) => s.filletRadius);
@@ -102,8 +103,10 @@ export function useModifyTools() {
           }
           // Click destination
           const basePoint = pts[0];
-          const dx = worldPos.x - basePoint.x;
-          const dy = worldPos.y - basePoint.y;
+          let dx = worldPos.x - basePoint.x;
+          let dy = worldPos.y - basePoint.y;
+          if (moveAxisLock === 'x') dy = 0;
+          if (moveAxisLock === 'y') dx = 0;
           const transform = translateTransform(dx, dy);
           const selected = getSelectedShapes();
           const selectedParametric = getSelectedParametricShapes();
@@ -159,8 +162,10 @@ export function useModifyTools() {
           }
           // Place copy
           const basePoint = pts[0];
-          const dx = worldPos.x - basePoint.x;
-          const dy = worldPos.y - basePoint.y;
+          let dx = worldPos.x - basePoint.x;
+          let dy = worldPos.y - basePoint.y;
+          if (moveAxisLock === 'x') dy = 0;
+          if (moveAxisLock === 'y') dx = 0;
           const transform = translateTransform(dx, dy);
 
           // Copy regular shapes
@@ -793,7 +798,8 @@ export function useModifyTools() {
      filletRadius, chamferDistance1, chamferDistance2, offsetDistance, rotateAngle, modifyRefShapeId, setModifyRefShapeId,
      getSelectedShapes, getSelectedParametricShapes, activeDrawingId, activeLayerId,
      arrayMode, arrayCount, arraySpacing, arrayAngle,
-     cloneParametricShapes, updateProfilePosition, updateProfileRotation, updateProfileScale]
+     cloneParametricShapes, updateProfilePosition, updateProfileRotation, updateProfileScale,
+     moveAxisLock]
   );
 
   /**
@@ -848,8 +854,10 @@ export function useModifyTools() {
         case 'move':
         case 'copy': {
           if (pts.length === 1) {
-            const dx = worldPos.x - pts[0].x;
-            const dy = worldPos.y - pts[0].y;
+            let dx = worldPos.x - pts[0].x;
+            let dy = worldPos.y - pts[0].y;
+            if (moveAxisLock === 'x') dy = 0;
+            if (moveAxisLock === 'y') dx = 0;
             const transform = translateTransform(dx, dy);
             const regularGhosts = selected.map((s) => transformShape(s, transform));
             const paramGhosts = parametricGhosts.map((s) => transformShape(s, transform));
@@ -972,7 +980,8 @@ export function useModifyTools() {
       }
     },
     [activeTool, drawingPoints, selectedShapeIds, getSelectedShapes, getSelectedParametricShapes,
-     parametricShapesToGhosts, setDrawingPreview, scaleMode, arrayMode, arrayCount, arraySpacing, arrayAngle]
+     parametricShapesToGhosts, setDrawingPreview, scaleMode, arrayMode, arrayCount, arraySpacing, arrayAngle,
+     moveAxisLock]
   );
 
   /**

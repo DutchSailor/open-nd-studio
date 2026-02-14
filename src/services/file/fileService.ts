@@ -5,7 +5,7 @@
 import { open, save, message, ask } from '@tauri-apps/plugin-dialog';
 import { readTextFile, writeTextFile } from '@tauri-apps/plugin-fs';
 import { logger } from '../log/logService';
-import type { Shape, ShapeStyle, LineStyle, Layer, Drawing, Sheet, Viewport, DrawingBoundary, PolylineShape, ImageShape } from '../../types/geometry';
+import type { Shape, ShapeStyle, LineStyle, Layer, Drawing, Sheet, Viewport, DrawingBoundary, PolylineShape, ImageShape, BlockDefinition, BlockInstanceShape } from '../../types/geometry';
 import { splineToSvgPath } from '../../engine/geometry/SplineUtils';
 import { bulgeToArc, bulgeArcBounds } from '../../engine/geometry/GeometryUtils';
 export { exportToIFC } from '../export/ifcExport';
@@ -101,6 +101,8 @@ export interface ProjectFileV2 {
   projectInfo?: import('../../types/projectInfo').ProjectInfo;
   // Unit settings (optional, backward compatible)
   unitSettings?: import('../../units/types').UnitSettings;
+  // Block definitions (optional, backward compatible)
+  blockDefinitions?: BlockDefinition[];
 }
 
 /**
@@ -390,7 +392,11 @@ export async function writeProjectFile(path: string, project: ProjectFile): Prom
 /**
  * Export shapes to SVG format
  */
-export function exportToSVG(shapes: Shape[], width: number = 800, height: number = 600): string {
+export function exportToSVG(shapes: Shape[], width: number = 800, height: number = 600, blockDefinitions?: BlockDefinition[]): string {
+  const blockDefsMap = new Map<string, BlockDefinition>();
+  if (blockDefinitions) {
+    for (const def of blockDefinitions) blockDefsMap.set(def.id, def);
+  }
   // Calculate bounds
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
 
@@ -421,7 +427,7 @@ export function exportToSVG(shapes: Shape[], width: number = 800, height: number
 `;
 
   for (const shape of shapes) {
-    svg += shapeToSVG(shape);
+    svg += shapeToSVG(shape, blockDefsMap);
   }
 
   svg += '</svg>';
@@ -431,7 +437,7 @@ export function exportToSVG(shapes: Shape[], width: number = 800, height: number
 /**
  * Convert a shape to SVG element
  */
-function shapeToSVG(shape: Shape): string {
+function shapeToSVG(shape: Shape, blockDefsMap?: Map<string, BlockDefinition>): string {
   const { style } = shape;
   const stroke = style.strokeColor;
   const strokeWidth = style.strokeWidth;
@@ -521,6 +527,21 @@ function shapeToSVG(shape: Shape): string {
       return `  <image href="${imgShape.imageData}" x="${imgShape.position.x}" y="${imgShape.position.y}" width="${imgShape.width}" height="${imgShape.height}"${transform}${opacity} />\n`;
     }
 
+    case 'block-instance': {
+      const def = blockDefsMap?.get(shape.blockDefinitionId);
+      if (!def) return '';
+      const rotDeg = shape.rotation * 180 / Math.PI;
+      const tx = shape.position.x;
+      const ty = shape.position.y;
+      const bx = def.basePoint.x;
+      const by = def.basePoint.y;
+      let groupContent = '';
+      for (const entity of def.entities) {
+        groupContent += shapeToSVG(entity, blockDefsMap);
+      }
+      return `  <g transform="translate(${tx},${ty}) rotate(${rotDeg}) scale(${shape.scaleX},${shape.scaleY}) translate(${-bx},${-by})">\n${groupContent}  </g>\n`;
+    }
+
     default:
       return '';
   }
@@ -529,12 +550,20 @@ function shapeToSVG(shape: Shape): string {
 /**
  * Export shapes to DXF format (basic implementation)
  */
-export function exportToDXF(shapes: Shape[], unitSettings?: import('../../units/types').UnitSettings): string {
+export function exportToDXF(shapes: Shape[], unitSettings?: import('../../units/types').UnitSettings, blockDefinitions?: BlockDefinition[]): string {
   // Map length unit to DXF $INSUNITS value
   const insUnitsMap: Record<string, number> = {
     'mm': 4, 'cm': 5, 'm': 6, 'in': 1, 'ft': 2, 'ft-in': 2,
   };
   const insUnits = unitSettings ? (insUnitsMap[unitSettings.lengthUnit] ?? 4) : 4;
+
+  // Build a map of definition ID → block name for INSERT export
+  const blockNameMap = new Map<string, { name: string; def: BlockDefinition }>();
+  if (blockDefinitions) {
+    for (const def of blockDefinitions) {
+      blockNameMap.set(def.id, { name: def.name, def });
+    }
+  }
 
   let dxf = `0
 SECTION
@@ -546,14 +575,48 @@ $INSUNITS
 ${insUnits}
 0
 ENDSEC
-0
+`;
+
+  // ---- BLOCKS section ----
+  if (blockDefinitions && blockDefinitions.length > 0) {
+    dxf += `0
+SECTION
+2
+BLOCKS
+`;
+    for (const def of blockDefinitions) {
+      dxf += `0
+BLOCK
+2
+${def.name}
+10
+${def.basePoint.x}
+20
+${-def.basePoint.y}
+30
+0.0
+`;
+      for (const entity of def.entities) {
+        dxf += shapeToDXF(entity);
+      }
+      dxf += `0
+ENDBLK
+`;
+    }
+    dxf += `0
+ENDSEC
+`;
+  }
+
+  // ---- ENTITIES section ----
+  dxf += `0
 SECTION
 2
 ENTITIES
 `;
 
   for (const shape of shapes) {
-    dxf += shapeToDXF(shape);
+    dxf += shapeToDXF(shape, blockNameMap);
   }
 
   dxf += `0
@@ -567,7 +630,7 @@ EOF
 /**
  * Convert a shape to DXF entity
  */
-function shapeToDXF(shape: Shape): string {
+function shapeToDXF(shape: Shape, blockNameMap?: Map<string, { name: string; def: BlockDefinition }>): string {
   switch (shape.type) {
     case 'line':
       return `0
@@ -778,6 +841,29 @@ ${-pt.y}
       return result;
     }
 
+    case 'block-instance': {
+      const blockInfo = blockNameMap?.get(shape.blockDefinitionId);
+      if (!blockInfo) return '';
+      const rotDeg = -(shape.rotation * 180 / Math.PI);
+      return `0
+INSERT
+2
+${blockInfo.name}
+10
+${shape.position.x}
+20
+${-shape.position.y}
+30
+0.0
+41
+${shape.scaleX}
+42
+${shape.scaleY}
+50
+${rotDeg}
+`;
+    }
+
     default:
       return '';
   }
@@ -855,6 +941,13 @@ function getShapeBounds(shape: Shape): { minX: number; minY: number; maxX: numbe
         minY: shape.position.y,
         maxX: shape.position.x + shape.width,
         maxY: shape.position.y + shape.height,
+      };
+    case 'block-instance':
+      return {
+        minX: shape.position.x,
+        minY: shape.position.y,
+        maxX: shape.position.x,
+        maxY: shape.position.y,
       };
     default:
       return null;
@@ -996,24 +1089,21 @@ export function parseDXFInsUnits(content: string): import('../../units/types').L
 }
 
 /**
- * Parse a DXF string into shapes.
- * Supports LINE, CIRCLE, ARC, POLYLINE/LWPOLYLINE, ELLIPSE, SPLINE, TEXT, MTEXT, POINT entities.
- * Also extracts layer names and colors from entities.
+ * Parse DXF entities from a lines array starting at a given index.
+ * Reusable for both BLOCKS section (entities inside a block) and ENTITIES section.
+ * Stops when a group-code-0 value matches any stopToken, or on EOF.
  */
-export function parseDXF(
-  content: string,
+function parseEntitiesFromLines(
+  lines: string[],
+  startIndex: number,
+  stopTokens: string[],
   layerId: string,
   drawingId: string,
-): Shape[] {
-  const defaultStyle: ShapeStyle = {
-    strokeColor: '#ffffff',
-    strokeWidth: 1,
-    lineStyle: 'solid' as LineStyle,
-  };
-
+  defaultStyle: ShapeStyle,
+  blocksMap?: Map<string, { entities: Shape[], baseX: number, baseY: number, definitionId?: string }>,
+): { shapes: Shape[], endIndex: number } {
   const shapes: Shape[] = [];
-  const lines = content.split(/\r?\n/);
-  let i = 0;
+  let i = startIndex;
 
   const next = (): [number, string] => {
     const code = parseInt(lines[i]?.trim() ?? '0', 10);
@@ -1022,17 +1112,12 @@ export function parseDXF(
     return [code, value];
   };
 
-  // Advance to ENTITIES section
-  while (i < lines.length) {
-    const line = lines[i]?.trim();
-    if (line === 'ENTITIES') { i++; break; }
-    i++;
-  }
-
   while (i < lines.length - 1) {
     const [code, value] = next();
-    if (code === 0 && value === 'EOF') break;
-    if (code === 0 && value === 'ENDSEC') break;
+    if (code === 0 && (stopTokens.includes(value) || value === 'EOF')) {
+      i -= 2;
+      break;
+    }
 
     // Parse LINE entity
     if (code === 0 && value === 'LINE') {
@@ -1480,13 +1565,157 @@ export function parseDXF(
         closed: true,
       } as Shape);
     }
+
+    // Parse INSERT entity (block reference) — create BlockInstanceShape
+    if (code === 0 && value === 'INSERT' && blocksMap) {
+      let blockName = '';
+      let insertX = 0, insertY = 0;
+      let insScaleX = 1, insScaleY = 1;
+      let rotation = 0;
+
+      while (i < lines.length - 1) {
+        const [c, v] = next();
+        if (c === 0) { i -= 2; break; }
+        if (c === 2) blockName = v;
+        if (c === 10) insertX = parseFloat(v);
+        if (c === 20) insertY = parseFloat(v);
+        if (c === 41) insScaleX = parseFloat(v);
+        if (c === 42) insScaleY = parseFloat(v);
+        if (c === 50) rotation = parseFloat(v);
+      }
+
+      const block = blocksMap.get(blockName);
+      if (block && block.definitionId) {
+        const instanceShape: BlockInstanceShape = {
+          id: crypto.randomUUID(),
+          type: 'block-instance',
+          blockDefinitionId: block.definitionId,
+          position: { x: insertX, y: -insertY },
+          rotation: -(rotation * Math.PI / 180),
+          scaleX: insScaleX,
+          scaleY: insScaleY,
+          style: defaultStyle,
+          layerId,
+          drawingId,
+          visible: true,
+          locked: false,
+        };
+        shapes.push(instanceShape);
+      }
+    }
   }
+
+  return { shapes, endIndex: i };
+}
+
+/**
+ * Parse a DXF string into shapes and block definitions.
+ * Supports LINE, CIRCLE, ARC, POLYLINE/LWPOLYLINE, ELLIPSE, SPLINE, TEXT, MTEXT, POINT, INSERT entities.
+ * Also extracts layer names and colors from entities. INSERT entities become BlockInstanceShape references.
+ */
+export function parseDXF(
+  content: string,
+  layerId: string,
+  drawingId: string,
+): { shapes: Shape[], blockDefinitions: BlockDefinition[] } {
+  const defaultStyle: ShapeStyle = {
+    strokeColor: '#ffffff',
+    strokeWidth: 1,
+    lineStyle: 'solid' as LineStyle,
+  };
+
+  const lines = content.split(/\r?\n/);
+
+  // ---- Parse BLOCKS section ----
+  type BlockDef = { entities: Shape[], baseX: number, baseY: number, definitionId: string };
+  const blocks = new Map<string, BlockDef>();
+  const blockDefinitions: BlockDefinition[] = [];
+
+  {
+    let bi = 0;
+    while (bi < lines.length) {
+      if (lines[bi]?.trim() === 'BLOCKS') { bi++; break; }
+      bi++;
+    }
+
+    if (bi < lines.length) {
+      while (bi < lines.length - 1) {
+        const code = parseInt(lines[bi]?.trim() ?? '0', 10);
+        const val = lines[bi + 1]?.trim() ?? '';
+        if (code === 0 && (val === 'ENDSEC' || val === 'EOF')) break;
+
+        if (code === 0 && val === 'BLOCK') {
+          bi += 2;
+          let blockName = '';
+          let baseX = 0, baseY = 0;
+
+          // Read block header group codes
+          while (bi < lines.length - 1) {
+            const c = parseInt(lines[bi]?.trim() ?? '0', 10);
+            const v = lines[bi + 1]?.trim() ?? '';
+            if (c === 0) break;
+            bi += 2;
+            if (c === 2) blockName = v;
+            if (c === 10) baseX = parseFloat(v);
+            if (c === 20) baseY = parseFloat(v);
+          }
+
+          const blockResult = parseEntitiesFromLines(
+            lines, bi, ['ENDBLK'],
+            layerId, drawingId, defaultStyle,
+          );
+          bi = blockResult.endIndex;
+
+          // Advance past ENDBLK and its trailing group codes
+          if (bi < lines.length - 1) {
+            const c = parseInt(lines[bi]?.trim() ?? '0', 10);
+            const v = lines[bi + 1]?.trim() ?? '';
+            if (c === 0 && v === 'ENDBLK') {
+              bi += 2;
+              while (bi < lines.length - 1) {
+                const c2 = parseInt(lines[bi]?.trim() ?? '0', 10);
+                if (c2 === 0) break;
+                bi += 2;
+              }
+            }
+          }
+
+          // Store block (skip anonymous blocks starting with *)
+          if (blockName && !blockName.startsWith('*') && blockResult.shapes.length > 0) {
+            const defId = crypto.randomUUID();
+            blocks.set(blockName, { entities: blockResult.shapes, baseX, baseY, definitionId: defId });
+            blockDefinitions.push({
+              id: defId,
+              name: blockName,
+              basePoint: { x: baseX, y: -baseY },
+              entities: blockResult.shapes,
+              drawingId,
+            });
+          }
+        } else {
+          bi += 2;
+        }
+      }
+    }
+  }
+
+  // ---- Parse ENTITIES section ----
+  let i = 0;
+  while (i < lines.length) {
+    if (lines[i]?.trim() === 'ENTITIES') { i++; break; }
+    i++;
+  }
+
+  const { shapes } = parseEntitiesFromLines(
+    lines, i, ['ENDSEC'],
+    layerId, drawingId, defaultStyle, blocks,
+  );
 
   if (shapes.length > 0) {
-    logger.info(`DXF parsed: ${shapes.length} entities imported`, 'DXF');
+    logger.info(`DXF parsed: ${shapes.length} entities imported (${blockDefinitions.length} block definitions)`, 'DXF');
   }
 
-  return shapes;
+  return { shapes, blockDefinitions };
 }
 
 /**

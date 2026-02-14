@@ -366,7 +366,7 @@ export const Ribbon = memo(function Ribbon({ onOpenBackstage }: RibbonProps) {
     deleteSelectedShapes,
     selectedShapeIds,
     setPrintDialogOpen,
-    setSnapSettingsOpen,
+    openSettings,
     // Clipboard
     copySelectedShapes,
     cutSelectedShapes,
@@ -1042,8 +1042,8 @@ export const Ribbon = memo(function Ribbon({ onOpenBackstage }: RibbonProps) {
             <RibbonGroup label="Settings">
               <RibbonButton
                 icon={<Settings size={24} />}
-                label="Snap Settings"
-                onClick={() => setSnapSettingsOpen(true)}
+                label="Settings"
+                onClick={() => openSettings()}
               />
             </RibbonGroup>
 

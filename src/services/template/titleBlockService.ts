@@ -34,10 +34,17 @@ export const BUILT_IN_TEMPLATES: TitleBlockTemplate[] = [];
 // ============================================================================
 
 /**
- * Get a template by ID
+ * Get a template by ID.
+ * Searches built-in templates first, then the optional customTemplates array.
+ * Pass customTemplates from the store when calling from contexts that have store access.
  */
-export function getTemplateById(id: string): TitleBlockTemplate | undefined {
-  return BUILT_IN_TEMPLATES.find(t => t.id === id);
+export function getTemplateById(id: string, customTemplates?: TitleBlockTemplate[]): TitleBlockTemplate | undefined {
+  const builtIn = BUILT_IN_TEMPLATES.find(t => t.id === id);
+  if (builtIn) return builtIn;
+  if (customTemplates) {
+    return customTemplates.find(t => t.id === id);
+  }
+  return undefined;
 }
 
 /**

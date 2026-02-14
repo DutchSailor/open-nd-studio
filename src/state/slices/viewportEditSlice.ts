@@ -42,6 +42,11 @@ export interface ViewportEditActions {
   updateViewportDrag: (sheetPos: Point) => void;
   endViewportDrag: () => void;
   cancelViewportDrag: () => void;
+  // Keyboard-initiated viewport move (G key)
+  startViewportMove: (basePoint: Point) => void;
+  updateViewportMove: (sheetPos: Point) => void;
+  commitViewportMove: () => void;
+  cancelViewportMove: () => void;
 
   // Crop region actions
   enableCropRegion: (viewportId: string) => void;
@@ -77,6 +82,9 @@ export const initialViewportEditState: ViewportEditState_Full = {
     isDragging: false,
     dragStart: null,
     originalViewport: null,
+    isMoving: false,
+    moveBasePoint: null,
+    moveSnappedPos: null,
   },
   cropRegionEditState: {
     isEditing: false,
@@ -125,6 +133,118 @@ const createDefaultCropRegion = (state: FullStore, draftId: string): CropRegion 
     enabled: true,
   };
 };
+
+/**
+ * Snap a viewport position to alignment guides (sheet borders + other viewports).
+ * Returns the snapped { x, y }.
+ */
+function snapViewportPosition(
+  newX: number, newY: number,
+  vpWidth: number, vpHeight: number,
+  sheet: Sheet,
+  excludeViewportId: string
+): { x: number; y: number } {
+  const snapThreshold = 2; // mm
+  const others = sheet.viewports.filter(v => v.visible && v.id !== excludeViewportId);
+
+  const frameMargin = 10; // mm
+  let paperW: number, paperH: number;
+  if (sheet.paperSize === 'Custom') {
+    paperW = (sheet as any).customWidth || 210;
+    paperH = (sheet as any).customHeight || 297;
+  } else {
+    const baseDims = PAPER_SIZES[sheet.paperSize];
+    if (sheet.orientation === 'landscape') {
+      paperW = baseDims.height;
+      paperH = baseDims.width;
+    } else {
+      paperW = baseDims.width;
+      paperH = baseDims.height;
+    }
+  }
+
+  const borderXPositions = [0, frameMargin, paperW - frameMargin, paperW];
+  const borderYPositions = [0, frameMargin, paperH - frameMargin, paperH];
+
+  let snappedX = false;
+  let snappedY = false;
+
+  const dXOffsets = [0, vpWidth, vpWidth / 2];
+  const dYOffsets = [0, vpHeight, vpHeight / 2];
+
+  // Snap to sheet borders first
+  for (const offset of dXOffsets) {
+    if (snappedX) break;
+    for (const bx of borderXPositions) {
+      if (Math.abs((newX + offset) - bx) <= snapThreshold) {
+        newX = bx - offset;
+        snappedX = true;
+        break;
+      }
+    }
+  }
+  for (const offset of dYOffsets) {
+    if (snappedY) break;
+    for (const by of borderYPositions) {
+      if (Math.abs((newY + offset) - by) <= snapThreshold) {
+        newY = by - offset;
+        snappedY = true;
+        break;
+      }
+    }
+  }
+
+  // Snap to other viewports
+  for (const other of others) {
+    if (snappedX && snappedY) break;
+    const oLeft = other.x;
+    const oRight = other.x + other.width;
+    const oCenterX = other.x + other.width / 2;
+    const oTop = other.y;
+    const oBottom = other.y + other.height;
+    const oCenterY = other.y + other.height / 2;
+
+    if (!snappedX) {
+      const xTargets = [oLeft, oRight, oCenterX];
+      const xEdges = [
+        { offset: 0, targets: xTargets },
+        { offset: vpWidth, targets: xTargets },
+        { offset: vpWidth / 2, targets: [oCenterX] },
+      ];
+      for (const { offset, targets } of xEdges) {
+        for (const target of targets) {
+          if (Math.abs((newX + offset) - target) <= snapThreshold) {
+            newX = target - offset;
+            snappedX = true;
+            break;
+          }
+        }
+        if (snappedX) break;
+      }
+    }
+
+    if (!snappedY) {
+      const yTargets = [oTop, oBottom, oCenterY];
+      const yEdges = [
+        { offset: 0, targets: yTargets },
+        { offset: vpHeight, targets: yTargets },
+        { offset: vpHeight / 2, targets: [oCenterY] },
+      ];
+      for (const { offset, targets } of yEdges) {
+        for (const target of targets) {
+          if (Math.abs((newY + offset) - target) <= snapThreshold) {
+            newY = target - offset;
+            snappedY = true;
+            break;
+          }
+        }
+        if (snappedY) break;
+      }
+    }
+  }
+
+  return { x: newX, y: newY };
+}
 
 export const createViewportEditSlice = (
   set: (fn: (state: FullStore) => void) => void,
@@ -180,122 +300,14 @@ export const createViewportEditSlice = (
 
       // Only allow moving (center handle) - size is derived from boundary × scale
       if (activeHandle === 'center') {
-        let newX = originalViewport.x + dx;
-        let newY = originalViewport.y + dy;
-
-        // Snap-to-alignment: check edges/centers against other viewports and sheet borders
-        const snapThreshold = 2; // mm
-        const others = sheet.viewports.filter(v => v.visible && v.id !== selectedViewportId);
-
-        const dWidth = originalViewport.width;
-        const dHeight = originalViewport.height;
-
-        // Compute paper dimensions in mm for border snapping
-        const frameMargin = 10; // mm
-        let paperW: number, paperH: number;
-        if (sheet.paperSize === 'Custom') {
-          paperW = sheet.customWidth || 210;
-          paperH = sheet.customHeight || 297;
-        } else {
-          const baseDims = PAPER_SIZES[sheet.paperSize];
-          if (sheet.orientation === 'landscape') {
-            paperW = baseDims.height;
-            paperH = baseDims.width;
-          } else {
-            paperW = baseDims.width;
-            paperH = baseDims.height;
-          }
-        }
-
-        // Border snap positions: paper edges + frame edges
-        const borderXPositions = [0, frameMargin, paperW - frameMargin, paperW];
-        const borderYPositions = [0, frameMargin, paperH - frameMargin, paperH];
-
-        let snappedX = false;
-        let snappedY = false;
-
-        // --- Snap to sheet borders first (higher priority) ---
-        const dXOffsets = [0, dWidth, dWidth / 2]; // left, right, center
-        const dYOffsets = [0, dHeight, dHeight / 2]; // top, bottom, center
-
-        for (const offset of dXOffsets) {
-          if (snappedX) break;
-          for (const bx of borderXPositions) {
-            if (Math.abs((newX + offset) - bx) <= snapThreshold) {
-              newX = bx - offset;
-              snappedX = true;
-              break;
-            }
-          }
-        }
-
-        for (const offset of dYOffsets) {
-          if (snappedY) break;
-          for (const by of borderYPositions) {
-            if (Math.abs((newY + offset) - by) <= snapThreshold) {
-              newY = by - offset;
-              snappedY = true;
-              break;
-            }
-          }
-        }
-
-        // --- Snap to other viewports ---
-        for (const other of others) {
-          if (snappedX && snappedY) break;
-
-          const oLeft = other.x;
-          const oRight = other.x + other.width;
-          const oCenterX = other.x + other.width / 2;
-          const oTop = other.y;
-          const oBottom = other.y + other.height;
-          const oCenterY = other.y + other.height / 2;
-
-          // X-axis snap targets (other viewport edge/center positions)
-          if (!snappedX) {
-            const xTargets = [oLeft, oRight, oCenterX];
-            const xEdges = [
-              { offset: 0, targets: xTargets },             // left edge
-              { offset: dWidth, targets: xTargets },         // right edge
-              { offset: dWidth / 2, targets: [oCenterX] },   // center to center only
-            ];
-            for (const { offset, targets } of xEdges) {
-              for (const target of targets) {
-                if (Math.abs((newX + offset) - target) <= snapThreshold) {
-                  newX = target - offset;
-                  snappedX = true;
-                  break;
-                }
-              }
-              if (snappedX) break;
-            }
-          }
-
-          // Y-axis snap targets
-          if (!snappedY) {
-            const yTargets = [oTop, oBottom, oCenterY];
-            const yEdges = [
-              { offset: 0, targets: yTargets },              // top edge
-              { offset: dHeight, targets: yTargets },         // bottom edge
-              { offset: dHeight / 2, targets: [oCenterY] },   // center to center only
-            ];
-            for (const { offset, targets } of yEdges) {
-              for (const target of targets) {
-                if (Math.abs((newY + offset) - target) <= snapThreshold) {
-                  newY = target - offset;
-                  snappedY = true;
-                  break;
-                }
-              }
-              if (snappedY) break;
-            }
-          }
-        }
-
-        viewport.x = newX;
-        viewport.y = newY;
+        const snapped = snapViewportPosition(
+          originalViewport.x + dx, originalViewport.y + dy,
+          originalViewport.width, originalViewport.height,
+          sheet, selectedViewportId
+        );
+        viewport.x = snapped.x;
+        viewport.y = snapped.y;
       }
-      // Note: Resize handles are ignored - viewport size is controlled by scale
 
       sheet.modifiedAt = new Date().toISOString();
     }),
@@ -331,6 +343,62 @@ export const createViewportEditSlice = (
       state.viewportEditState.isDragging = false;
       state.viewportEditState.dragStart = null;
       state.viewportEditState.originalViewport = null;
+    }),
+
+  // Keyboard-initiated viewport move (G key)
+  startViewportMove: (basePoint) =>
+    set((state) => {
+      const { selectedViewportId } = state.viewportEditState;
+      if (!selectedViewportId || !state.activeSheetId) return;
+      const sheet = state.sheets.find((s) => s.id === state.activeSheetId);
+      if (!sheet) return;
+      const viewport = sheet.viewports.find((vp) => vp.id === selectedViewportId);
+      if (!viewport || viewport.locked) return;
+      state.viewportEditState.isMoving = true;
+      state.viewportEditState.moveBasePoint = basePoint;
+      state.viewportEditState.moveSnappedPos = null;
+    }),
+
+  updateViewportMove: (sheetPos) =>
+    set((state) => {
+      const { selectedViewportId, moveBasePoint, isMoving } = state.viewportEditState;
+      if (!isMoving || !selectedViewportId || !moveBasePoint || !state.activeSheetId) return;
+      const sheet = state.sheets.find((s) => s.id === state.activeSheetId);
+      if (!sheet) return;
+      const viewport = sheet.viewports.find((vp) => vp.id === selectedViewportId);
+      if (!viewport) return;
+      const dx = sheetPos.x - moveBasePoint.x;
+      const dy = sheetPos.y - moveBasePoint.y;
+      const snapped = snapViewportPosition(
+        viewport.x + dx, viewport.y + dy,
+        viewport.width, viewport.height,
+        sheet, selectedViewportId
+      );
+      state.viewportEditState.moveSnappedPos = snapped;
+    }),
+
+  commitViewportMove: () =>
+    set((state) => {
+      const { selectedViewportId, moveSnappedPos } = state.viewportEditState;
+      if (!selectedViewportId || !moveSnappedPos || !state.activeSheetId) return;
+      const sheet = state.sheets.find((s) => s.id === state.activeSheetId);
+      if (!sheet) return;
+      const viewport = sheet.viewports.find((vp) => vp.id === selectedViewportId);
+      if (!viewport || viewport.locked) return;
+      viewport.x = moveSnappedPos.x;
+      viewport.y = moveSnappedPos.y;
+      sheet.modifiedAt = new Date().toISOString();
+      state.viewportEditState.isMoving = false;
+      state.viewportEditState.moveBasePoint = null;
+      state.viewportEditState.moveSnappedPos = null;
+      state.isModified = true;
+    }),
+
+  cancelViewportMove: () =>
+    set((state) => {
+      state.viewportEditState.isMoving = false;
+      state.viewportEditState.moveBasePoint = null;
+      state.viewportEditState.moveSnappedPos = null;
     }),
 
   // ============================================================================

@@ -17,6 +17,8 @@ import type {
   TextStyle,
 } from './types';
 
+import type { BlockDefinition } from '../../types/geometry';
+
 import type {
   TitleBlockTemplate,
   EnhancedTitleBlock,
@@ -183,6 +185,9 @@ export interface ModelState {
   // Groups
   groups: import('../../types/geometry').ShapeGroup[];
 
+  // Block Definitions (for DXF blocks / block instances)
+  blockDefinitions: BlockDefinition[];
+
   // Layers
   layers: Layer[];
   activeLayerId: string;
@@ -228,6 +233,9 @@ export interface ModelActions {
   bringForward: () => void;
   sendBackward: () => void;
   sendToBack: () => void;
+
+  // Block Definition actions
+  addBlockDefinitions: (defs: BlockDefinition[]) => void;
 
   // Group actions
   groupSelectedShapes: () => void;
@@ -365,6 +373,7 @@ export const initialModelState: ModelState = {
   },
   shapes: [],
   groups: [],
+  blockDefinitions: [],
   layers: [defaultLayer],
   activeLayerId: defaultLayer.id,
   customTitleBlockTemplates: [],
@@ -435,6 +444,18 @@ export const createModelSlice = (
       withHistory(state, (draft) => {
         for (const shape of shapes) draft.push(shape);
       });
+    }),
+
+  addBlockDefinitions: (defs) =>
+    set((state) => {
+      if (defs.length === 0) return;
+      for (const def of defs) {
+        // Avoid duplicates by ID
+        if (!state.blockDefinitions.some(d => d.id === def.id)) {
+          state.blockDefinitions.push(def);
+        }
+      }
+      state.isModified = true;
     }),
 
   updateShape: (id, updates) =>

@@ -3,7 +3,7 @@
  * Calibration seed: [77,111,106,116,97,98,97,32,75,97,114,105,109,105]
  */
 
-import type { Point, Shape, RectangleShape, TextShape, ArcShape, EllipseShape, HatchShape, BeamShape, ImageShape } from '../../types/geometry';
+import type { Point, Shape, RectangleShape, TextShape, ArcShape, EllipseShape, HatchShape, BeamShape, ImageShape, BlockDefinition, BlockInstanceShape } from '../../types/geometry';
 import type { ParametricShape, ProfileParametricShape } from '../../types/parametric';
 import { isPointNearSpline } from './SplineUtils';
 import type { DimensionShape } from '../../types/dimension';
@@ -125,7 +125,7 @@ export function isPointNearImage(point: Point, shape: ImageShape, tolerance: num
  * Check if a point is near a shape (for hit testing)
  * @param drawingScale - Optional drawing scale for text annotation scaling
  */
-export function isPointNearShape(point: Point, shape: Shape, tolerance: number = 5, drawingScale?: number): boolean {
+export function isPointNearShape(point: Point, shape: Shape, tolerance: number = 5, drawingScale?: number, blockDefinitions?: Map<string, BlockDefinition>): boolean {
   switch (shape.type) {
     case 'line':
       return isPointNearLine(point, shape.start, shape.end, tolerance);
@@ -151,6 +151,8 @@ export function isPointNearShape(point: Point, shape: Shape, tolerance: number =
       return isPointNearBeam(point, shape, tolerance);
     case 'image':
       return isPointNearImage(point, shape, tolerance);
+    case 'block-instance':
+      return isPointNearBlockInstance(point, shape, tolerance, drawingScale, blockDefinitions);
     default:
       return false;
   }
@@ -846,6 +848,47 @@ export function isPointNearDimension(
 }
 
 /**
+ * Check if a point is near a block instance (inverse-transform and test child entities)
+ */
+export function isPointNearBlockInstance(
+  point: Point,
+  shape: BlockInstanceShape,
+  tolerance: number,
+  drawingScale?: number,
+  blockDefinitions?: Map<string, BlockDefinition>,
+): boolean {
+  if (!blockDefinitions) return false;
+  const def = blockDefinitions.get(shape.blockDefinitionId);
+  if (!def) return false;
+
+  // Inverse-transform the test point into block-local coordinates
+  const dx = point.x - shape.position.x;
+  const dy = point.y - shape.position.y;
+  const cos = Math.cos(-shape.rotation);
+  const sin = Math.sin(-shape.rotation);
+  const rx = dx * cos - dy * sin;
+  const ry = dx * sin + dy * cos;
+  const sx = shape.scaleX !== 0 ? rx / shape.scaleX : rx;
+  const sy = shape.scaleY !== 0 ? ry / shape.scaleY : ry;
+  const localPoint: Point = {
+    x: sx + def.basePoint.x,
+    y: sy + def.basePoint.y,
+  };
+
+  // Scale tolerance inversely
+  const avgScale = (Math.abs(shape.scaleX) + Math.abs(shape.scaleY)) / 2;
+  const localTolerance = avgScale !== 0 ? tolerance / avgScale : tolerance;
+
+  // Test against each entity in the definition
+  for (const entity of def.entities) {
+    if (isPointNearShape(localPoint, entity, localTolerance, drawingScale, blockDefinitions)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
  * Check if a point is near a line segment
  */
 export function isPointNearLine(
@@ -1029,7 +1072,7 @@ export function isPointNearParametricShape(
  * Get bounding box of a shape
  * @param drawingScale - Optional drawing scale for text annotation scaling
  */
-export function getShapeBounds(shape: Shape, drawingScale?: number): ShapeBounds | null {
+export function getShapeBounds(shape: Shape, drawingScale?: number, blockDefinitions?: Map<string, BlockDefinition>): ShapeBounds | null {
   switch (shape.type) {
     case 'line':
       return {
@@ -1316,6 +1359,50 @@ export function getShapeBounds(shape: Shape, drawingScale?: number): ShapeBounds
         minY: Math.min(imgCorners[0].y, imgCorners[1].y, imgCorners[2].y, imgCorners[3].y),
         maxX: Math.max(imgCorners[0].x, imgCorners[1].x, imgCorners[2].x, imgCorners[3].x),
         maxY: Math.max(imgCorners[0].y, imgCorners[1].y, imgCorners[2].y, imgCorners[3].y),
+      };
+    }
+    case 'block-instance': {
+      if (!blockDefinitions) return { minX: shape.position.x, minY: shape.position.y, maxX: shape.position.x, maxY: shape.position.y };
+      const def = blockDefinitions.get(shape.blockDefinitionId);
+      if (!def || def.entities.length === 0) return { minX: shape.position.x, minY: shape.position.y, maxX: shape.position.x, maxY: shape.position.y };
+
+      // Compute bounds of all entities in local space
+      let lMinX = Infinity, lMinY = Infinity, lMaxX = -Infinity, lMaxY = -Infinity;
+      for (const entity of def.entities) {
+        const eb = getShapeBounds(entity, drawingScale, blockDefinitions);
+        if (eb) {
+          lMinX = Math.min(lMinX, eb.minX);
+          lMinY = Math.min(lMinY, eb.minY);
+          lMaxX = Math.max(lMaxX, eb.maxX);
+          lMaxY = Math.max(lMaxY, eb.maxY);
+        }
+      }
+      if (lMinX === Infinity) return { minX: shape.position.x, minY: shape.position.y, maxX: shape.position.x, maxY: shape.position.y };
+
+      // Transform the 4 bounding-box corners through the instance transform
+      const localCorners = [
+        { x: lMinX, y: lMinY },
+        { x: lMaxX, y: lMinY },
+        { x: lMaxX, y: lMaxY },
+        { x: lMinX, y: lMaxY },
+      ];
+      const cos = Math.cos(shape.rotation);
+      const sin = Math.sin(shape.rotation);
+      const bp = def.basePoint;
+      const worldCorners = localCorners.map(c => {
+        const lx = (c.x - bp.x) * shape.scaleX;
+        const ly = (c.y - bp.y) * shape.scaleY;
+        return {
+          x: lx * cos - ly * sin + shape.position.x,
+          y: lx * sin + ly * cos + shape.position.y,
+        };
+      });
+
+      return {
+        minX: Math.min(worldCorners[0].x, worldCorners[1].x, worldCorners[2].x, worldCorners[3].x),
+        minY: Math.min(worldCorners[0].y, worldCorners[1].y, worldCorners[2].y, worldCorners[3].y),
+        maxX: Math.max(worldCorners[0].x, worldCorners[1].x, worldCorners[2].x, worldCorners[3].x),
+        maxY: Math.max(worldCorners[0].y, worldCorners[1].y, worldCorners[2].y, worldCorners[3].y),
       };
     }
     default:

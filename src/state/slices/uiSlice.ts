@@ -59,6 +59,8 @@ export const DEFAULT_PRINT_SETTINGS: PrintSettings = {
 // State Interface
 // ============================================================================
 
+export type SettingsDialogTab = 'drawing-aids' | 'grid-snap' | 'display' | 'units-scale';
+
 export interface UIState {
   // Dialogs
   printDialogOpen: boolean;
@@ -66,6 +68,8 @@ export interface UIState {
   titleBlockEditorOpen: boolean;
   newSheetDialogOpen: boolean;
   findReplaceDialogOpen: boolean;
+  settingsDialogOpen: boolean;
+  settingsDialogTab: SettingsDialogTab;
 
   // Terminal
   terminalOpen: boolean;
@@ -91,6 +95,9 @@ export interface UIActions {
   setTitleBlockEditorOpen: (open: boolean) => void;
   setNewSheetDialogOpen: (open: boolean) => void;
   setFindReplaceDialogOpen: (open: boolean) => void;
+  setSettingsDialogOpen: (open: boolean) => void;
+  setSettingsDialogTab: (tab: SettingsDialogTab) => void;
+  openSettings: (tab?: SettingsDialogTab) => void;
   setTerminalOpen: (open: boolean) => void;
   toggleTerminal: () => void;
   setTerminalHeight: (height: number) => void;
@@ -133,6 +140,8 @@ export const initialUIState: UIState = {
   titleBlockEditorOpen: false,
   newSheetDialogOpen: false,
   findReplaceDialogOpen: false,
+  settingsDialogOpen: false,
+  settingsDialogTab: 'drawing-aids' as SettingsDialogTab,
   terminalOpen: false,
   terminalHeight: 200,
   currentFilePath: null,
@@ -154,6 +163,8 @@ interface FullStore {
   titleBlockEditorOpen: boolean;
   newSheetDialogOpen: boolean;
   findReplaceDialogOpen: boolean;
+  settingsDialogOpen: boolean;
+  settingsDialogTab: SettingsDialogTab;
   terminalOpen: boolean;
   terminalHeight: number;
   currentFilePath: string | null;
@@ -220,6 +231,22 @@ export const createUISlice = (
   setFindReplaceDialogOpen: (open) =>
     set((state) => {
       state.findReplaceDialogOpen = open;
+    }),
+
+  setSettingsDialogOpen: (open) =>
+    set((state) => {
+      state.settingsDialogOpen = open;
+    }),
+
+  setSettingsDialogTab: (tab) =>
+    set((state) => {
+      state.settingsDialogTab = tab;
+    }),
+
+  openSettings: (tab) =>
+    set((state) => {
+      state.settingsDialogTab = tab || 'drawing-aids';
+      state.settingsDialogOpen = true;
     }),
 
   setTerminalOpen: (open) =>

@@ -2,7 +2,7 @@
  * PatternManagerDialog - Dialog for managing custom hatch patterns
  */
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef, useEffect } from 'react';
 import {
   Plus,
   Copy,
@@ -34,10 +34,14 @@ import {
   openSVGFilePicker,
   readSVGFile,
   parseSVGFile,
+  parseSVGPatterns,
+  createSvgPattern,
   downloadSVGPattern,
   generateSVGFromLinePattern,
 } from '../../../services/export/svgPatternService';
+import type { ParsedSvgPattern } from '../../../services/export/svgPatternService';
 import { isSvgHatchPattern } from '../../../types/hatch';
+import { SvgPatternImportDialog } from './SvgPatternImportDialog';
 
 interface PatternManagerDialogProps {
   isOpen: boolean;
@@ -79,6 +83,45 @@ export function PatternManagerDialog({
 
   // Import/export status
   const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // SVG multi-pattern import dialog
+  const [svgImportPatterns, setSvgImportPatterns] = useState<ParsedSvgPattern[] | null>(null);
+
+  // Preview expand/collapse on double-click
+  const [previewExpanded, setPreviewExpanded] = useState(false);
+
+  // Dynamic preview sizing - observe the right panel, calculate preview from available space
+  const rightPanelRef = useRef<HTMLDivElement>(null);
+  const detailsRef = useRef<HTMLDivElement>(null);
+  const [previewSize, setPreviewSize] = useState({ width: 200, height: 150 });
+
+  useEffect(() => {
+    const panel = rightPanelRef.current;
+    if (!panel) return;
+
+    const recalc = () => {
+      const padding = 32; // p-4 = 16px each side
+      const gap = 16; // pt-4 gap between preview and details
+      const panelW = panel.clientWidth - padding;
+      const panelH = panel.clientHeight - padding;
+      const detailsH = (!previewExpanded && detailsRef.current) ? detailsRef.current.offsetHeight + gap : 0;
+      const availW = Math.max(60, panelW);
+      const availH = Math.max(60, panelH - detailsH);
+      // Fit canvas: 4:3 aspect ratio within available space
+      const fitByWidth = { w: availW, h: availW * 0.75 };
+      const fitByHeight = { w: availH * (4 / 3), h: availH };
+      const fit = fitByWidth.h <= availH ? fitByWidth : fitByHeight;
+      setPreviewSize({
+        width: Math.round(Math.max(60, fit.w)),
+        height: Math.round(Math.max(60, fit.h)),
+      });
+    };
+
+    const observer = new ResizeObserver(recalc);
+    observer.observe(panel);
+    recalc();
+    return () => observer.disconnect();
+  }, [isOpen, selectedPatternId, previewExpanded]); // re-attach on open, pattern change, or expand toggle
 
   // Resolve favorite patterns (only those that still exist)
   const allPatternsFlat = useMemo(() => [
@@ -277,7 +320,7 @@ export function PatternManagerDialog({
       if (!file) return; // User cancelled
 
       const content = await readSVGFile(file);
-      const result = parseSVGFile(content, file.name);
+      const result = parseSVGPatterns(content);
 
       if (result.errors.length > 0) {
         setStatusMessage({
@@ -287,54 +330,77 @@ export function PatternManagerDialog({
         return;
       }
 
-      if (result.patterns.length === 0) {
-        setStatusMessage({ type: 'error', text: 'No valid patterns found in SVG file' });
+      if (result.parsed.length === 0) {
+        // No patterns found - try fallback: treat entire SVG as tile
+        const fallback = parseSVGFile(content, file.name);
+        if (fallback.patterns.length > 0) {
+          const { addUserPattern } = useAppStore.getState();
+          const pattern = fallback.patterns[0];
+          const newId = addUserPattern({
+            name: pattern.name,
+            description: pattern.description,
+            scaleType: pattern.scaleType,
+            lineFamilies: pattern.lineFamilies,
+            ...(isSvgHatchPattern(pattern) ? {
+              svgTile: pattern.svgTile,
+              tileWidth: pattern.tileWidth,
+              tileHeight: pattern.tileHeight,
+            } : {}),
+          });
+          setSelectedPatternId(newId);
+          setExpandedCategories(prev => ({ ...prev, user: true }));
+          setStatusMessage({ type: 'success', text: `Imported SVG as tile pattern` });
+          setTimeout(() => setStatusMessage(null), 5000);
+        } else {
+          setStatusMessage({ type: 'error', text: 'No valid patterns found in SVG file' });
+        }
         return;
       }
 
-      // Add imported patterns to user patterns
-      const { addUserPattern } = useAppStore.getState();
-      let addedCount = 0;
-      let lastAddedId: string | null = null;
-
-      for (const pattern of result.patterns) {
-        // For SVG patterns, we need to include the svgTile properties
-        const newId = addUserPattern({
-          name: pattern.name,
-          description: pattern.description,
-          scaleType: pattern.scaleType,
-          lineFamilies: pattern.lineFamilies,
-          // Include SVG-specific properties if it's an SVG pattern
-          ...(isSvgHatchPattern(pattern) ? {
-            svgTile: pattern.svgTile,
-            tileWidth: pattern.tileWidth,
-            tileHeight: pattern.tileHeight,
-          } : {}),
-        });
-        lastAddedId = newId;
-        addedCount++;
-      }
-
-      // Select the last imported pattern and expand user category
-      if (lastAddedId) {
-        setSelectedPatternId(lastAddedId);
+      if (result.parsed.length === 1) {
+        // Single pattern - import directly
+        const svgPattern = createSvgPattern(result.parsed[0]);
+        const { importPattern } = useAppStore.getState();
+        const newId = importPattern(svgPattern, 'user');
+        setSelectedPatternId(newId);
         setExpandedCategories(prev => ({ ...prev, user: true }));
+        setStatusMessage({ type: 'success', text: `Imported 1 SVG pattern` });
+        setTimeout(() => setStatusMessage(null), 5000);
+        return;
       }
 
-      const warningText = result.warnings.length > 0 ? ` (${result.warnings.length} warnings)` : '';
-      setStatusMessage({
-        type: 'success',
-        text: `Imported ${addedCount} SVG pattern${addedCount !== 1 ? 's' : ''}${warningText}`,
-      });
-
-      // Clear status after a delay
-      setTimeout(() => setStatusMessage(null), 5000);
+      // Multiple patterns - open selection dialog
+      setSvgImportPatterns(result.parsed);
     } catch (err) {
       setStatusMessage({
         type: 'error',
         text: `Failed to import: ${err instanceof Error ? err.message : 'Unknown error'}`,
       });
     }
+  };
+
+  const handleSvgImportSelected = (selectedParsed: ParsedSvgPattern[]) => {
+    const { importPattern } = useAppStore.getState();
+    let lastAddedId: string | null = null;
+
+    for (const parsed of selectedParsed) {
+      const svgPattern = createSvgPattern(parsed);
+      const newId = importPattern(svgPattern, 'user');
+      lastAddedId = newId;
+    }
+
+    setSvgImportPatterns(null);
+
+    if (lastAddedId) {
+      setSelectedPatternId(lastAddedId);
+      setExpandedCategories(prev => ({ ...prev, user: true }));
+    }
+
+    setStatusMessage({
+      type: 'success',
+      text: `Imported ${selectedParsed.length} SVG pattern${selectedParsed.length !== 1 ? 's' : ''}`,
+    });
+    setTimeout(() => setStatusMessage(null), 5000);
   };
 
   const handleExportPAT = () => {
@@ -475,6 +541,9 @@ export function PatternManagerDialog({
       title="Hatch Pattern Manager"
       width={600}
       height={450}
+      resizable
+      minWidth={450}
+      minHeight={300}
       footer={
         <>
           <ModalButton onClick={onClose} variant="secondary">
@@ -492,9 +561,9 @@ export function PatternManagerDialog({
         </>
       }
     >
-      <div className="flex h-full">
+      <div className="flex flex-1 min-h-0">
         {/* Left panel - Pattern list */}
-        <div className="w-64 border-r border-cad-border flex flex-col">
+        <div className={`w-64 border-r border-cad-border flex flex-col ${previewExpanded ? 'hidden' : ''}`}>
           {/* Toolbar */}
           <div className="flex items-center gap-1 p-2 border-b border-cad-border">
             <button
@@ -632,21 +701,25 @@ export function PatternManagerDialog({
         </div>
 
         {/* Right panel - Preview and details */}
-        <div className="flex-1 flex flex-col p-4">
+        <div ref={rightPanelRef} className="flex-1 flex flex-col p-4 min-h-0">
           {selectedPattern ? (
             <>
-              {/* Large preview */}
-              <div className="flex justify-center mb-4">
+              {/* Preview - fills remaining space above details */}
+              <div
+                className="flex-1 flex items-center justify-center min-h-[60px] cursor-pointer"
+                onDoubleClick={() => setPreviewExpanded(prev => !prev)}
+                title={previewExpanded ? 'Double-click to restore' : 'Double-click to expand'}
+              >
                 <PatternPreview
                   pattern={selectedPattern}
-                  width={200}
-                  height={150}
+                  width={previewSize.width}
+                  height={previewSize.height}
                   scale={1.5}
                 />
               </div>
 
-              {/* Pattern details */}
-              <div className="space-y-3">
+              {/* Pattern details - natural height at bottom, hidden when expanded */}
+              <div ref={detailsRef} className={`flex-shrink-0 space-y-3 pt-4 ${previewExpanded ? 'hidden' : ''}`}>
                 <div>
                   <label className="text-[10px] text-cad-text-dim uppercase tracking-wide">Name</label>
                   <div className="text-sm font-medium">{selectedPattern.name}</div>
@@ -707,6 +780,16 @@ export function PatternManagerDialog({
         onSave={handleEditorSave}
         title={editingPattern ? `Edit: ${editingPattern.name}` : 'Create New Pattern'}
       />
+
+      {/* SVG Multi-Pattern Import Dialog */}
+      {svgImportPatterns && (
+        <SvgPatternImportDialog
+          isOpen
+          patterns={svgImportPatterns}
+          onClose={() => setSvgImportPatterns(null)}
+          onImport={handleSvgImportSelected}
+        />
+      )}
     </DraggableModal>
   );
 }

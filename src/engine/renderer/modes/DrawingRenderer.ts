@@ -5,6 +5,7 @@
 import type { Shape, Viewport, SnapPoint, DrawingBoundary } from '../types';
 import type { DrawingPreview, SelectionBox, TrackingLine, Point } from '../types';
 import type { ParametricShape } from '../../../types/parametric';
+import type { BlockDefinition } from '../../../types/geometry';
 import type { CustomHatchPattern } from '../../../types/hatch';
 import { BaseRenderer } from '../core/BaseRenderer';
 import { ShapeRenderer } from '../core/ShapeRenderer';
@@ -58,6 +59,10 @@ export interface DrawingRenderOptions {
   cursor2DVisible?: boolean;
   /** Whether to display actual line weights (false = all lines 1px thin) */
   showLineweight?: boolean;
+  /** Block definitions for rendering block instances */
+  blockDefinitions?: BlockDefinition[];
+  /** Whether to show rotation gizmo handles on selected shapes */
+  showRotationGizmo?: boolean;
 }
 
 // Legacy alias
@@ -132,6 +137,9 @@ export class DrawingRenderer extends BaseRenderer {
       this.shapeRenderer.setDrawingScale(drawingScale);
     }
 
+    // Set block definitions for block instance rendering
+    this.shapeRenderer.setBlockDefinitions(options.blockDefinitions ?? []);
+
     const ctx = this.ctx;
 
     // Set custom patterns for hatch rendering
@@ -145,6 +153,8 @@ export class DrawingRenderer extends BaseRenderer {
     // Set lineweight display mode and current zoom
     this.shapeRenderer.setShowLineweight(options.showLineweight !== false);
     this.shapeRenderer.setZoom(viewport.zoom);
+    // Set rotation gizmo display
+    this.shapeRenderer.setShowRotationGizmo(options.showRotationGizmo !== false);
     this.parametricRenderer.setShowLineweight(options.showLineweight !== false);
 
     // Clear canvas

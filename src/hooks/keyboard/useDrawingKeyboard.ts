@@ -36,6 +36,7 @@ export function useDrawingKeyboard() {
     togglePolarTracking,
     toggleObjectTracking,
     toggleDynamicInput,
+    toggleShowRotationGizmo,
   } = useAppStore();
 
   useEffect(() => {
@@ -72,6 +73,12 @@ export function useDrawingKeyboard() {
           // Toggle Object tracking
           e.preventDefault();
           toggleObjectTracking();
+          return;
+
+        case 'F7':
+          // Toggle Rotation Gizmo
+          e.preventDefault();
+          toggleShowRotationGizmo();
           return;
 
         case 'F12':
@@ -279,5 +286,6 @@ export function useDrawingKeyboard() {
     toggleOrthoMode,
     togglePolarTracking,
     toggleObjectTracking,
+    toggleShowRotationGizmo,
   ]);
 }

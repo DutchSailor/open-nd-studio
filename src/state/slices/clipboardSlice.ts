@@ -319,6 +319,13 @@ function getShapeBoundsSimple(shape: Shape): { minX: number; minY: number; maxX:
         maxX: shape.position.x + shape.width,
         maxY: shape.position.y + shape.height,
       };
+    case 'block-instance':
+      return {
+        minX: shape.position.x,
+        minY: shape.position.y,
+        maxX: shape.position.x,
+        maxY: shape.position.y,
+      };
     default:
       return null;
   }
@@ -393,6 +400,11 @@ function offsetShapePosition(shape: Shape, offset: Point): Shape {
         end: { x: shape.end.x + offset.x, y: shape.end.y + offset.y },
       };
     case 'image':
+      return {
+        ...shape,
+        position: { x: shape.position.x + offset.x, y: shape.position.y + offset.y },
+      };
+    case 'block-instance':
       return {
         ...shape,
         position: { x: shape.position.x + offset.x, y: shape.position.y + offset.y },

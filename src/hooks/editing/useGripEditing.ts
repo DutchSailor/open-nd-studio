@@ -7,9 +7,9 @@
  * - Parametric shapes: drag center to move
  */
 
-import { useCallback, useRef } from 'react';
+import { useCallback, useRef, useMemo } from 'react';
 import { useAppStore } from '../../state/appStore';
-import type { Point, Shape, EllipseShape, TextShape, BeamShape, LineShape, ImageShape } from '../../types/geometry';
+import type { Point, Shape, EllipseShape, TextShape, BeamShape, LineShape, ImageShape, BlockDefinition } from '../../types/geometry';
 import type { DimensionShape } from '../../types/dimension';
 import type { ParametricShape } from '../../types/parametric';
 import { updateParametricPosition } from '../../services/parametric/parametricService';
@@ -57,6 +57,60 @@ interface ParametricGripDragState {
 const AXIS_ARROW_SCREEN_LEN = 20;
 
 /**
+ * Check if a grip index is the rotation grip for a given shape type.
+ */
+function isRotationGrip(shape: Shape, gripIndex: number): boolean {
+  switch (shape.type) {
+    case 'rectangle': return gripIndex === 9;
+    case 'ellipse': return gripIndex === 5;
+    case 'image': return gripIndex === 9;
+    case 'block-instance': return gripIndex === 1;
+    case 'text': return gripIndex === 3;
+    default: return false;
+  }
+}
+
+/**
+ * Get the rotation center for a shape (used when initiating rotation grip drag).
+ */
+function getRotationCenter(shape: Shape): Point | null {
+  switch (shape.type) {
+    case 'rectangle': {
+      const tl = shape.topLeft;
+      const w = shape.width;
+      const h = shape.height;
+      const rot = shape.rotation || 0;
+      const cos = Math.cos(rot);
+      const sin = Math.sin(rot);
+      return {
+        x: tl.x + (w / 2) * cos - (h / 2) * sin,
+        y: tl.y + (w / 2) * sin + (h / 2) * cos,
+      };
+    }
+    case 'ellipse':
+      return { ...shape.center };
+    case 'image': {
+      const pos = shape.position;
+      const w = shape.width;
+      const h = shape.height;
+      const rot = shape.rotation || 0;
+      const cos = Math.cos(rot);
+      const sin = Math.sin(rot);
+      return {
+        x: pos.x + (w / 2) * cos - (h / 2) * sin,
+        y: pos.y + (w / 2) * sin + (h / 2) * cos,
+      };
+    }
+    case 'block-instance':
+      return { ...shape.position };
+    case 'text':
+      return { ...shape.position };
+    default:
+      return null;
+  }
+}
+
+/**
  * Check if a world-space point is near an axis arrow extending from a grip point.
  * When angle is provided, axes are rotated (for line/beam midpoint grips).
  * Returns 'x', 'y', or null.
@@ -100,7 +154,7 @@ function hitTestAxisArrow(worldPos: Point, gripPoint: Point, zoom: number, angle
   return null;
 }
 
-function getGripPoints(shape: Shape, drawingScale?: number, zoom?: number): Point[] {
+function getGripPoints(shape: Shape, drawingScale?: number, zoom?: number, showRotationGizmo?: boolean): Point[] {
   switch (shape.type) {
     case 'line':
       return [
@@ -112,10 +166,14 @@ function getGripPoints(shape: Shape, drawingScale?: number, zoom?: number): Poin
       // 0-3: corners TL, TR, BR, BL
       // 4-7: edge midpoints Top, Right, Bottom, Left
       // 8: center
+      // 9: rotation handle (when showRotationGizmo is true)
       const tl = shape.topLeft;
       const w = shape.width;
       const h = shape.height;
-      return [
+      const rot = shape.rotation || 0;
+      const rectCos = Math.cos(rot);
+      const rectSin = Math.sin(rot);
+      const pts: Point[] = [
         tl,
         { x: tl.x + w, y: tl.y },
         { x: tl.x + w, y: tl.y + h },
@@ -126,6 +184,15 @@ function getGripPoints(shape: Shape, drawingScale?: number, zoom?: number): Poin
         { x: tl.x, y: tl.y + h / 2 },            // left edge mid
         { x: tl.x + w / 2, y: tl.y + h / 2 },   // center
       ];
+      if (showRotationGizmo && zoom) {
+        const dist = 25 / zoom;
+        // Local (w/2, -dist) → world via topLeft + rotation
+        pts.push({
+          x: tl.x + (w / 2) * rectCos - (-dist) * rectSin,
+          y: tl.y + (w / 2) * rectSin + (-dist) * rectCos,
+        });
+      }
+      return pts;
     }
     case 'circle':
       // 0: center, 1: right, 2: left, 3: bottom, 4: top
@@ -148,6 +215,7 @@ function getGripPoints(shape: Shape, drawingScale?: number, zoom?: number): Poin
     }
     case 'ellipse': {
       // 0: center, 1: right, 2: left, 3: bottom, 4: top
+      // 5: rotation handle (when showRotationGizmo is true)
       const rot = shape.rotation || 0;
       const cos = Math.cos(rot);
       const sin = Math.sin(rot);
@@ -158,13 +226,18 @@ function getGripPoints(shape: Shape, drawingScale?: number, zoom?: number): Poin
         x: cx + lx * cos - ly * sin,
         y: cy + lx * sin + ly * cos,
       });
-      return [
+      const ellipsePts: Point[] = [
         shape.center,                      // Center grip
         toWorld(shape.radiusX, 0),         // Right grip
         toWorld(-shape.radiusX, 0),        // Left grip
         toWorld(0, shape.radiusY),         // Bottom grip
         toWorld(0, -shape.radiusY),        // Top grip
       ];
+      if (showRotationGizmo && zoom) {
+        const dist = 25 / zoom;
+        ellipsePts.push(toWorld(0, -shape.radiusY - dist)); // Rotation handle
+      }
+      return ellipsePts;
     }
     case 'polyline':
     case 'spline': {
@@ -200,6 +273,7 @@ function getGripPoints(shape: Shape, drawingScale?: number, zoom?: number): Poin
       ];
     case 'image': {
       // Image handles: 4 corners + 4 midpoints + center (like rectangle)
+      // 9: rotation handle (when showRotationGizmo is true)
       const imgTl = shape.position;
       const imgW = shape.width;
       const imgH = shape.height;
@@ -210,7 +284,7 @@ function getGripPoints(shape: Shape, drawingScale?: number, zoom?: number): Poin
         x: imgTl.x + lx * imgCos - ly * imgSin,
         y: imgTl.y + lx * imgSin + ly * imgCos,
       });
-      return [
+      const imgPts: Point[] = [
         imgToWorld(0, 0),
         imgToWorld(imgW, 0),
         imgToWorld(imgW, imgH),
@@ -221,6 +295,11 @@ function getGripPoints(shape: Shape, drawingScale?: number, zoom?: number): Poin
         imgToWorld(0, imgH / 2),
         imgToWorld(imgW / 2, imgH / 2),
       ];
+      if (showRotationGizmo && zoom) {
+        const dist = 25 / zoom;
+        imgPts.push(imgToWorld(imgW / 2, -dist)); // Rotation handle
+      }
+      return imgPts;
     }
     case 'text': {
       // Grip 0: center of text box (move handle)
@@ -353,6 +432,17 @@ function getGripPoints(shape: Shape, drawingScale?: number, zoom?: number): Poin
       // Fallback for other dimension types
       return dim.points;
     }
+    case 'block-instance': {
+      const biPts: Point[] = [shape.position];
+      if (showRotationGizmo && zoom) {
+        const dist = 25 / zoom;
+        const rot = shape.rotation || 0;
+        const cos = Math.cos(rot);
+        const sin = Math.sin(rot);
+        biPts.push({ x: shape.position.x - (-dist) * sin, y: shape.position.y + (-dist) * cos });
+      }
+      return biPts;
+    }
     default:
       return [];
   }
@@ -416,6 +506,7 @@ function getShapeReferencePoint(shape: Shape): Point {
     case 'beam': return shape.start;
     case 'image': return shape.position;
     case 'dimension': return (shape as DimensionShape).points[0] || { x: 0, y: 0 };
+    case 'block-instance': return shape.position;
     default: return { x: 0, y: 0 };
   }
 }
@@ -483,6 +574,11 @@ function computeBodyMoveUpdates(shape: Shape, newPos: Point): Partial<Shape> | n
         points: dim.points.map(p => ({ x: p.x + dx, y: p.y + dy })),
       } as Partial<Shape>;
     }
+
+    case 'block-instance':
+      return {
+        position: { x: shape.position.x + dx, y: shape.position.y + dy },
+      } as Partial<Shape>;
 
     default:
       return null;
@@ -594,6 +690,7 @@ function computeGripUpdates(shape: Shape, gripIndex: number, newPos: Point, edge
     }
 
     case 'ellipse': {
+      if (gripIndex === 5) return null; // Rotation grip — handled by rotation drag logic
       if (gripIndex === 0) {
         // Center drag — move ellipse
         return { center: { x: newPos.x, y: newPos.y } } as Partial<Shape>;
@@ -622,6 +719,7 @@ function computeGripUpdates(shape: Shape, gripIndex: number, newPos: Point, edge
     }
 
     case 'rectangle': {
+      if (gripIndex === 9) return null; // Rotation grip — handled by rotation drag logic
       if (gripIndex === 8) {
         // Center drag — move entire rectangle
         const origCenter = {
@@ -788,6 +886,7 @@ function computeGripUpdates(shape: Shape, gripIndex: number, newPos: Point, edge
 
     case 'image': {
       const imgShape = shape as ImageShape;
+      if (gripIndex === 9) return null; // Rotation grip — handled by rotation drag logic
       if (gripIndex === 8) {
         // Center grip — move the image (account for rotation)
         const rot = imgShape.rotation || 0;
@@ -1122,6 +1221,12 @@ function computeGripUpdates(shape: Shape, gripIndex: number, newPos: Point, edge
       return null;
     }
 
+    case 'block-instance':
+      if (gripIndex === 1) return null; // Rotation grip — handled by rotation drag logic
+      // Grip 0 is the center/position handle — move the instance
+      if (gripIndex === 0) return { position: newPos } as Partial<Shape>;
+      return null;
+
     default:
       return null;
   }
@@ -1148,6 +1253,8 @@ export function useGripEditing() {
     snapTolerance,
     setCurrentTrackingLines,
     setTrackingPoint,
+    blockDefinitions: blockDefinitionsArray,
+    showRotationGizmo,
   } = useAppStore();
 
   const dragRef = useRef<GripDragState | null>(null);
@@ -1157,6 +1264,13 @@ export function useGripEditing() {
   // Get the active drawing scale for text bounds calculation
   const activeDrawing = drawings.find(d => d.id === activeDrawingId);
   const drawingScale = activeDrawing?.scale;
+
+  // Build Map for efficient block definition lookups
+  const blockDefinitionsMap = useMemo(() => {
+    const map = new Map<string, BlockDefinition>();
+    for (const def of blockDefinitionsArray) map.set(def.id, def);
+    return map;
+  }, [blockDefinitionsArray]);
 
   const handleGripMouseDown = useCallback(
     (worldPos: Point): boolean => {
@@ -1208,7 +1322,7 @@ export function useGripEditing() {
       const shape = shapes.find(s => s.id === shapeId);
       if (!shape) return false;
 
-      const grips = getGripPoints(shape, drawingScale, viewport.zoom);
+      const grips = getGripPoints(shape, drawingScale, viewport.zoom, showRotationGizmo);
       if (grips.length === 0) return false;
 
       const tolerance = 10 / viewport.zoom;
@@ -1216,10 +1330,10 @@ export function useGripEditing() {
       // First pass: check axis arrows on all grips (arrows take priority)
       // Skip arc midpoint (grip 3) — its circumcenter algorithm can't handle axis constraint
       // Skip text resize handles (grips 1, 2) for Y-axis — they only support X-axis (width) resize
-      // Skip text rotation handle (grip 3) — it's a rotation control, no axis constraint
+      // Skip rotation handles — they are circular handles, not square grips with arrows
       for (let i = 0; i < grips.length; i++) {
         if (shape.type === 'arc' && i === 3) continue;
-        if (shape.type === 'text' && i === 3) continue; // Rotation handle - no axis arrows
+        if (isRotationGrip(shape, i)) continue; // Rotation handle - no axis arrows
         // For line/beam midpoint (index 2), use rotated axes
         let gripAxisAngle = 0;
         if (i === 2 && (shape.type === 'line' || shape.type === 'beam')) {
@@ -1334,15 +1448,16 @@ export function useGripEditing() {
             // Enable snapping for dimension reference point handles (gripIndex >= 4)
             const enableSnapping = shape.type === 'dimension' && i >= 4;
 
-            // For text rotation handle (grip 3), calculate initial angle
+            // For rotation handles, calculate initial angle and rotation center
             let initialRotationAngle: number | undefined;
             let rotationCenter: Point | undefined;
-            if (shape.type === 'text' && i === 3) {
-              const textShape = shape as TextShape;
-              rotationCenter = { ...textShape.position };
-              const dx = worldPos.x - rotationCenter.x;
-              const dy = worldPos.y - rotationCenter.y;
-              initialRotationAngle = Math.atan2(dx, -dy);
+            if (isRotationGrip(shape, i)) {
+              rotationCenter = getRotationCenter(shape) ?? undefined;
+              if (rotationCenter) {
+                const dx = worldPos.x - rotationCenter.x;
+                const dy = worldPos.y - rotationCenter.y;
+                initialRotationAngle = Math.atan2(dx, -dy);
+              }
             }
 
             dragRef.current = {
@@ -1364,7 +1479,7 @@ export function useGripEditing() {
       }
 
       // Third pass: check if click is on the shape body (for drag-to-move)
-      if (isPointNearShape(worldPos, shape, tolerance, drawingScale)) {
+      if (isPointNearShape(worldPos, shape, tolerance, drawingScale, blockDefinitionsMap)) {
         setCurrentSnapPoint(null);
         // Use shape's reference point (first meaningful position) as anchor
         const refPoint = getShapeReferencePoint(shape);
@@ -1383,7 +1498,7 @@ export function useGripEditing() {
 
       return false;
     },
-    [selectedShapeIds, shapes, parametricShapes, viewport.zoom, setCurrentSnapPoint, drawingScale]
+    [selectedShapeIds, shapes, parametricShapes, viewport.zoom, setCurrentSnapPoint, drawingScale, blockDefinitionsMap, showRotationGizmo]
   );
 
   const handleGripMouseMove = useCallback(
@@ -1598,13 +1713,13 @@ export function useGripEditing() {
         }
       }
 
-      // Special handling for text rotation (uses relative angle)
-      if (currentShape.type === 'text' && drag.gripIndex === 3 && drag.rotationCenter && drag.initialRotationAngle !== undefined) {
+      // Special handling for rotation grips (uses relative angle)
+      if (drag.rotationCenter && drag.initialRotationAngle !== undefined) {
         const dx = constrainedPos.x - drag.rotationCenter.x;
         const dy = constrainedPos.y - drag.rotationCenter.y;
         const currentAngle = Math.atan2(dx, -dy);
         const deltaAngle = currentAngle - drag.initialRotationAngle;
-        const originalRotation = (drag.originalShape as TextShape).rotation || 0;
+        const originalRotation = (drag.originalShape as any).rotation || 0;
         let newRotation = originalRotation + deltaAngle;
 
         // Angle snapping - snap to common angles (0°, 45°, 90°, etc.)
@@ -1613,7 +1728,6 @@ export function useGripEditing() {
 
         for (const snapAngle of snapAngles) {
           const diff = Math.abs(newRotation - snapAngle);
-          // Also check wrapped angles (e.g., -180° and 180° are the same)
           const wrappedDiff = Math.abs(diff - 2 * Math.PI);
           if (diff < snapThreshold || wrappedDiff < snapThreshold) {
             newRotation = snapAngle;
@@ -1624,7 +1738,26 @@ export function useGripEditing() {
         useAppStore.setState((state) => {
           const idx = state.shapes.findIndex(s => s.id === drag.shapeId);
           if (idx !== -1) {
-            (state.shapes[idx] as TextShape).rotation = newRotation;
+            const s = state.shapes[idx];
+            (s as any).rotation = newRotation;
+
+            // For shapes that rotate around topLeft/position (not their center),
+            // recompute the anchor so the center stays at drag.rotationCenter.
+            if (s.type === 'rectangle') {
+              const cos = Math.cos(newRotation);
+              const sin = Math.sin(newRotation);
+              s.topLeft = {
+                x: drag.rotationCenter!.x - (s.width / 2) * cos + (s.height / 2) * sin,
+                y: drag.rotationCenter!.y - (s.width / 2) * sin - (s.height / 2) * cos,
+              };
+            } else if (s.type === 'image') {
+              const cos = Math.cos(newRotation);
+              const sin = Math.sin(newRotation);
+              s.position = {
+                x: drag.rotationCenter!.x - (s.width / 2) * cos + (s.height / 2) * sin,
+                y: drag.rotationCenter!.y - (s.width / 2) * sin - (s.height / 2) * cos,
+              };
+            }
           }
         });
         return true;
@@ -1741,9 +1874,10 @@ export function useGripEditing() {
 
       const shape = shapes.find(s => s.id === selectedShapeIds[0]);
       if (!shape) { setGripHover(null); return null; }
-      const grips = getGripPoints(shape, drawingScale, viewport.zoom);
+      const grips = getGripPoints(shape, drawingScale, viewport.zoom, showRotationGizmo);
       for (let i = 0; i < grips.length; i++) {
         if (shape.type === 'arc' && i === 3) continue;
+        if (isRotationGrip(shape, i)) continue; // Rotation grips have no axis arrows
         // For line/beam midpoint (index 2), use rotated axes
         let gripAxisAngle = 0;
         if (i === 2 && (shape.type === 'line' || shape.type === 'beam')) {
@@ -1758,7 +1892,7 @@ export function useGripEditing() {
       setGripHover(null);
       return null;
     },
-    [selectedShapeIds, shapes, parametricShapes, viewport.zoom, drawingScale]
+    [selectedShapeIds, shapes, parametricShapes, viewport.zoom, drawingScale, showRotationGizmo]
   );
 
   return {

@@ -17,7 +17,7 @@ import { RightPanelLayout } from './components/panels/RightPanelLayout';
 
 // Dialog components
 import { PrintDialog } from './components/dialogs/PrintDialog/PrintDialog';
-import { SnapSettingsDialog } from './components/dialogs/SnapSettingsDialog/SnapSettingsDialog';
+import { SettingsDialog } from './components/dialogs/SettingsDialog/SettingsDialog';
 import { Backstage, type BackstageView } from './components/dialogs/Backstage/Backstage';
 import { TitleBlockEditor } from './components/dialogs/TitleBlockEditor';
 import { TitleBlockImportDialog } from './components/dialogs/TitleBlockImportDialog';
@@ -171,8 +171,8 @@ function App() {
   const {
     printDialogOpen,
     setPrintDialogOpen,
-    snapSettingsOpen,
-    setSnapSettingsOpen,
+    settingsDialogOpen,
+    setSettingsDialogOpen,
     titleBlockEditorOpen,
     setTitleBlockEditorOpen,
     newSheetDialogOpen,
@@ -262,10 +262,10 @@ function App() {
         onClose={() => setPrintDialogOpen(false)}
       />
 
-{/* Snap Settings Dialog */}
-      <SnapSettingsDialog
-        isOpen={snapSettingsOpen}
-        onClose={() => setSnapSettingsOpen(false)}
+{/* Settings Dialog */}
+      <SettingsDialog
+        isOpen={settingsDialogOpen}
+        onClose={() => setSettingsDialogOpen(false)}
       />
 
       {/* Title Block Editor Dialog */}

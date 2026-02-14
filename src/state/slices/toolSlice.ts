@@ -53,10 +53,15 @@ export interface ToolState {
   textEditingId: string | null;     // ID of text shape being edited
   defaultTextStyle: DefaultTextStyle;
 
+  // Title block inline editing state
+  titleBlockEditingFieldId: string | null;   // ID of title block field being edited
+  hoveredTitleBlockFieldId: string | null;    // ID of title block field being hovered
+
   // Modify tool options
   modifyCopy: boolean;           // Move/Rotate/Mirror: copy instead of move
   modifyConstrain: boolean;      // Move/Copy: constrain to axis
   modifyMultiple: boolean;       // Copy: keep placing copies
+  moveAxisLock: 'none' | 'x' | 'y';  // Move/Copy: axis constraint (X/Y key toggle)
   scaleMode: 'graphical' | 'numerical';
   scaleFactor: number;
   filletRadius: number;
@@ -94,6 +99,9 @@ export interface ToolState {
 
   // Display Lineweight toggle
   showLineweight: boolean;
+
+  // Rotation Gizmo toggle
+  showRotationGizmo: boolean;
 }
 
 // ============================================================================
@@ -138,10 +146,17 @@ export interface ToolActions {
   endTextEditing: () => void;
   updateDefaultTextStyle: (style: Partial<DefaultTextStyle>) => void;
 
+  // Title block inline editing actions
+  startTitleBlockFieldEditing: (fieldId: string) => void;
+  endTitleBlockFieldEditing: () => void;
+  setHoveredTitleBlockFieldId: (fieldId: string | null) => void;
+
   // Modify tool actions
   setModifyCopy: (enabled: boolean) => void;
   setModifyConstrain: (enabled: boolean) => void;
   setModifyMultiple: (enabled: boolean) => void;
+  setMoveAxisLock: (axis: 'none' | 'x' | 'y') => void;
+  toggleMoveAxisLock: (axis: 'x' | 'y') => void;
   setScaleMode: (mode: 'graphical' | 'numerical') => void;
   setScaleFactor: (factor: number) => void;
   setFilletRadius: (radius: number) => void;
@@ -177,6 +192,9 @@ export interface ToolActions {
 
   // Display Lineweight toggle
   toggleShowLineweight: () => void;
+
+  // Rotation Gizmo toggle
+  toggleShowRotationGizmo: () => void;
 }
 
 export type ToolSlice = ToolState & ToolActions;
@@ -217,6 +235,8 @@ export const initialToolState: ToolState = {
 
   // Text tool state
   textEditingId: null,
+  titleBlockEditingFieldId: null,
+  hoveredTitleBlockFieldId: null,
   defaultTextStyle: {
     fontFamily: 'Osifont',
     fontSize: 2.5,
@@ -231,6 +251,7 @@ export const initialToolState: ToolState = {
   modifyCopy: false,
   modifyConstrain: false,
   modifyMultiple: true,
+  moveAxisLock: 'none',
   scaleMode: 'graphical' as const,
   scaleFactor: 2,
   filletRadius: 5,
@@ -273,6 +294,9 @@ export const initialToolState: ToolState = {
 
   // Display Lineweight (default: off — lines render at 1 screen pixel)
   showLineweight: false,
+
+  // Rotation Gizmo (default: on so users discover it)
+  showRotationGizmo: true,
 };
 
 // ============================================================================
@@ -305,6 +329,7 @@ export const createToolSlice = (
       state.polylineArcThroughPoint = null;
       state.modifyRefShapeId = null;
       state.sourceSnapAngle = null;
+      state.moveAxisLock = 'none';
       // Reset copy flag for mirror (default on)
       if (tool === 'mirror') {
         state.modifyCopy = true;
@@ -325,6 +350,7 @@ export const createToolSlice = (
         state.polylineArcThroughPoint = null;
         state.modifyRefShapeId = null;
         state.sourceSnapAngle = null;
+        state.moveAxisLock = 'none';
         // Reset copy flag for mirror (default on)
         if (state.lastTool === 'mirror') {
           state.modifyCopy = true;
@@ -437,6 +463,7 @@ export const createToolSlice = (
       state.polylineArcMode = false;
       state.polylineArcThroughPoint = null;
       state.sourceSnapAngle = null;
+      state.moveAxisLock = 'none';
     }),
 
   closeDrawing: () =>
@@ -535,6 +562,22 @@ export const createToolSlice = (
       state.defaultTextStyle = { ...state.defaultTextStyle, ...style };
     }),
 
+  // Title block inline editing actions
+  startTitleBlockFieldEditing: (fieldId) =>
+    set((state) => {
+      state.titleBlockEditingFieldId = fieldId;
+    }),
+
+  endTitleBlockFieldEditing: () =>
+    set((state) => {
+      state.titleBlockEditingFieldId = null;
+    }),
+
+  setHoveredTitleBlockFieldId: (fieldId) =>
+    set((state) => {
+      state.hoveredTitleBlockFieldId = fieldId;
+    }),
+
   // Modify tool actions
   setModifyCopy: (enabled) =>
     set((state) => { state.modifyCopy = enabled; }),
@@ -542,6 +585,10 @@ export const createToolSlice = (
     set((state) => { state.modifyConstrain = enabled; }),
   setModifyMultiple: (enabled) =>
     set((state) => { state.modifyMultiple = enabled; }),
+  setMoveAxisLock: (axis) =>
+    set((state) => { state.moveAxisLock = axis; }),
+  toggleMoveAxisLock: (axis) =>
+    set((state) => { state.moveAxisLock = state.moveAxisLock === axis ? 'none' : axis; }),
   setScaleMode: (mode) =>
     set((state) => { state.scaleMode = mode; }),
   setScaleFactor: (factor) =>
@@ -660,5 +707,11 @@ export const createToolSlice = (
   toggleShowLineweight: () =>
     set((state) => {
       state.showLineweight = !state.showLineweight;
+    }),
+
+  // Rotation Gizmo toggle
+  toggleShowRotationGizmo: () =>
+    set((state) => {
+      state.showRotationGizmo = !state.showRotationGizmo;
     }),
 });

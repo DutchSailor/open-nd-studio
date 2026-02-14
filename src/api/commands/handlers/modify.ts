@@ -61,6 +61,10 @@ function translateShape(shape: Shape, offset: Point): void {
         });
       }
       break;
+    case 'block-instance':
+      shape.position.x += offset.x;
+      shape.position.y += offset.y;
+      break;
   }
 }
 
@@ -128,6 +132,10 @@ function rotateShape(shape: Shape, center: Point, angle: number): void {
       if (shape.points) {
         shape.points = shape.points.map((p: Point) => rotatePoint(p, center, angle));
       }
+      break;
+    case 'block-instance':
+      shape.position = rotatePoint(shape.position, center, angle);
+      shape.rotation = (shape.rotation || 0) + angle;
       break;
   }
 }
@@ -198,6 +206,11 @@ function scaleShape(shape: Shape, center: Point, factor: number): void {
       if (shape.points) {
         shape.points = shape.points.map(scale);
       }
+      break;
+    case 'block-instance':
+      shape.position = scale(shape.position);
+      shape.scaleX *= factor;
+      shape.scaleY *= factor;
       break;
   }
 }
@@ -275,6 +288,10 @@ function mirrorShape(shape: Shape, p1: Point, p2: Point): void {
       if (shape.points) {
         shape.points = shape.points.map(mirrorPoint);
       }
+      break;
+    case 'block-instance':
+      shape.position = mirrorPoint(shape.position);
+      shape.rotation = -(shape.rotation || 0);
       break;
   }
 }

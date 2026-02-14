@@ -32,7 +32,8 @@ export class TitleBlockRenderer extends BaseRenderer {
   drawTitleBlock(
     titleBlock: TitleBlock | EnhancedTitleBlock,
     paperWidth: number,
-    paperHeight: number
+    paperHeight: number,
+    customTemplates?: import('../../../types/sheet').TitleBlockTemplate[]
   ): void {
     const ctx = this.ctx;
 
@@ -55,7 +56,7 @@ export class TitleBlockRenderer extends BaseRenderer {
     // Get template if available
     let template: TitleBlockTemplate | undefined;
     if (isEnhanced && (titleBlock as EnhancedTitleBlock).templateId) {
-      template = getTemplateById((titleBlock as EnhancedTitleBlock).templateId!);
+      template = getTemplateById((titleBlock as EnhancedTitleBlock).templateId!, customTemplates);
     }
 
     // Draw title block background

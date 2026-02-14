@@ -89,6 +89,13 @@ function getShapeBounds(shape: Shape): BoundingBox | null {
         maxX: Math.max(...shape.points.map(p => p.x)),
         maxY: Math.max(...shape.points.map(p => p.y)),
       };
+    case 'block-instance':
+      return {
+        minX: shape.position.x,
+        minY: shape.position.y,
+        maxX: shape.position.x,
+        maxY: shape.position.y,
+      };
     default:
       return null;
   }

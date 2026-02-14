@@ -484,7 +484,7 @@ export function PrintDialog({ isOpen, onClose }: PrintDialogProps) {
 
         // Get template if available (EnhancedTitleBlock has templateId)
         const templateId = (tb as { templateId?: string }).templateId;
-        const template = templateId ? getTemplateById(templateId) : undefined;
+        const template = templateId ? getTemplateById(templateId, useAppStore.getState().customTitleBlockTemplates) : undefined;
 
         // Title block background
         ctx.fillStyle = template?.layout?.backgroundColor || '#f8f8f8';

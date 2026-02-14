@@ -16,6 +16,7 @@ import { AnnotationRenderer } from '../sheet/AnnotationRenderer';
 import { HandleRenderer, ViewportHandleType } from '../ui/HandleRenderer';
 import { PAPER_SIZES, MM_TO_PIXELS, COLORS } from '../types';
 import { loadCustomSVGTemplates } from '../../../services/export/svgTitleBlockService';
+import { getTitleBlockFieldRects } from '../sheet/titleBlockHitTest';
 import { CAD_DEFAULT_FONT } from '../../../constants/cadDefaults';
 
 /** Point type for placement preview */
@@ -61,6 +62,14 @@ export interface SheetRenderOptions {
   };
   /** Whether to display actual line weights (false = all lines 1px thin) */
   showLineweight?: boolean;
+  /** Viewport move preview: ghost position offset (dx, dy in mm) for keyboard move */
+  viewportMovePreview?: { viewportId: string; dx: number; dy: number } | null;
+  /** ID of title block field being hovered for highlight */
+  hoveredTitleBlockFieldId?: string | null;
+  /** ID of title block field being edited for highlight */
+  editingTitleBlockFieldId?: string | null;
+  /** Custom title block templates (for resolving templateId on enhanced title blocks) */
+  customTitleBlockTemplates?: import('../../../types/sheet').TitleBlockTemplate[];
 }
 
 export class SheetRenderer extends BaseRenderer {
@@ -159,7 +168,7 @@ export class SheetRenderer extends BaseRenderer {
 
     if (isFullPageTemplate) {
       // For full-page templates, draw the SVG template on top of white background
-      this.titleBlockRenderer.drawTitleBlock(sheet.titleBlock, paperWidth, paperHeight);
+      this.titleBlockRenderer.drawTitleBlock(sheet.titleBlock, paperWidth, paperHeight, options.customTitleBlockTemplates);
     } else {
       // Draw thin paper edge
       ctx.strokeStyle = '#cccccc';
@@ -183,12 +192,18 @@ export class SheetRenderer extends BaseRenderer {
 
     // Draw viewports
     const visibleViewports = sheet.viewports.filter(v => v.visible);
+    const movePreview = options.viewportMovePreview;
     for (const vp of visibleViewports) {
       const isSelected = selectedViewportId === vp.id;
       const isCropRegionEditing = cropRegionEditing && cropRegionViewportId === vp.id;
 
+      // Apply move preview offset to the viewport being moved
+      const renderVp = (movePreview && vp.id === movePreview.viewportId)
+        ? { ...vp, x: vp.x + movePreview.dx, y: vp.y + movePreview.dy }
+        : vp;
+
       this.viewportRenderer.drawSheetViewport(
-        vp,
+        renderVp,
         drawings,
         shapes,
         drawingViewports,
@@ -205,9 +220,10 @@ export class SheetRenderer extends BaseRenderer {
       );
     }
 
-    // Draw alignment guides during viewport drag
+    // Draw alignment guides during viewport drag or keyboard move
     if (options.viewportDragging && selectedViewportId) {
-      this.drawAlignmentGuides(sheet, selectedViewportId, viewport.zoom);
+      const moveOverride = movePreview ? { x: movePreview.dx + (sheet.viewports.find(v => v.id === movePreview.viewportId)?.x || 0), y: movePreview.dy + (sheet.viewports.find(v => v.id === movePreview.viewportId)?.y || 0) } : undefined;
+      this.drawAlignmentGuides(sheet, selectedViewportId, viewport.zoom, moveOverride);
     }
 
     // Draw placement preview if active
@@ -226,7 +242,18 @@ export class SheetRenderer extends BaseRenderer {
 
     // Draw title block (skip if full-page template - already drawn as background)
     if (sheet.titleBlock.visible && !isFullPageTemplate) {
-      this.titleBlockRenderer.drawTitleBlock(sheet.titleBlock, paperWidth, paperHeight);
+      this.titleBlockRenderer.drawTitleBlock(sheet.titleBlock, paperWidth, paperHeight, options.customTitleBlockTemplates);
+    }
+
+    // Draw title block field highlights (hover/editing)
+    const highlightFieldId = options.editingTitleBlockFieldId || options.hoveredTitleBlockFieldId;
+    if (highlightFieldId && sheet.titleBlock.visible) {
+      const fieldRects = getTitleBlockFieldRects(sheet.titleBlock, paperWidth, paperHeight, options.customTitleBlockTemplates);
+      const fieldRect = fieldRects.find(r => r.fieldId === highlightFieldId);
+      if (fieldRect) {
+        const isEditing = highlightFieldId === options.editingTitleBlockFieldId;
+        this.drawFieldHighlight(fieldRect, isEditing, viewport.zoom);
+      }
     }
 
     ctx.restore();
@@ -235,11 +262,13 @@ export class SheetRenderer extends BaseRenderer {
   /**
    * Draw alignment guide lines when dragging a viewport near other viewports' edges/centers
    */
-  private drawAlignmentGuides(sheet: Sheet, draggingId: string, sheetZoom: number): void {
+  private drawAlignmentGuides(sheet: Sheet, draggingId: string, sheetZoom: number, posOverride?: { x: number; y: number }): void {
     const ctx = this.ctx;
     const visibleViewports = sheet.viewports.filter(v => v.visible);
-    const dragging = visibleViewports.find(v => v.id === draggingId);
-    if (!dragging) return;
+    const draggingOrig = visibleViewports.find(v => v.id === draggingId);
+    if (!draggingOrig) return;
+    // Apply position override for keyboard move preview
+    const dragging = posOverride ? { ...draggingOrig, x: posOverride.x, y: posOverride.y } : draggingOrig;
 
     const threshold = 2; // mm
     const guideColor = '#4a90d9';
@@ -420,6 +449,29 @@ export class SheetRenderer extends BaseRenderer {
     }
     const denom = Math.round(1 / scale);
     return `1:${denom}`;
+  }
+
+  /**
+   * Draw a highlight overlay on a title block field
+   */
+  private drawFieldHighlight(
+    fieldRect: { x: number; y: number; width: number; height: number },
+    isEditing: boolean,
+    sheetZoom: number
+  ): void {
+    const ctx = this.ctx;
+    ctx.save();
+
+    // Semi-transparent fill
+    ctx.fillStyle = isEditing ? 'rgba(0, 102, 255, 0.15)' : 'rgba(0, 102, 255, 0.08)';
+    ctx.fillRect(fieldRect.x, fieldRect.y, fieldRect.width, fieldRect.height);
+
+    // Border
+    ctx.strokeStyle = '#0066ff';
+    ctx.lineWidth = (isEditing ? 2 : 1) / sheetZoom;
+    ctx.strokeRect(fieldRect.x, fieldRect.y, fieldRect.width, fieldRect.height);
+
+    ctx.restore();
   }
 
   /**

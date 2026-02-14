@@ -12,7 +12,7 @@
 
 import { useCallback, useMemo, useEffect, useRef } from 'react';
 import { useAppStore } from '../../state/appStore';
-import type { Point } from '../../types/geometry';
+import type { Point, BlockDefinition } from '../../types/geometry';
 import { screenToWorld, isPointNearShape, isPointNearParametricShape } from '../../engine/geometry/GeometryUtils';
 import { QuadTree } from '../../engine/spatial/QuadTree';
 
@@ -26,6 +26,7 @@ import { useViewportEditing } from '../editing/useViewportEditing';
 import { useAnnotationEditing } from '../editing/useAnnotationEditing';
 import { useGripEditing } from '../editing/useGripEditing';
 import { useModifyTools } from '../editing/useModifyTools';
+import { useTitleBlockEditing } from '../editing/useTitleBlockEditing';
 import { useBeamDrawing } from '../drawing/useBeamDrawing';
 import { useLeaderDrawing } from '../drawing/useLeaderDrawing';
 import { showImportImageDialog } from '../../services/file/fileService';
@@ -44,6 +45,7 @@ export function useCanvasEvents(canvasRef: React.RefObject<HTMLCanvasElement>) {
   const annotationEditing = useAnnotationEditing();
   const gripEditing = useGripEditing();
   const modifyTools = useModifyTools();
+  const titleBlockEditing = useTitleBlockEditing();
   const beamDrawing = useBeamDrawing();
   const leaderDrawing = useLeaderDrawing();
 
@@ -73,7 +75,17 @@ export function useCanvasEvents(canvasRef: React.RefObject<HTMLCanvasElement>) {
     drawings,
     sourceSnapAngle,
     switchToDrawing,
+    blockDefinitions: blockDefinitionsArray,
   } = useAppStore();
+
+  // Build Map for efficient block definition lookups (hit testing, bounds)
+  const blockDefinitionsMap = useMemo(() => {
+    const map = new Map<string, BlockDefinition>();
+    for (const def of blockDefinitionsArray) {
+      map.set(def.id, def);
+    }
+    return map;
+  }, [blockDefinitionsArray]);
 
   // Get the active drawing's scale for text hit detection
   const activeDrawingScale = useMemo(() => {
@@ -83,8 +95,8 @@ export function useCanvasEvents(canvasRef: React.RefObject<HTMLCanvasElement>) {
 
   // Build spatial index for efficient shape lookup
   const quadTree = useMemo(() => {
-    return QuadTree.buildFromShapes(shapes, activeDrawingId, activeDrawingScale);
-  }, [shapes, activeDrawingId, activeDrawingScale]);
+    return QuadTree.buildFromShapes(shapes, activeDrawingId, activeDrawingScale, blockDefinitionsMap);
+  }, [shapes, activeDrawingId, activeDrawingScale, blockDefinitionsMap]);
 
   /**
    * Find shape at point using spatial index (only shapes in active drawing)
@@ -119,13 +131,13 @@ export function useCanvasEvents(canvasRef: React.RefObject<HTMLCanvasElement>) {
       // Iterate in reverse to match z-order (last inserted = on top)
       for (let i = candidates.length - 1; i >= 0; i--) {
         const shape = shapes.find(s => s.id === candidates[i].id);
-        if (shape && isPointNearShape(worldPoint, shape, tolerance, activeDrawingScale)) {
+        if (shape && isPointNearShape(worldPoint, shape, tolerance, activeDrawingScale, blockDefinitionsMap)) {
           return shape.id;
         }
       }
       return null;
     },
-    [quadTree, shapes, parametricShapes, activeDrawingId, viewport.zoom, activeDrawingScale]
+    [quadTree, shapes, parametricShapes, activeDrawingId, viewport.zoom, activeDrawingScale, blockDefinitionsMap]
   );
 
   /**
@@ -196,10 +208,22 @@ export function useCanvasEvents(canvasRef: React.RefObject<HTMLCanvasElement>) {
 
       const screenPos = panZoom.getMousePos(e);
 
-      // Sheet mode: annotation tools or viewport selection
+      // Sheet mode: annotation tools, viewport move, or viewport selection
       if (editorMode === 'sheet') {
+        // Handle title block field clicks first
+        if (titleBlockEditing.handleTitleBlockClick(screenPos)) {
+          return;
+        }
+
         // Handle annotation tool clicks first
         if (annotationEditing.handleAnnotationClick(screenPos, e.shiftKey)) {
+          return;
+        }
+
+        // Handle keyboard-initiated viewport move (G key) — commit on click
+        const s = useAppStore.getState();
+        if (s.viewportEditState.isMoving) {
+          s.commitViewportMove();
           return;
         }
 
@@ -435,6 +459,7 @@ export function useCanvasEvents(canvasRef: React.RefObject<HTMLCanvasElement>) {
       viewport,
       annotationEditing,
       viewportEditing,
+      titleBlockEditing,
       shapeDrawing,
       textDrawing,
       snapDetection,
@@ -470,6 +495,19 @@ export function useCanvasEvents(canvasRef: React.RefObject<HTMLCanvasElement>) {
       // Sheet mode: viewport dragging
       if (viewportEditing.handleViewportMouseMove(screenPos)) {
         return;
+      }
+
+      // Sheet mode: keyboard-initiated viewport move (G key) — update preview
+      if (editorMode === 'sheet') {
+        const s = useAppStore.getState();
+        if (s.viewportEditState.isMoving) {
+          const sheetPos = viewportEditing.screenToSheet(screenPos.x, screenPos.y);
+          s.updateViewportMove(sheetPos);
+          return;
+        }
+
+        // Update title block field hover
+        titleBlockEditing.handleTitleBlockMouseMove(screenPos);
       }
 
       // Drawing mode: boundary dragging
@@ -582,7 +620,7 @@ export function useCanvasEvents(canvasRef: React.RefObject<HTMLCanvasElement>) {
         setHoveredShapeId(null);
       }
     },
-    [panZoom, annotationEditing, viewportEditing, editorMode, viewport, boundaryEditing, gripEditing, boxSelection, shapeDrawing, snapDetection, activeTool, dimensionMode, pickLinesMode, findShapeAtPoint, setHoveredShapeId, canvasRef, modifyTools, beamDrawing, leaderDrawing, pendingBeam, sourceSnapAngle]
+    [panZoom, annotationEditing, viewportEditing, titleBlockEditing, editorMode, viewport, boundaryEditing, gripEditing, boxSelection, shapeDrawing, snapDetection, activeTool, dimensionMode, pickLinesMode, findShapeAtPoint, setHoveredShapeId, canvasRef, modifyTools, beamDrawing, leaderDrawing, pendingBeam, sourceSnapAngle]
   );
 
   /**
@@ -799,8 +837,11 @@ export function useCanvasEvents(canvasRef: React.RefObject<HTMLCanvasElement>) {
 
       const screenPos = panZoom.getMousePos(e);
 
-      // Sheet mode: double-click on a viewport to switch to that drawing
+      // Sheet mode: double-click on a title block field to edit, or viewport to switch
       if (editorMode === 'sheet') {
+        if (titleBlockEditing.handleTitleBlockClick(screenPos)) {
+          return;
+        }
         const sheetPos = viewportEditing.screenToSheet(screenPos.x, screenPos.y);
         const vp = viewportEditing.findViewportAtPoint(sheetPos);
         if (vp) {
@@ -823,7 +864,7 @@ export function useCanvasEvents(canvasRef: React.RefObject<HTMLCanvasElement>) {
         }
       }
     },
-    [editorMode, panZoom, viewport, findShapeAtPoint, shapes, textDrawing, viewportEditing, switchToDrawing]
+    [editorMode, panZoom, viewport, findShapeAtPoint, shapes, textDrawing, viewportEditing, titleBlockEditing, switchToDrawing]
   );
 
   /**
@@ -973,5 +1014,6 @@ export function useCanvasEvents(canvasRef: React.RefObject<HTMLCanvasElement>) {
     handleDoubleClick,
     handleContextMenu,
     isPanning: panZoom.isPanning,
+    titleBlockEditing,
   };
 }

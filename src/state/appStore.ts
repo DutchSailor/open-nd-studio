@@ -164,6 +164,8 @@ function extractPerDocState(s: any) {
     drawingPoints: s.drawingPoints,
     currentStyle: s.currentStyle,
     textEditingId: s.textEditingId,
+    titleBlockEditingFieldId: s.titleBlockEditingFieldId,
+    hoveredTitleBlockFieldId: s.hoveredTitleBlockFieldId,
     defaultTextStyle: s.defaultTextStyle,
     hatchCustomPatternId: s.hatchCustomPatternId,
     // UI per-doc fields
@@ -202,6 +204,8 @@ function extractPerDocState(s: any) {
     cursor2DVisible: s.cursor2DVisible,
     // Unit settings
     unitSettings: s.unitSettings,
+    // Block definitions
+    blockDefinitions: s.blockDefinitions,
   };
 }
 
@@ -247,6 +251,8 @@ function restoreDocState(docId: string, set: any) {
     state.drawingPoints = saved.drawingPoints;
     state.currentStyle = saved.currentStyle;
     state.textEditingId = saved.textEditingId;
+    state.titleBlockEditingFieldId = saved.titleBlockEditingFieldId || null;
+    state.hoveredTitleBlockFieldId = saved.hoveredTitleBlockFieldId || null;
     state.defaultTextStyle = saved.defaultTextStyle;
     state.hatchCustomPatternId = saved.hatchCustomPatternId || null;
     state.currentFilePath = saved.filePath;
@@ -276,6 +282,8 @@ function restoreDocState(docId: string, set: any) {
     if (saved.projectInfo) state.projectInfo = saved.projectInfo;
     // Unit settings
     if (saved.unitSettings) state.unitSettings = saved.unitSettings;
+    // Block definitions
+    state.blockDefinitions = saved.blockDefinitions || [];
   });
 }
 

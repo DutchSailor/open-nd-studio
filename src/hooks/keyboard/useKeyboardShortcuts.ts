@@ -177,6 +177,17 @@ export function useKeyboardShortcuts() {
         }
       }
 
+      // Axis lock toggle for move/copy tools (X/Y keys during active move/copy)
+      if (!ctrl && !shift && (key === 'x' || key === 'y')) {
+        const s = useAppStore.getState();
+        if ((s.activeTool === 'move' || s.activeTool === 'copy') && s.drawingPoints.length >= 1) {
+          e.preventDefault();
+          clearPending();
+          s.toggleMoveAxisLock(key);
+          return;
+        }
+      }
+
       // Two-key sequence handling (two-key style)
       if (!ctrl && !shift && key.length === 1 && key >= 'a' && key <= 'z') {
         if (pendingKey) {
@@ -235,6 +246,12 @@ export function useKeyboardShortcuts() {
       if (key === 'escape') {
         if (printDialogOpen) return;
         clearPending();
+        // Cancel viewport move if active
+        const s = useAppStore.getState();
+        if (s.viewportEditState.isMoving) {
+          s.cancelViewportMove();
+          return;
+        }
         setActiveTool('select');
         return;
       }
@@ -393,25 +410,36 @@ export function useKeyboardShortcuts() {
       // Single-letter shortcuts for tools, visibility and locking
       switch (k) {
         case 'g': {
-          setActiveTool('move');
-          // Auto-set base point to center of selected shapes for immediate move
           const s = useAppStore.getState();
-          if (s.selectedShapeIds.length > 0) {
-            const idSet = new Set(s.selectedShapeIds);
-            const selected = s.shapes.filter(sh => idSet.has(sh.id));
-            if (selected.length > 0) {
-              let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-              for (const sh of selected) {
-                const b = getShapeBounds(sh);
-                if (b) {
-                  minX = Math.min(minX, b.minX);
-                  minY = Math.min(minY, b.minY);
-                  maxX = Math.max(maxX, b.maxX);
-                  maxY = Math.max(maxY, b.maxY);
-                }
+          if (s.editorMode === 'sheet') {
+            // Sheet mode: start viewport move with base point at viewport center
+            if (s.viewportEditState.selectedViewportId && s.activeSheetId) {
+              const sheet = s.sheets.find(sh => sh.id === s.activeSheetId);
+              const vp = sheet?.viewports.find(v => v.id === s.viewportEditState.selectedViewportId);
+              if (vp && !vp.locked) {
+                s.startViewportMove({ x: vp.x + vp.width / 2, y: vp.y + vp.height / 2 });
               }
-              if (minX !== Infinity) {
-                s.addDrawingPoint({ x: (minX + maxX) / 2, y: (minY + maxY) / 2 });
+            }
+          } else {
+            // Drawing mode: activate move tool with auto base point
+            setActiveTool('move');
+            if (s.selectedShapeIds.length > 0) {
+              const idSet = new Set(s.selectedShapeIds);
+              const selected = s.shapes.filter(sh => idSet.has(sh.id));
+              if (selected.length > 0) {
+                let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+                for (const sh of selected) {
+                  const b = getShapeBounds(sh);
+                  if (b) {
+                    minX = Math.min(minX, b.minX);
+                    minY = Math.min(minY, b.minY);
+                    maxX = Math.max(maxX, b.maxX);
+                    maxY = Math.max(maxY, b.maxY);
+                  }
+                }
+                if (minX !== Infinity) {
+                  s.addDrawingPoint({ x: (minX + maxX) / 2, y: (minY + maxY) / 2 });
+                }
               }
             }
           }

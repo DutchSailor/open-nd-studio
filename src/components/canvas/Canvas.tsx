@@ -6,6 +6,7 @@ import { useContextMenu } from '../../hooks/canvas/useContextMenu';
 import { useDrawingKeyboard } from '../../hooks/keyboard/useDrawingKeyboard';
 import { DynamicInput } from './DynamicInput/DynamicInput';
 import { TextEditor } from '../editors/TextEditor/TextEditor';
+import { TitleBlockFieldEditor } from '../editors/TitleBlockFieldEditor/TitleBlockFieldEditor';
 import { ContextMenu } from '../shared/ContextMenu';
 import type { TextShape, Point } from '../../types/geometry';
 import { MM_TO_PIXELS } from '../../engine/renderer/types';
@@ -86,6 +87,10 @@ export function Canvas() {
     hasCenteredRef.current = true;
   });
 
+  // Get title block editing state (needs React re-render for overlay)
+  const hoveredTitleBlockFieldId = useAppStore(s => s.hoveredTitleBlockFieldId);
+  const editorMode = useAppStore(s => s.editorMode);
+
   // Get text shape being edited (needs React re-render for overlay)
   const editingTextShape = useAppStore(s => {
     if (!s.textEditingId) return null;
@@ -152,7 +157,7 @@ export function Canvas() {
               layers: s.layers,
               viewport: s.viewport,
               selectedViewportId: s.viewportEditState.selectedViewportId,
-              viewportDragging: s.viewportEditState.isDragging,
+              viewportDragging: s.viewportEditState.isDragging || s.viewportEditState.isMoving,
               drawingViewports: s.drawingViewports,
               cropRegionEditing: s.cropRegionEditState?.isEditing || false,
               cropRegionViewportId: s.cropRegionEditState?.viewportId || null,
@@ -168,6 +173,20 @@ export function Canvas() {
                 projectPatterns: s.projectPatterns,
               },
               showLineweight: s.showLineweight,
+              hoveredTitleBlockFieldId: s.hoveredTitleBlockFieldId,
+              editingTitleBlockFieldId: s.titleBlockEditingFieldId,
+              customTitleBlockTemplates: s.customTitleBlockTemplates,
+              viewportMovePreview: s.viewportEditState.isMoving && s.viewportEditState.selectedViewportId && s.viewportEditState.moveSnappedPos
+                ? (() => {
+                    const vp = activeSheet!.viewports.find(v => v.id === s.viewportEditState.selectedViewportId);
+                    if (!vp) return null;
+                    return {
+                      viewportId: s.viewportEditState.selectedViewportId!,
+                      dx: s.viewportEditState.moveSnappedPos!.x - vp.x,
+                      dy: s.viewportEditState.moveSnappedPos!.y - vp.y,
+                    };
+                  })()
+                : null,
             });
           }
         } else {
@@ -207,6 +226,8 @@ export function Canvas() {
             cursor2D: s.cursor2D,
             cursor2DVisible: s.cursor2DVisible,
             showLineweight: s.showLineweight,
+            blockDefinitions: s.blockDefinitions,
+            showRotationGizmo: s.showRotationGizmo,
           });
         }
       }
@@ -222,8 +243,13 @@ export function Canvas() {
   }, []);
 
   // Handle mouse events
-  const { handleMouseDown, handleMouseMove, handleMouseUp, handleWheel, handleClick, handleDoubleClick, handleContextMenu: baseHandleContextMenu, isPanning } =
+  const { handleMouseDown, handleMouseMove, handleMouseUp, handleWheel, handleClick, handleDoubleClick, handleContextMenu: baseHandleContextMenu, isPanning, titleBlockEditing } =
     useCanvasEvents(canvasRef);
+
+  // Get editing field screen rect for the overlay (must be after useCanvasEvents)
+  // Subscribe to titleBlockEditingFieldId to trigger re-render when editing starts/stops
+  const titleBlockEditingFieldId = useAppStore(s => s.titleBlockEditingFieldId);
+  const editingFieldScreenRect = titleBlockEditingFieldId ? titleBlockEditing.getEditingFieldScreenRect() : null;
 
   // Context menu state
   const { menuState, openMenu, closeMenu, getMenuItems } = useContextMenu();
@@ -349,6 +375,10 @@ export function Canvas() {
     if (isPanning) {
       return 'cursor-grabbing';
     }
+    // Show text cursor when hovering a title block field in sheet mode
+    if (editorMode === 'sheet' && hoveredTitleBlockFieldId) {
+      return 'cursor-text';
+    }
     switch (activeTool) {
       case 'pan':
         return 'cursor-grab';
@@ -384,6 +414,20 @@ export function Canvas() {
           shape={editingTextShape}
           onSave={handleTextSave}
           onCancel={handleTextCancel}
+        />
+      )}
+
+      {/* Title Block Field Editor Overlay */}
+      {editingFieldScreenRect && (
+        <TitleBlockFieldEditor
+          x={editingFieldScreenRect.x}
+          y={editingFieldScreenRect.y}
+          width={editingFieldScreenRect.width}
+          height={editingFieldScreenRect.height}
+          fieldRect={editingFieldScreenRect.fieldRect}
+          zoom={useAppStore.getState().viewport.zoom}
+          onSave={titleBlockEditing.saveFieldValue}
+          onCancel={titleBlockEditing.cancelFieldEditing}
         />
       )}
 

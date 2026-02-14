@@ -125,6 +125,9 @@ export interface ViewportEditState {
   isDragging: boolean;                 // Whether viewport is being moved/resized
   dragStart: Point | null;             // Mouse position when drag started (sheet mm coords)
   originalViewport: SheetViewport | null;   // Viewport state before drag started
+  isMoving: boolean;                   // Whether viewport is being moved via keyboard (G key)
+  moveBasePoint: Point | null;         // Base point for keyboard-initiated move (sheet mm coords)
+  moveSnappedPos: Point | null;        // Snapped preview position during keyboard move (sheet mm coords)
 }
 
 // ============================================================================
@@ -325,6 +328,13 @@ export const getShapeBounds = (shape: Shape): { minX: number; minY: number; maxX
         minY: shape.position.y,
         maxX: shape.position.x + shape.width,
         maxY: shape.position.y + shape.height,
+      };
+    case 'block-instance':
+      return {
+        minX: shape.position.x,
+        minY: shape.position.y,
+        maxX: shape.position.x,
+        maxY: shape.position.y,
       };
     default:
       return null;
