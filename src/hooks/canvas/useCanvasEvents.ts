@@ -13,7 +13,7 @@
 import { useCallback, useMemo, useEffect, useRef } from 'react';
 import { useAppStore, generateId } from '../../state/appStore';
 import type { Point, GridlineShape, BeamShape, PlateSystemShape, PlateSystemOpening } from '../../types/geometry';
-import { screenToWorld, isPointNearShape, isPointNearParametricShape, snapToAngle, bulgeToArc, bulgeArcMidpoint, calculateBulgeFrom3Points } from '../../engine/geometry/GeometryUtils';
+import { screenToWorld, isPointNearShape, isPointNearParametricShape, snapToAngle, bulgeToArc, calculateBulgeFrom3Points } from '../../engine/geometry/GeometryUtils';
 import { regeneratePlateSystemBeams } from '../drawing/usePlateSystemDrawing';
 import { QuadTree } from '../../engine/spatial/QuadTree';
 import { isShapeInHiddenCategory } from '../../utils/ifcCategoryUtils';
@@ -660,9 +660,21 @@ export function useCanvasEvents(canvasRef: React.RefObject<HTMLCanvasElement>) {
                 const newBulges = psBulges ? [...psBulges] : new Array(psN).fill(0);
                 while (newBulges.length < psN) newBulges.push(0);
                 if (Math.abs(b) > 0.0001) {
-                  // Arc edge: calculate two sub-bulges
-                  const b1 = calculateBulgeFrom3Points(psContour[ii], bulgeArcMidpoint(psContour[ii], insertPt, b * 0.5), insertPt);
-                  const b2 = calculateBulgeFrom3Points(insertPt, bulgeArcMidpoint(insertPt, psContour[jj], b * 0.5), psContour[jj]);
+                  // Arc edge: calculate two sub-bulges.
+                  // insertPt is already on the original circle.  Find the true arc
+                  // midpoints of each sub-arc on that same circle.
+                  const { center, radius } = bulgeToArc(psContour[ii], psContour[jj], b);
+                  const angStart = Math.atan2(psContour[ii].y - center.y, psContour[ii].x - center.x);
+                  const angInsert = Math.atan2(insertPt.y - center.y, insertPt.x - center.x);
+                  const angEnd = Math.atan2(psContour[jj].y - center.y, psContour[jj].x - center.x);
+                  // Sub-arc 1 midpoint: halfway between angStart and angInsert on the arc
+                  const mid1Ang = angStart + ((angInsert - angStart + (b > 0 ? 0 : 2 * Math.PI)) % (2 * Math.PI)) / 2 * (b > 0 ? 1 : -1);
+                  const mid1 = { x: center.x + radius * Math.cos(mid1Ang), y: center.y + radius * Math.sin(mid1Ang) };
+                  // Sub-arc 2 midpoint: halfway between angInsert and angEnd on the arc
+                  const mid2Ang = angInsert + ((angEnd - angInsert + (b > 0 ? 0 : 2 * Math.PI)) % (2 * Math.PI)) / 2 * (b > 0 ? 1 : -1);
+                  const mid2 = { x: center.x + radius * Math.cos(mid2Ang), y: center.y + radius * Math.sin(mid2Ang) };
+                  const b1 = calculateBulgeFrom3Points(psContour[ii], mid1, insertPt);
+                  const b2 = calculateBulgeFrom3Points(insertPt, mid2, psContour[jj]);
                   newBulges.splice(ii, 1, b1, b2);
                 } else {
                   // Straight edge: two straight edges

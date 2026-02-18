@@ -2605,23 +2605,21 @@ export function useGripEditing() {
         }
       });
 
+      // Record history index before committing, so we can collapse all
+      // related entries (shape move + dimension updates + label updates etc.)
+      // into a single undo step.
+      const historyStartIndex = useAppStore.getState().historyIndex + 1;
+
       // Commit final state through history
-      const typeChanged = drag.originalShape.type !== currentShape.type;
       if (hasJoined) {
         // Batch commit: dragged shape + all joined shapes as one undo step
-        const batchUpdates: { id: string; updates: Partial<Shape> }[] = [];
-        if (typeChanged) {
-          batchUpdates.push({ id: drag.shapeId, updates: { ...currentShape } as Partial<Shape> });
-        } else {
-          batchUpdates.push({ id: drag.shapeId, updates: { ...currentShape } as Partial<Shape> });
-        }
+        const batchUpdates: { id: string; updates: Partial<Shape> }[] = [
+          { id: drag.shapeId, updates: { ...currentShape } as Partial<Shape> },
+        ];
         for (const jf of joinedFinalStates) {
           batchUpdates.push({ id: jf.id, updates: { ...jf.shape } as Partial<Shape> });
         }
         updateShapes(batchUpdates);
-      } else if (typeChanged) {
-        const convertedData = { ...currentShape } as Shape;
-        updateShape(drag.shapeId, convertedData);
       } else {
         updateShape(drag.shapeId, { ...currentShape } as Partial<Shape>);
       }
@@ -2659,25 +2657,45 @@ export function useGripEditing() {
           }
         }
       }
-    }
 
-    // Regenerate plate system child beams after contour grip edit
-    if (drag.originalShape.type === 'plate-system') {
-      regeneratePlateSystemBeams(drag.shapeId);
+      // Regenerate plate system child beams after contour grip edit
+      // (must happen before collapse so the beam add/delete is included)
+      if (drag.originalShape.type === 'plate-system') {
+        regeneratePlateSystemBeams(drag.shapeId);
+      }
+
+      // Collapse all history entries created so far into one undo step
+      // (covers: shape move + miter recalc + linked label updates + plate system beams)
+      const storeAfterCommit = useAppStore.getState();
+      if (storeAfterCommit.historyIndex >= historyStartIndex) {
+        storeAfterCommit.collapseEntries(historyStartIndex);
+      }
     }
 
     // Auto-regenerate grid dimensions if a gridline was dragged
     if (drag.originalShape.type === 'gridline') {
+      // Record history index before dimension updates so we can collapse them
+      // together with the gridline move (which was already collapsed above).
+      // We need a fresh start index since the previous collapse already merged.
+      const dimHistoryStart = useAppStore.getState().historyIndex;
+
       // Update associative DimAssociate dimensions linked to this gridline
       updateLinkedDimensions(drag.shapeId);
       // Also update linked dims for any joined gridlines that moved together
       for (const joined of joinedGridlinesRef.current) {
         updateLinkedDimensions(joined.shapeId);
       }
-      // Regenerate auto-generated grid dimensions if enabled
+      // Regenerate auto-generated grid dimensions if enabled (synchronous)
       if (useAppStore.getState().autoGridDimension) {
-        setTimeout(() => regenerateGridDimensions(), 50);
+        regenerateGridDimensions();
       }
+
+      // Collapse the gridline move + all dimension updates into one undo step
+      const storeAfterDims = useAppStore.getState();
+      if (storeAfterDims.historyIndex > dimHistoryStart) {
+        storeAfterDims.collapseEntries(dimHistoryStart);
+      }
+
       // Bidirectional sync: if this is a section reference gridline, propagate back to plan
       if (drag.shapeId.startsWith('section-ref-')) {
         setTimeout(() => {
